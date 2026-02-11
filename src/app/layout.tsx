@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
+import { Prompt } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
+
+const prompt = Prompt({
+  subsets: ["thai"],
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
+  variable: "--font-prompt",
+});
 
 export const metadata: Metadata = {
   title: "GuppyReal - ระบบสรุปออเดอร์ปลาหางนกยูง",
@@ -15,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th">
-      <body className="font-sans antialiased">
+      <body className={`${prompt.variable} font-sans antialiased`}>
         <AuthProvider>
           {children}
           <Toaster position="top-center" richColors />

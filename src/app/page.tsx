@@ -20,7 +20,7 @@ import {
   LogOut,
   Lock,
   Hash,
-  ShoppingCart,
+  ShoppingCart as ShoppingCartIcon,
   ChevronRight
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -33,9 +33,26 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// --- Sophisticated Minimal UI Components ---
-const Card = ({ children, className }: any) => (
-  <div className={cn("bg-white rounded-[2rem] shadow-lg shadow-slate-200/50 border border-slate-100", className)}>
+// Types
+interface Breed {
+  id: string;
+  name: string;
+  price_piece: number;
+  price_pair: number;
+}
+
+interface OrderItem {
+  id: string;
+  breedId?: string;
+  breedName: string;
+  type: 'piece' | 'pair';
+  quantity: number;
+  price: number;
+}
+
+// --- High Contrast Minimal UI Components ---
+const Card = ({ children, className }: { children: React.ReactNode, className?: string }) => (
+  <div className={cn("bg-white rounded-[2rem] border border-slate-200 shadow-lg shadow-slate-200/50", className)}>
     {children}
   </div>
 );
@@ -43,9 +60,9 @@ const Card = ({ children, className }: any) => (
 const Button = ({ children, className, variant = "primary", ...props }: any) => {
   const variants: any = {
     primary: "bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-lg shadow-blue-500/20",
-    dark: "bg-[#1E293B] hover:bg-black text-white shadow-lg shadow-slate-900/10",
-    outline: "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50",
-    ghost: "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+    dark: "bg-[#0F172A] hover:bg-black text-white shadow-lg",
+    outline: "bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50",
+    danger: "bg-red-50 text-red-600 hover:bg-red-600 hover:text-white"
   };
   return (
     <button className={cn("disabled:opacity-50 active:scale-95 transition-all rounded-2xl font-bold flex items-center justify-center gap-2 h-12 md:h-14 px-6 shadow-md", variants[variant], className)} {...props}>
@@ -68,21 +85,11 @@ const DarkInput = ({ className, ...props }: any) => (
   />
 );
 
-const Label = ({ children, className }: any) => (
+const Label = ({ children, className }: { children: React.ReactNode, className?: string }) => (
   <label className={cn("text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block", className)}>
     {children}
   </label>
 );
-
-function ShoppingCartIcon(props: any) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8" cy="21" r="1" />
-      <circle cx="19" cy="21" r="1" />
-      <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
-    </svg>
-  );
-}
 
 // --- Auth Section ---
 function AuthScreen() {
@@ -104,37 +111,49 @@ function AuthScreen() {
           .eq('username', username.trim().toLowerCase())
           .eq('password', password)
           .single();
+
         if (error || !data) throw new Error('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง');
+        
         login({ id: data.id, username: data.username, shop_name: data.shop_name });
-        toast.success('ยินดีต้อนรับกลับมาครับ');
+        toast.success('เข้าสู่ระบบสำเร็จ');
       } else {
         const { data, error } = await supabase
           .from('app_users')
-          .insert([{ username: username.trim().toLowerCase(), password: password, shop_name: shopName }])
-          .select().single();
+          .insert([{ 
+            username: username.trim().toLowerCase(), 
+            password: password, 
+            shop_name: shopName 
+          }])
+          .select()
+          .single();
+
         if (error) throw new Error('ชื่อผู้ใช้นี้ถูกใช้ไปแล้วครับ');
+        
         login({ id: data.id, username: data.username, shop_name: data.shop_name });
-        toast.success('สร้างบัญชีสำเร็จแล้วครับ!');
+        toast.success('สมัครสมาชิกสำเร็จ!');
       }
-    } catch (err: any) { toast.error(err.message); }
-    finally { setLoading(false); }
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 font-sans text-slate-900">
       <div className="w-full max-w-[420px]">
-        <div className="flex flex-col items-center mb-12 text-center text-slate-900">
-          <div className="p-4 bg-[#2563EB] rounded-[1.5rem] shadow-xl shadow-blue-500/30 mb-5 transform -rotate-6">
+        <div className="flex flex-col items-center mb-12 text-center">
+          <div className="p-4 bg-blue-600 rounded-[1.5rem] shadow-xl shadow-blue-500/30 mb-5 transform -rotate-6">
             <Fish className="h-10 w-10 text-white" />
           </div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic leading-none">GuppyReal</h1>
-          <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em] mt-2 leading-none ml-1">ระบบจัดการฟาร์มปลาออนไลน์</p>
+          <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em] mt-2 leading-none ml-1">Cloud Database ERP</p>
         </div>
 
         <Card className="p-10 border-slate-200">
           <div className="flex p-1.5 bg-slate-100 rounded-2xl mb-10">
-            <button onClick={() => setIsLogin(true)} className={cn("flex-1 h-12 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", isLogin ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400')}>เข้าสู่ระบบ</button>
-            <button onClick={() => setIsLogin(false)} className={cn("flex-1 h-12 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", !isLogin ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400')}>สมัครสมาชิก</button>
+            <button onClick={() => setIsLogin(true)} className={cn("flex-1 h-12 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", isLogin ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-700')}>เข้าสู่ระบบ</button>
+            <button onClick={() => setIsLogin(false)} className={cn("flex-1 h-12 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", !isLogin ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-700')}>สมัครสมาชิก</button>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-6">
@@ -143,7 +162,7 @@ function AuthScreen() {
                 <Label>ชื่อร้าน / ชื่อฟาร์ม</Label>
                 <div className="relative group">
                   <Fish className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors group-focus-within:text-blue-500" />
-                  <Input placeholder="เช่น เจมส์ Guppy" value={shopName} onChange={(e: any) => setShopName(e.target.value)} required className="pl-12" />
+                  <Input placeholder="เช่น เจมส์ Guppy" value={shopName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setShopName(e.target.value)} required className="pl-12" />
                 </div>
               </div>
             )}
@@ -152,7 +171,7 @@ function AuthScreen() {
               <Label>ชื่อผู้ใช้งาน (Username)</Label>
               <div className="relative group">
                 <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors group-focus-within:text-blue-500" />
-                <Input placeholder="Username" value={username} onChange={(e: any) => setUsername(e.target.value)} required className="pl-12" />
+                <Input placeholder="Username" value={username} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)} required className="pl-12" />
               </div>
             </div>
 
@@ -160,12 +179,12 @@ function AuthScreen() {
               <Label>รหัสผ่าน</Label>
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors group-focus-within:text-blue-500" />
-                <Input type="password" placeholder="••••••••" value={password} onChange={(e: any) => setPassword(e.target.value)} required className="pl-12" />
+                <Input type="password" placeholder="••••••••" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} required className="pl-12" />
               </div>
             </div>
 
             <Button type="submit" className="w-full h-14 mt-4 text-xs uppercase tracking-[0.2em]" disabled={loading}>
-              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : (isLogin ? 'ยืนยันเพื่อเข้าสู่ระบบ' : 'สร้างบัญชีของฉัน')}
+              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : (isLogin ? 'Login to ERP' : 'Create My Shop')}
             </Button>
           </form>
         </Card>
@@ -177,11 +196,11 @@ function AuthScreen() {
 // --- Main App ---
 function GuppyApp() {
   const { logout, user } = useAuth();
-  const [breeds, setBreeds] = useState<any[]>([]);
-  const [orderItems, setOrderItems] = useState<any[]>([]);
+  const [breeds, setBreeds] = useState<Breed[]>([]);
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [bankInfo, setBankInfo] = useState<any>({ id: null, bank_name: '', account_number: '', account_name: '', shipping_fee: 60 });
   const [isManagingBreeds, setIsManagingBreeds] = useState(false);
-  const [editingBreed, setEditingBreed] = useState<any | null>(null);
+  const [editingBreed, setEditingBreed] = useState<Breed | null>(null);
   const [loading, setLoading] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -245,13 +264,13 @@ function GuppyApp() {
     return t;
   }, [orderItems, grandTotal, bankInfo]);
 
-  if (loading && breeds.length === 0) return <div className="min-h-screen flex flex-col items-center justify-center bg-white"><Loader2 className="h-12 w-12 animate-spin text-blue-600 mb-4" /><p className="font-black text-slate-400 uppercase tracking-widest text-xs leading-none text-center">กำลังเชื่อมต่อฐานข้อมูล...</p></div>;
+  if (loading && breeds.length === 0) return <div className="min-h-screen flex flex-col items-center justify-center bg-white"><Loader2 className="h-12 w-12 animate-spin text-blue-600 mb-4" /><p className="font-black text-slate-400 uppercase tracking-widest text-xs leading-none text-center leading-relaxed">Synchronizing with Cloud...</p></div>;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3 md:gap-4">
-          <div className="p-2 md:p-2.5 bg-blue-600 rounded-xl md:rounded-2xl shadow-lg transform -rotate-6"><Fish className="h-5 w-5 md:h-6 md:h-6 text-white" /></div>
+          <div className="p-2 md:p-2.5 bg-blue-600 rounded-xl md:rounded-2xl shadow-lg shadow-blue-500/20 transform -rotate-6"><Fish className="h-5 w-5 md:h-6 md:h-6 text-white" /></div>
           <div>
              <h1 className="font-black text-lg md:text-2xl tracking-tighter text-slate-900 leading-none uppercase italic">GuppyReal</h1>
              <p className="text-[8px] md:text-[9px] font-black text-blue-600 uppercase tracking-widest mt-1 leading-none truncate max-w-[120px] md:max-w-none">{user?.shop_name}</p>
@@ -260,7 +279,7 @@ function GuppyApp() {
         <div className="flex gap-2">
           <button onClick={() => setIsManagingBreeds(!isManagingBreeds)} className="h-9 md:h-11 px-3 md:px-6 bg-[#F1F5F9] rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all hover:bg-blue-600 hover:text-white">
             {isManagingBreeds ? (
-              <span className="flex items-center gap-2"><X className="h-3 w-3 md:h-4 md:w-4" /> กลับหน้าหลัก</span>
+              <span className="flex items-center gap-2"><X className="h-3 w-3 md:h-4 md:w-4" /> ปิด</span>
             ) : (
               <span className="flex items-center gap-2"><Settings2 className="h-3 w-3 md:h-4 md:w-4" /> ตั้งค่า</span>
             )}
@@ -277,16 +296,16 @@ function GuppyApp() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 md:gap-10">
                {/* Breed Setup Form */}
                <div className="lg:col-span-5 order-1">
-                <Card className="p-6 md:p-10 lg:sticky lg:top-28 border-none">
-                    <h3 className="font-black text-xl md:text-2xl mb-6 md:mb-8 uppercase tracking-tighter italic flex items-center gap-3"><Settings2 className="h-5 w-5 md:h-6 md:w-6 text-blue-600" /> ตั้งค่าสายพันธุ์</h3>
+                <Card className="p-6 md:p-10 lg:sticky lg:top-28 border-none text-slate-900">
+                    <h3 className="font-black text-xl md:text-2xl mb-6 md:mb-8 uppercase tracking-tighter italic flex items-center gap-3"><Settings2 className="h-5 w-5 md:h-6 md:w-6 text-blue-600" /> จัดการสายพันธุ์</h3>
                     <form onSubmit={async (e) => {
                       e.preventDefault();
-                      const fd = new FormData(e.currentTarget);
+                      const fd = new FormData(e.currentTarget as HTMLFormElement);
                       const d = { name: fd.get('name'), price_piece: Number(fd.get('price_piece')), price_pair: Number(fd.get('price_pair')) };
                       try {
                         if (editingBreed) await supabase.from('breeds').update(d).eq('id', editingBreed.id);
                         else await supabase.from('breeds').insert([d]);
-                        setEditingBreed(null); fetchData(); (e.target as any).reset(); toast.success('Saved');
+                        setEditingBreed(null); fetchData(); (e.target as HTMLFormElement).reset(); toast.success('Saved');
                       } catch (err) { toast.error('Failed'); }
                     }} className="space-y-5 md:space-y-6">
                         <div className="space-y-1.5 md:space-y-2"><Label>ชื่อสายพันธุ์ปลา</Label><Input name="name" defaultValue={editingBreed?.name} placeholder="เช่น Full Gold" required /></div>
@@ -317,7 +336,7 @@ function GuppyApp() {
                         </div>
                         <div className="flex gap-1 md:gap-2">
                            <button onClick={() => setEditingBreed(b)} className="h-9 w-9 bg-slate-50 text-slate-400 hover:text-blue-600 rounded-xl flex items-center justify-center transition-all"><Edit2 className="h-3.5 w-3.5" /></button>
-                           <button onClick={async () => { if(confirm('Delete?')) { await supabase.from('breeds').delete().eq('id', b.id).then(() => fetchData()); } }} className="h-9 w-9 bg-slate-50 text-slate-400 hover:text-red-600 rounded-xl flex items-center justify-center transition-all"><Trash2 className="h-3.5 w-3.5" /></button>
+                           <button onClick={async () => { if(confirm('ยืนยันการลบ?')) { await supabase.from('breeds').delete().eq('id', b.id).then(() => fetchData()); } }} className="h-9 w-9 bg-slate-50 text-slate-400 hover:text-red-600 rounded-xl flex items-center justify-center transition-all"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
                       </div>
                     ))}
@@ -335,10 +354,10 @@ function GuppyApp() {
                          </button>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
-                         <div className="space-y-2"><Label className="text-slate-500">ธนาคาร</Label><DarkInput value={bankInfo.bank_name} onChange={e => setBankInfo({...bankInfo, bank_name: e.target.value})} placeholder="ระบุธนาคาร..." /></div>
-                         <div className="space-y-2"><Label className="text-slate-500">เลขบัญชี</Label><DarkInput value={bankInfo.account_number} onChange={e => setBankInfo({...bankInfo, account_number: e.target.value})} placeholder="เลขบัญชี..." /></div>
-                         <div className="space-y-2"><Label className="text-slate-500">ชื่อบัญชีรับเงิน</Label><DarkInput value={bankInfo.account_name} onChange={e => setBankInfo({...bankInfo, account_name: e.target.value})} placeholder="ชื่อจริง..." /></div>
-                         <div className="space-y-2"><Label className="text-slate-500">ค่าจัดส่ง (฿)</Label><DarkInput type="number" value={bankInfo.shipping_fee} onChange={e => setBankInfo({...bankInfo, shipping_fee: Number(e.target.value)})} /></div>
+                         <div className="space-y-2"><Label className="text-slate-500">ธนาคาร</Label><DarkInput value={bankInfo.bank_name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankInfo({...bankInfo, bank_name: e.target.value})} placeholder="ระบุธนาคาร..." /></div>
+                         <div className="space-y-2"><Label className="text-slate-500">เลขบัญชี</Label><DarkInput value={bankInfo.account_number} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankInfo({...bankInfo, account_number: e.target.value})} placeholder="ระบุเลขบัญชี..." /></div>
+                         <div className="space-y-2"><Label className="text-slate-500">ชื่อบัญชีรับเงิน</Label><DarkInput value={bankInfo.account_name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankInfo({...bankInfo, account_name: e.target.value})} placeholder="ระบุชื่อจริง..." /></div>
+                         <div className="space-y-2"><Label className="text-slate-500">ค่าส่งแฟลช (฿)</Label><DarkInput type="number" value={bankInfo.shipping_fee} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankInfo({...bankInfo, shipping_fee: Number(e.target.value)})} /></div>
                       </div>
                     </div>
                 </Card>
@@ -356,6 +375,7 @@ function GuppyApp() {
                       <span>จิ้มเลือกสายพันธุ์</span>
                    </div>
                 </div>
+                {/* 2 columns on mobile */}
                 <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 md:gap-6 font-bold text-slate-900">
                   {breeds.map(b => (
                     <Card key={b.id} className="p-4 md:p-8 hover:shadow-2xl transition-all group overflow-hidden relative active:scale-95 border-none shadow-md">

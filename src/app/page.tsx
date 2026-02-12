@@ -428,7 +428,7 @@ function GuppyApp() {
                             <p className="text-xs md:text-xl font-black italic leading-none text-white">฿{b.price_pair}</p>
                           </button>
                           {b.price_set && b.price_set > 0 && (
-                            <button onClick={() => { addToOrder(b.name, 'set', b.price_set); }} className="col-span-2 sm:col-span-1 flex flex-col items-center bg-[#0F172A] hover:bg-blue-600 text-white p-2.5 md:p-5 rounded-xl md:rounded-[2rem] transition-all shadow-xl active:scale-95">
+                            <button onClick={() => { addToOrder(b.name, 'set', b.price_set!); }} className="col-span-2 sm:col-span-1 flex flex-col items-center bg-[#0F172A] hover:bg-blue-600 text-white p-2.5 md:p-5 rounded-xl md:rounded-[2rem] transition-all shadow-xl active:scale-95">
                               <p className="text-[7px] md:text-[9px] font-black uppercase tracking-widest opacity-50 mb-0.5 md:mb-1 leading-none text-white">รายเซ็ต</p>
                               <p className="text-xs md:text-xl font-black italic leading-none text-white">฿{b.price_set}</p>
                             </button>

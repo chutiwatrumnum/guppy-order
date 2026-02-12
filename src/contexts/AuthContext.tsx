@@ -7,6 +7,7 @@ interface User {
   id: string;
   username: string;
   shop_name: string;
+  role: string;
 }
 
 interface AuthContextType {

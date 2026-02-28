@@ -1,0 +1,405 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Fish, 
+  Plus, 
+  Trash2, 
+  Copy, 
+  MessageCircle, 
+  Settings2, 
+  ClipboardList, 
+  Save, 
+  ChevronRight,
+  User,
+  CreditCard,
+  History,
+  X,
+  Edit2,
+  Check,
+  Loader2,
+  AlertTriangle
+} from 'lucide-react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { supabase } from '@/lib/supabase';
+import { toast, Toaster } from 'sonner';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+// Types
+interface Breed {
+  id: string;
+  name: string;
+  price_piece: number;
+  price_pair: number;
+  price_set?: number;
+}
+
+type UserRole = 'admin' | 'user';
+
+interface OrderItem {
+  id: string;
+  breedId: string;
+  breedName: string;
+  type: 'piece' | 'pair' | 'set';
+  quantity: number;
+  price: number;
+}
+
+export default function App() {
+  // State
+  const [breeds, setBreeds] = useState<Breed[]>([]);
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+  const [bankInfo, setBankInfo] = useState<any>({
+    id: null,
+    bank_name: 'กสิกรไทย',
+    account_number: '',
+    account_name: '',
+    shipping_fee: 60
+  });
+  const [isManagingBreeds, setIsManagingBreeds] = useState(false);
+  const [editingBreed, setEditingBreed] = useState<Breed | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [userRole, setUserRole] = useState<UserRole>('user'); // 'admin' or 'user'
+
+  // Helper: Check if admin
+  const isAdmin = userRole === 'admin';
+
+  // Load Data from Supabase
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const { data: breedsData } = await supabase
+        .from('breeds')
+        .select('*')
+        .order('name');
+      setBreeds(breedsData || []);
+
+      const { data: settingsData } = await supabase
+        .from('settings')
+        .select('*')
+        .limit(1);
+      
+      if (settingsData && settingsData.length > 0) {
+        setBankInfo(settingsData[0]);
+      }
+    } catch (err) {
+      console.error('Fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      const payload = {
+        bank_name: bankInfo.bank_name,
+        account_number: bankInfo.account_number,
+        account_name: bankInfo.account_name,
+        shipping_fee: Number(bankInfo.shipping_fee)
+      };
+
+      let error;
+      if (bankInfo.id) {
+        const { error: err } = await supabase
+          .from('settings')
+          .update(payload)
+          .eq('id', bankInfo.id);
+        error = err;
+      } else {
+        const { error: err } = await supabase
+          .from('settings')
+          .insert([payload]);
+        error = err;
+      }
+
+      if (error) throw error;
+      toast.success('บันทึกการตั้งค่าสำเร็จแล้วครับ');
+      fetchData();
+    } catch (err) {
+      toast.error('ไม่สามารถบันทึกการตั้งค่าได้');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleAddOrUpdateBreed = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const breedData = {
+      name: formData.get('name') as string,
+      price_piece: Number(formData.get('price_piece')),
+      price_pair: Number(formData.get('price_pair')),
+      price_set: Number(formData.get('price_set')) || null,
+    };
+
+    try {
+      if (editingBreed) {
+        await supabase.from('breeds').update(breedData).eq('id', editingBreed.id);
+      } else {
+        await supabase.from('breeds').insert([breedData]);
+      }
+      setEditingBreed(null);
+      fetchData();
+      (e.target as HTMLFormElement).reset();
+      toast.success('บันทึกสายพันธุ์เรียบร้อย');
+    } catch (err) {
+      toast.error('บันทึกไม่สำเร็จ');
+    }
+  };
+
+  const deleteBreed = async (id: string) => {
+    if (!confirm('ยืนยันการลบสายพันธุ์นี้?')) return;
+    try {
+      await supabase.from('breeds').delete().eq('id', id);
+      fetchData();
+      toast.success('ลบข้อมูลแล้ว');
+    } catch (err) {
+      toast.error('ลบไม่สำเร็จ');
+    }
+  };
+
+  const addToOrder = (breed: Breed, type: 'piece' | 'pair' | 'set') => {
+    const price = type === 'piece' ? breed.price_piece : type === 'pair' ? breed.price_pair : breed.price_set || 0;
+    const existing = orderItems.find(item => item.breedId === breed.id && item.type === type);
+    if (existing) {
+      setOrderItems(orderItems.map(item => item === existing ? { ...item, quantity: item.quantity + 1 } : item));
+    } else {
+      setOrderItems([...orderItems, { id: Date.now().toString(), breedId: breed.id, breedName: breed.name, type, quantity: 1, price }]);
+    }
+  };
+
+  const removeFromOrder = (id: string) => setOrderItems(orderItems.filter(item => item.id !== id));
+  const totalFishPrice = useMemo(() => orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0), [orderItems]);
+  const grandTotal = totalFishPrice + (orderItems.length > 0 ? bankInfo.shipping_fee : 0);
+
+  const lineMessage = useMemo(() => {
+    if (orderItems.length === 0) return '';
+    let text = `🐠 รายการสั่งซื้อปลาหางนกยูง\n`;
+    text += `----------------------------\n`;
+    orderItems.forEach((item, index) => {
+      const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set';
+      text += `${index + 1}. ${item.breedName}: ${item.quantity} ${typeLabel} (${(item.price * item.quantity).toLocaleString()}.-)\n`;
+    });
+    text += `----------------------------\n`;
+    text += `💰 ค่าปลา: ${totalFishPrice.toLocaleString()} บาท\n`;
+    text += `🚚 ค่าจัดส่ง: ${bankInfo.shipping_fee.toLocaleString()} บาท\n`;
+    text += `🔥 ยอดรวมทั้งสิ้น: ${grandTotal.toLocaleString()} บาท\n`;
+    text += `----------------------------\n`;
+    text += `🏦 ช่องทางชำระเงิน\n`;
+    text += `${bankInfo.bank_name || 'ไม่ระบุธนาคาร'}\n`;
+    text += `เลขบัญชี: ${bankInfo.account_number || 'ไม่ระบุเลขบัญชี'}\n`;
+    text += `ชื่อบัญชี: ${bankInfo.account_name || 'ไม่ระบุชื่อ'}\n`;
+    text += `----------------------------\n`;
+    text += `ชำระแล้วรบกวนส่งสลิปแจ้งชื่อที่อยู่ได้เลยครับ 🙏✨`;
+    return text;
+  }, [orderItems, totalFishPrice, bankInfo, grandTotal]);
+
+  const copyToClipboard = () => {
+    if (!lineMessage) return;
+    navigator.clipboard.writeText(lineMessage).then(() => {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    });
+  };
+
+  const shareToLine = () => {
+    if (!lineMessage) return;
+    const lineUrl = `line://msg/text/${encodeURIComponent(lineMessage)}`;
+    window.location.href = lineUrl;
+    setTimeout(() => {
+      window.open(`https://line.me/R/msg/text/?${encodeURIComponent(lineMessage)}`, '_blank');
+    }, 500);
+  };
+
+  if (loading && breeds.length === 0) {
+    return <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-blue-600 font-bold uppercase tracking-widest text-xs"><Loader2 className="h-10 w-10 animate-spin mb-4" /> Connecting to Cloud...</div>;
+  }
+
+  return (
+    <div className="min-h-screen pb-20 bg-slate-50 font-sans">
+      <Toaster position="top-center" richColors />
+      <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-4 py-4 shadow-sm">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/20"><Fish className="h-6 w-6 text-white" /></div>
+            <div>
+              <h1 className="text-xl font-black text-slate-800 tracking-tight leading-none uppercase">GuppyReal</h1>
+              <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest mt-1">Cloud Sync</p>
+            </div>
+            <div className="ml-4 flex items-center gap-2">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Role:</span>
+              <button onClick={() => setUserRole(isAdmin ? 'user' : 'admin')} className={cn("px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all", isAdmin ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600")}>
+                {userRole}
+              </button>
+            </div>
+          </div>
+          {isAdmin && (
+            <button onClick={() => setIsManagingBreeds(!isManagingBreeds)} className={cn("h-10 flex items-center gap-2 px-5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all", isManagingBreeds ? "bg-slate-800 text-white shadow-lg shadow-slate-900/10" : "bg-blue-50 text-blue-600 hover:bg-blue-100")}>
+              {isManagingBreeds ? <X className="h-4 w-4" /> : <Settings2 className="h-4 w-4" />}
+              {isManagingBreeds ? "Back" : "Settings"}
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto p-4 space-y-6">
+        {isManagingBreeds && isAdmin ? (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-8 py-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="lg:col-span-4">
+                <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-blue-900/5 border border-slate-100 sticky top-28">
+                  <h3 className="font-black text-xl mb-6 flex items-center gap-3 tracking-tight">
+                    {editingBreed ? <Edit2 className="h-5 w-5 text-blue-600" /> : <Plus className="h-5 w-5 text-blue-600" />}
+                    {editingBreed ? 'แก้ไขข้อมูล' : 'เพิ่มสายพันธุ์'}
+                  </h3>
+                  <form onSubmit={handleAddOrUpdateBreed} className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ชื่อสายพันธุ์</label>
+                      <input name="name" defaultValue={editingBreed?.name} required placeholder="เช่น Full Gold" className="w-full h-14 bg-slate-50 border-none rounded-2xl px-5 font-bold focus:ring-2 focus:ring-blue-500/10 outline-none" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ราคา/ตัว</label>
+                        <input name="price_piece" type="number" defaultValue={editingBreed?.price_piece} required className="w-full h-14 bg-slate-50 border-none rounded-2xl px-5 font-black outline-none" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ราคา/คู่</label>
+                        <input name="price_pair" type="number" defaultValue={editingBreed?.price_pair} required className="w-full h-14 bg-slate-50 border-none rounded-2xl px-5 font-black outline-none" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ราคา/Set</label>
+                        <input name="price_set" type="number" defaultValue={editingBreed?.price_set || 0} className="w-full h-14 bg-slate-50 border-none rounded-2xl px-5 font-black outline-none" />
+                      </div>
+                    </div>
+                    <button type="submit" className="w-full h-14 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all">
+                      {editingBreed ? 'Update' : 'Add Breed'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              <div className="lg:col-span-8 space-y-6">
+                <div className="bg-slate-800 text-white p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-8 opacity-5"><CreditCard className="w-32 h-32" /></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-8">
+                      <h3 className="font-black text-xl flex items-center gap-3 tracking-tight"><CreditCard className="h-6 w-6 text-blue-400" /> Bank & Shipping</h3>
+                      <button onClick={saveSettings} disabled={isSavingSettings} className="bg-blue-600 hover:bg-blue-500 px-6 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2">
+                        {isSavingSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                        Save Settings
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">ธนาคาร</label>
+                        <input value={bankInfo.bank_name} onChange={e => setBankInfo({ ...bankInfo, bank_name: e.target.value })} className="w-full bg-slate-900 border-none rounded-2xl h-12 px-5 font-bold outline-none" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">เลขบัญชี</label>
+                        <input value={bankInfo.account_number} onChange={e => setBankInfo({ ...bankInfo, account_number: e.target.value })} className="w-full bg-slate-900 border-none rounded-2xl h-12 px-5 font-bold outline-none" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">ชื่อบัญชี</label>
+                        <input value={bankInfo.account_name} onChange={e => setBankInfo({ ...bankInfo, account_name: e.target.value })} className="w-full bg-slate-900 border-none rounded-2xl h-12 px-5 font-bold outline-none" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">ค่าส่ง</label>
+                        <input type="number" value={bankInfo.shipping_fee} onChange={e => setBankInfo({ ...bankInfo, shipping_fee: Number(e.target.value) })} className="w-full bg-slate-900 border-none rounded-2xl h-12 px-5 font-black outline-none" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {breeds.map(breed => (
+                    <div key={breed.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
+                      <div className="flex items-center gap-5">
+                        <div className="h-14 w-14 bg-blue-50 rounded-3xl flex items-center justify-center text-blue-600 transition-all duration-300"><Fish className="h-7 w-7" /></div>
+                        <div>
+                          <h4 className="font-black text-lg text-slate-800 leading-none">{breed.name}</h4>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-2">
+                            ฿{breed.price_piece} / ฿{breed.price_pair}
+                            {breed.price_set && breed.price_set > 0 && ` / ฿${breed.price_set}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {isAdmin && (
+                          <>
+                            <button onClick={() => setEditingBreed(breed)} className="h-11 w-11 bg-slate-50 text-slate-400 hover:text-blue-600 rounded-2xl flex items-center justify-center active:scale-90"><Edit2 className="h-4 w-4" /></button>
+                            <button onClick={() => deleteBreed(breed.id)} className="h-11 w-11 bg-slate-50 text-slate-400 hover:text-red-600 rounded-2xl flex items-center justify-center active:scale-90"><Trash2 className="h-4 w-4" /></button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 grid grid-cols-1 lg:grid-cols-12 gap-8 py-4">
+            <div className="lg:col-span-7 space-y-8">
+              <h2 className="font-black uppercase tracking-tight text-2xl text-slate-800 px-2">Select Species</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                {breeds.map(breed => (
+                  <div key={breed.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group overflow-hidden relative">
+                    <div className="absolute -top-10 -right-10 h-32 w-32 bg-blue-50 rounded-full opacity-0 group-hover:opacity-100 transition-all -z-0"></div>
+                    <div className="relative z-10">
+                      <h4 className="font-black text-xl text-slate-800 mb-6 tracking-tight">{breed.name}</h4>
+                      <div className="grid grid-cols-3 gap-3">
+                        <button onClick={() => addToOrder(breed, 'piece')} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white p-4 rounded-3xl transition-all border border-slate-100 shadow-sm"><p className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-1">Piece</p><p className="font-black text-base leading-none">฿{breed.price_piece}</p></button>
+                        <button onClick={() => addToOrder(breed, 'pair')} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white p-4 rounded-3xl transition-all border border-slate-100 shadow-sm"><p className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-1">Pair</p><p className="font-black text-base leading-none">฿{breed.price_pair}</p></button>
+                        {breed.price_set && breed.price_set > 0 && (
+                          <button onClick={() => addToOrder(breed, 'set')} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white p-4 rounded-3xl transition-all border border-slate-100 shadow-sm"><p className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-1">Set</p><p className="font-black text-base leading-none">฿{breed.price_set}</p></button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="lg:col-span-5">
+              <div className="sticky top-28 space-y-6">
+                <div className="bg-white rounded-[3rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] border border-slate-50 overflow-hidden">
+                  <div className="p-8 border-b border-gray-50 flex items-center justify-between bg-[#F9FAFB]/50">
+                    <div className="flex items-center gap-3"><div className="p-2 bg-blue-600 rounded-xl"><ClipboardList className="h-4 w-4 text-white" /></div><span className="font-black text-lg text-slate-800 tracking-tight uppercase">Order Summary</span></div>
+                    <button onClick={() => setOrderItems([])} className="h-8 px-3 bg-red-50 text-red-500 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white">Clear</button>
+                  </div>
+                  <div className="p-8 space-y-6 max-h-[450px] overflow-y-auto">
+                    {orderItems.map(item => (
+                      <div key={item.id} className="flex items-center justify-between group">
+                        <div className="flex-1 min-w-0 pr-4"><p className="font-black text-slate-800 truncate">{item.breedName}</p><p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mt-1">{item.quantity} {item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set'} @฿{item.price}</p></div>
+                        <div className="flex items-center gap-4"><span className="font-black text-slate-900 text-lg">฿{(item.price * item.quantity).toLocaleString()}</span><button onClick={() => removeFromOrder(item.id)} className="h-9 w-9 bg-slate-50 text-slate-200 hover:text-red-500 rounded-xl flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></div>
+                      </div>
+                    ))}
+                  </div>
+                  {orderItems.length > 0 && (
+                    <div className="p-8 bg-[#1F2937] text-white space-y-5 rounded-b-[3rem] shadow-2xl">
+                      <div className="flex justify-between items-center text-xs font-black text-slate-500"><span className="uppercase tracking-[0.2em]">Shipping</span><span className="text-white font-black">฿{bankInfo.shipping_fee}</span></div>
+                      <div className="flex justify-between items-center pt-2"><span className="font-black text-xl tracking-tight uppercase">Total Amount</span><span className="font-black text-3xl text-blue-400 tracking-tighter">฿{grandTotal.toLocaleString()}</span></div>
+                      <div className="pt-4 grid grid-cols-1 gap-3">
+                        <button onClick={shareToLine} className="h-14 bg-[#06C755] text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 active:scale-[0.98]"><MessageCircle className="h-5 w-5" /> Send to LINE</button>
+                        <button onClick={copyToClipboard} className={cn("h-14 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-[0.98] border-2", copySuccess ? "bg-blue-600 border-blue-600 text-white" : "bg-transparent text-slate-400 border-slate-800")}>{copySuccess ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copySuccess ? 'Copied Success' : 'Copy Text'}</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

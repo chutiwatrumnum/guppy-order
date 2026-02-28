@@ -1,13 +1,10 @@
-"use client";
-
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 
 interface User {
   id: string;
   username: string;
   shop_name: string;
-  role: string;
+  role: 'admin' | 'user';
 }
 
 interface AuthContextType {

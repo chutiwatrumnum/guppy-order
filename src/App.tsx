@@ -229,10 +229,23 @@ export default function App() {
   const addToOrder = (breed: Breed, type: 'piece' | 'pair' | 'set', gender: Gender = 'mixed') => {
     const price = type === 'piece' ? breed.price_piece : type === 'pair' ? breed.price_pair : breed.price_set || 0;
     const existing = orderItems.find(item => item.breedId === breed.id && item.type === type && item.gender === gender);
+    
+    // สร้างข้อความแจ้งเตือน
+    const genderText = gender === 'male' ? 'ตัวผู้' : 'ตัวเมีย';
+    const typeText = type === 'piece' ? 'ตัว' : type === 'pair' ? 'คู่' : 'set';
+    
     if (existing) {
       setOrderItems(orderItems.map(item => item === existing ? { ...item, quantity: item.quantity + 1 } : item));
+      toast.success(`เพิ่ม ${breed.name} (${genderText}) อีก 1 ${typeText}`, {
+        description: `จำนวนในออเดอร์: ${existing.quantity + 1} ${typeText}`,
+        duration: 2000,
+      });
     } else {
       setOrderItems([...orderItems, { id: Date.now().toString(), breedId: breed.id, breedName: breed.name, type, quantity: 1, price, gender }]);
+      toast.success(`เพิ่ม ${breed.name} (${genderText}) ลงออเดอร์`, {
+        description: `1 ${typeText} - ฿${price.toLocaleString()}`,
+        duration: 2000,
+      });
     }
   };
 
@@ -560,32 +573,43 @@ export default function App() {
   return (
     <div className="min-h-screen pb-20 bg-slate-50 font-sans">
       <Toaster position="top-center" richColors />
-      <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-4 py-4 shadow-sm">
+      <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-3 sm:px-4 py-3 sm:py-4 shadow-sm">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/20"><Fish className="h-6 w-6 text-white" /></div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="p-2 sm:p-2.5 bg-blue-600 rounded-xl sm:rounded-2xl shadow-lg shadow-blue-500/20">
+              <Fish className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+            </div>
             <div>
-              <h1 className="text-xl font-black text-slate-800 tracking-tight leading-none uppercase">GuppyReal</h1>
-              <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest mt-1">{user?.shop_name || 'Shop'}</p>
+              <h1 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight leading-none uppercase">GuppyReal</h1>
+              <p className="text-[8px] sm:text-[9px] font-black text-blue-500 uppercase tracking-widest mt-0.5 sm:mt-1">{user?.shop_name || 'Shop'}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {isAdmin && (
               <>
                 <button 
                   onClick={() => { setShowAdminDashboard(true); loadAllOrders('today'); }}
-                  className="h-10 flex items-center gap-2 px-5 rounded-2xl text-xs font-black uppercase tracking-widest bg-green-50 text-green-600 hover:bg-green-600 hover:text-white transition-all"
+                  className="h-9 sm:h-10 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-wider sm:tracking-widest bg-green-50 text-green-600 hover:bg-green-600 hover:text-white transition-all"
+                  title="Admin"
                 >
                   <ClipboardList className="h-4 w-4" />
-                  Admin
+                  <span className="hidden sm:inline">Admin</span>
                 </button>
-                <button onClick={() => setIsManagingBreeds(!isManagingBreeds)} className={cn("h-10 flex items-center gap-2 px-5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all", isManagingBreeds ? "bg-slate-800 text-white shadow-lg shadow-slate-900/10" : "bg-blue-50 text-blue-600 hover:bg-blue-100")}>
+                <button 
+                  onClick={() => setIsManagingBreeds(!isManagingBreeds)} 
+                  className={cn("h-9 sm:h-10 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-wider sm:tracking-widest transition-all", isManagingBreeds ? "bg-slate-800 text-white shadow-lg shadow-slate-900/10" : "bg-blue-50 text-blue-600 hover:bg-blue-100")}
+                  title={isManagingBreeds ? "Back" : "Settings"}
+                >
                   {isManagingBreeds ? <X className="h-4 w-4" /> : <Settings2 className="h-4 w-4" />}
-                  {isManagingBreeds ? "Back" : "Settings"}
+                  <span className="hidden sm:inline">{isManagingBreeds ? "Back" : "Settings"}</span>
                 </button>
               </>
             )}
-            <button onClick={logout} className="h-10 flex items-center gap-2 px-4 rounded-2xl text-xs font-black uppercase tracking-widest bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all">
+            <button 
+              onClick={logout} 
+              className="h-9 sm:h-10 flex items-center justify-center px-2.5 sm:px-4 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-widest bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all"
+              title="Logout"
+            >
               <LogOut className="h-4 w-4" />
             </button>
           </div>

@@ -17,7 +17,8 @@ import {
   Check,
   Loader2,
   AlertTriangle,
-  LogOut
+  LogOut,
+  Search
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -113,6 +114,18 @@ export default function App() {
   const [adminView, setAdminView] = useState<'orders' | 'dashboard' | 'reports'>('orders');
   const [allOrders, setAllOrders] = useState<SavedOrder[]>([]);
   const [reportPeriod, setReportPeriod] = useState<'today' | 'week' | 'month' | 'year'>('today');
+
+  // State สำหรับค้นหาสายพันธุ์
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // Filter breeds ตาม search term
+  const filteredBreeds = useMemo(() => {
+    if (!searchTerm.trim()) return breeds;
+    const term = searchTerm.toLowerCase();
+    return breeds.filter(breed => 
+      breed.name.toLowerCase().includes(term)
+    );
+  }, [breeds, searchTerm]);
 
   // Load Data from Supabase
   useEffect(() => {
@@ -898,30 +911,82 @@ export default function App() {
           </div>
         ) : (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 py-4">
-            <div className="lg:col-span-7 space-y-4 lg:space-y-8">
-              <h2 className="font-black uppercase tracking-tight text-xl lg:text-2xl text-slate-800 px-2">Select Species</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-5">
-                {breeds.map(breed => (
-                  <div key={breed.id} className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group overflow-hidden relative">
-                    <div className="relative z-10">
-                      <h4 className="font-black text-lg sm:text-xl text-slate-800 mb-3 sm:mb-4 tracking-tight">{breed.name}</h4>
+            <div className="lg:col-span-7 space-y-2 lg:space-y-4">
+              {/* Search Bar */}
+              <div className="px-2">
+                <div className="relative">
+                  <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="ค้นหาสายพันธุ์..."
+                    className="w-full h-10 bg-white border border-slate-200 rounded-xl px-4 pl-10 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 transition-all"
+                  />
+                  {searchTerm && (
+                    <button 
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-400 text-xs"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                {searchTerm && (
+                  <p className="text-[10px] text-slate-500 mt-1 px-1">
+                    พบ {filteredBreeds.length} สายพันธุ์
+                  </p>
+                )}
+              </div>
+
+              <h2 className="font-black uppercase tracking-tight text-base lg:text-xl text-slate-800 px-2">Select Species</h2>
+              <div className="grid grid-cols-2 gap-2 lg:gap-3">
+                {filteredBreeds.map(breed => (
+                  <div key={breed.id} className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all active:scale-[0.98]">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-800 mb-1.5 leading-tight line-clamp-1">{breed.name}</h4>
                       
-                      {/* Gender Selection - Mobile Optimized */}
-                      <div className="flex gap-2 sm:gap-2 mb-3 sm:mb-4">
-                        <button onClick={() => addToOrder(breed, 'piece', 'male')} className="flex-1 py-3 sm:py-2 bg-blue-50 hover:bg-blue-500 hover:text-white text-blue-600 rounded-xl text-sm sm:text-xs font-bold transition-all min-h-[44px]">♂️ ผู้</button>
-                        <button onClick={() => addToOrder(breed, 'piece', 'female')} className="flex-1 py-3 sm:py-2 bg-pink-50 hover:bg-pink-500 hover:text-white text-pink-600 rounded-xl text-sm sm:text-xs font-bold transition-all min-h-[44px]">♀️ เมีย</button>
+                      {/* Gender Selection */}
+                      <div className="flex gap-1.5 mb-1.5">
+                        <button onClick={() => addToOrder(breed, 'piece', 'male')} className="flex-1 py-2 bg-blue-50 hover:bg-blue-500 hover:text-white text-blue-600 rounded-lg text-[11px] font-bold transition-all">
+                          ตัวผู้
+                        </button>
+                        <button onClick={() => addToOrder(breed, 'piece', 'female')} className="flex-1 py-2 bg-pink-50 hover:bg-pink-500 hover:text-white text-pink-600 rounded-lg text-[11px] font-bold transition-all">
+                          ตัวเมีย
+                        </button>
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-3">
-                        <button onClick={() => addToOrder(breed, 'pair')} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white p-4 sm:p-4 rounded-2xl sm:rounded-3xl transition-all border border-slate-100 shadow-sm min-h-[70px] sm:min-h-0 justify-center"><p className="text-[10px] sm:text-[9px] font-black uppercase tracking-widest opacity-60 mb-1">Pair</p><p className="font-black text-lg sm:text-base leading-none">฿{breed.price_pair}</p></button>
-                        {breed.price_set && breed.price_set > 0 && (
-                          <button onClick={() => addToOrder(breed, 'set')} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white p-4 sm:p-4 rounded-2xl sm:rounded-3xl transition-all border border-slate-100 shadow-sm min-h-[70px] sm:min-h-0 justify-center"><p className="text-[10px] sm:text-[9px] font-black uppercase tracking-widest opacity-60 mb-1">Set</p><p className="font-black text-lg sm:text-base leading-none">฿{breed.price_set}</p></button>
-                        )}
+                      {/* Price Buttons */}
+                      <div className={`grid gap-1.5 ${breed.price_set && breed.price_set > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <button onClick={() => addToOrder(breed, 'pair')} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
+                          <p className="text-[8px] font-black uppercase tracking-wider opacity-60">Pair</p>
+                          <p className="font-black text-sm">฿{breed.price_pair}</p>
+                        </button>
+                        {breed.price_set && breed.price_set > 0 ? (
+                          <button onClick={() => addToOrder(breed, 'set')} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
+                            <p className="text-[8px] font-black uppercase tracking-wider opacity-60">Set</p>
+                            <p className="font-black text-sm">฿{breed.price_set}</p>
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
+              
+              {filteredBreeds.length === 0 && searchTerm && (
+                <div className="text-center py-8">
+                  <p className="text-slate-400 text-sm">ไม่พบ "{searchTerm}"</p>
+                  <button 
+                    onClick={() => setSearchTerm('')}
+                    className="mt-2 text-blue-600 text-xs font-bold"
+                  >
+                    ล้างการค้นหา
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="lg:col-span-5 order-first lg:order-last">

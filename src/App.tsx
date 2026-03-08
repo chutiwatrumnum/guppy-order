@@ -113,7 +113,16 @@ export default function App() {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [adminView, setAdminView] = useState<'orders' | 'dashboard' | 'reports'>('orders');
   const [allOrders, setAllOrders] = useState<SavedOrder[]>([]);
-  const [reportPeriod, setReportPeriod] = useState<'today' | 'week' | 'month' | 'year'>('today');
+  const [reportPeriod, setReportPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>('today');
+  
+  // State สำหรับเลือกวันที่ custom
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  
+  // State สำหรับแก้ไขออเดอร์
+  const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
+  const [isEditingOrder, setIsEditingOrder] = useState(false);
+  const [editCopySuccess, setEditCopySuccess] = useState(false);
 
   // State สำหรับค้นหาสายพันธุ์
   const [searchTerm, setSearchTerm] = useState('');
@@ -367,6 +376,62 @@ export default function App() {
     return text;
   }, [orderItems, totalFishCount, totalFishPrice, bankInfo, grandTotal]);
 
+  const generateOrderMessage = (items: OrderItem[], totalFish: number, totalAmount: number, customer?: string, note?: string, shippingFee?: number) => {
+    if (items.length === 0) return '';
+    
+    const itemsTotal = items.reduce((sum, item) => {
+      const paidQty = item.quantity - (item.freeQty || 0);
+      return sum + (item.price * paidQty) - (item.discount || 0);
+    }, 0);
+    
+    const finalShippingFee = shippingFee || bankInfo.shipping_fee;
+    const grandTotal = itemsTotal + finalShippingFee;
+    
+    let text = `🐠 รายการสั่งซื้อปลาหางนกยูง\n`;
+    text += `----------------------------\n`;
+    items.forEach((item, index) => {
+      const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set';
+      const genderLabel = item.gender === 'male' ? '♂️' : item.gender === 'female' ? '♀️' : '⚥';
+      const paidQty = item.quantity - (item.freeQty || 0);
+      const itemTotal = (item.price * paidQty) - (item.discount || 0);
+      
+      if (item.freeQty && item.freeQty >= item.quantity) {
+        text += `${index + 1}. 🎁 ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
+      } else if (item.freeQty && item.freeQty > 0) {
+        text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} (ซื้อ ${paidQty} + แถม ${item.freeQty})`;
+        if (item.discount && item.discount > 0) {
+          text += ` (ลด ${item.discount} บาท)`;
+        }
+        text += ` = ${itemTotal.toLocaleString()}.-\n`;
+      } else {
+        text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel}`;
+        if (item.discount && item.discount > 0) {
+          text += ` (ลด ${item.discount} บาท)`;
+        }
+        text += ` = ${itemTotal.toLocaleString()}.-\n`;
+      }
+    });
+    text += `----------------------------\n`;
+    text += `📊 จำนวนปลาทั้งหมด: ${totalFish} ตัว\n`;
+    text += `💰 ค่าปลา: ${itemsTotal.toLocaleString()} บาท\n`;
+    text += `🚚 ค่าจัดส่ง: ${finalShippingFee.toLocaleString()} บาท\n`;
+    text += `🔥 ยอดรวมทั้งสิ้น: ${grandTotal.toLocaleString()} บาท\n`;
+    if (customer) {
+      text += `👤 ลูกค้า: ${customer}\n`;
+    }
+    if (note) {
+      text += `💬 หมายเหตุ: ${note}\n`;
+    }
+    text += `----------------------------\n`;
+    text += `🏦 ช่องทางชำระเงิน\n`;
+    text += `${bankInfo.bank_name || 'ไม่ระบุธนาคาร'}\n`;
+    text += `เลขบัญชี: ${bankInfo.account_number || 'ไม่ระบุเลขบัญชี'}\n`;
+    text += `ชื่อบัญชี: ${bankInfo.account_name || 'ไม่ระบุชื่อ'}\n`;
+    text += `----------------------------\n`;
+    text += `ชำระแล้วรบกวนส่งสลิปแจ้งชื่อที่อยู่ได้เลยครับ 🙏✨`;
+    return text;
+  };
+
   const copyToClipboard = () => {
     if (!lineMessage) return;
     navigator.clipboard.writeText(lineMessage).then(() => {
@@ -439,6 +504,73 @@ export default function App() {
     }
   };
   
+  // แก้ไขออเดอร์ (สำหรับ Admin)
+  const updateOrder = async (orderId: string, updatedItems: OrderItem[], updatedCustomerName?: string, updatedNote?: string) => {
+    try {
+      // คำนวณยอดรวมใหม่
+      const newTotalAmount = updatedItems.reduce((sum, item) => {
+        const paidQty = item.quantity - (item.freeQty || 0);
+        return sum + (item.price * paidQty) - (item.discount || 0);
+      }, 0) + (editingOrder?.shippingFee || 60);
+      
+      const newTotalFish = updatedItems.reduce((sum, item) => sum + item.quantity, 0);
+      
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          items: updatedItems,
+          total_amount: newTotalAmount,
+          total_fish: newTotalFish,
+          customer_name: updatedCustomerName || null,
+          note: updatedNote || null
+        })
+        .eq('id', orderId);
+      
+      if (error) throw error;
+      
+      // อัปเดตใน state allOrders
+      setAllOrders(prev => prev.map(order => 
+        order.id === orderId 
+          ? { ...order, items: updatedItems, totalAmount: newTotalAmount, totalFish: newTotalFish, customerName: updatedCustomerName, note: updatedNote }
+          : order
+      ));
+
+      // อัปเดตใน state savedOrders (หน้าแรก)
+      setSavedOrders(prev => prev.map(order => 
+        order.id === orderId 
+          ? { ...order, items: updatedItems, totalAmount: newTotalAmount, totalFish: newTotalFish, customerName: updatedCustomerName, note: updatedNote }
+          : order
+      ));
+      
+      toast.success('แก้ไขออเดอร์เรียบร้อย!');
+      setIsEditingOrder(false);
+      setEditingOrder(null);
+    } catch (err) {
+      console.error('Update order error:', err);
+      toast.error('แก้ไขไม่สำเร็จ');
+    }
+  };
+  
+  // ลบออเดอร์ (สำหรับ Admin)
+  const deleteOrder = async (orderId: string) => {
+    if (!confirm('ต้องการลบออเดอร์นี้ใช่หรือไม่?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .delete()
+        .eq('id', orderId);
+      
+      if (error) throw error;
+      
+      setAllOrders(allOrders.filter(order => order.id !== orderId));
+      toast.success('ลบออเดอร์เรียบร้อย!');
+    } catch (err) {
+      console.error('Delete order error:', err);
+      toast.error('ลบไม่สำเร็จ');
+    }
+  };
+  
   // โหลดประวัติออเดอร์ของวันนี้
   const loadTodayOrders = async () => {
     try {
@@ -470,7 +602,7 @@ export default function App() {
   };
   
   // โหลดออเดอร์ทั้งหมดสำหรับ Admin
-  const loadAllOrders = async (period: 'today' | 'week' | 'month' | 'year' = 'today') => {
+  const loadAllOrders = async (period: 'today' | 'week' | 'month' | 'year' | 'custom' = 'today', customStart?: string, customEnd?: string) => {
     try {
       let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
       
@@ -487,6 +619,8 @@ export default function App() {
       } else if (period === 'year') {
         const yearStart = new Date(now.getFullYear(), 0, 1).toISOString();
         query = query.gte('created_at', yearStart);
+      } else if (period === 'custom' && customStart && customEnd) {
+        query = query.gte('created_at', customStart).lte('created_at', customEnd + 'T23:59:59');
       }
       
       const { data, error } = await query;
@@ -529,16 +663,35 @@ export default function App() {
       });
     });
     
+    // Top 10 ปลาขายดี
     const topBreeds = Object.values(breedStats)
       .sort((a, b) => b.sales - a.sales)
-      .slice(0, 5);
+      .slice(0, 10);
+    
+    // สรุปตามลูกค้า (Top Customers)
+    const customerStats: { [key: string]: { name: string; orders: number; totalSpent: number; totalFish: number } } = {};
+    allOrders.forEach(order => {
+      const customerName = order.customerName || 'ไม่ระบุชื่อ';
+      if (!customerStats[customerName]) {
+        customerStats[customerName] = { name: customerName, orders: 0, totalSpent: 0, totalFish: 0 };
+      }
+      customerStats[customerName].orders += 1;
+      customerStats[customerName].totalSpent += order.totalAmount || 0;
+      customerStats[customerName].totalFish += order.totalFish || 0;
+    });
+    
+    // Top 10 ลูกค้า (เรียงตามยอดซื้อ)
+    const topCustomers = Object.values(customerStats)
+      .sort((a, b) => b.totalSpent - a.totalSpent)
+      .slice(0, 10);
     
     return {
       totalOrders: allOrders.length,
       totalSales,
       totalFish,
       avgOrderValue,
-      topBreeds
+      topBreeds,
+      topCustomers
     };
   }, [allOrders]);
   
@@ -666,11 +819,18 @@ export default function App() {
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
               {/* Period Selector */}
-              <div className="flex gap-2 mb-6">
-                {(['today', 'week', 'month', 'year'] as const).map(period => (
+              <div className="flex flex-wrap gap-2 mb-6">
+                {(['today', 'week', 'month', 'year', 'custom'] as const).map(period => (
                   <button
                     key={period}
-                    onClick={() => { setReportPeriod(period); loadAllOrders(period); }}
+                    onClick={() => { 
+                      setReportPeriod(period); 
+                      if (period === 'custom') {
+                        // ไม่โหลดทันที รอให้เลือกวันที่
+                      } else {
+                        loadAllOrders(period); 
+                      }
+                    }}
                     className={`px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition-all ${
                       reportPeriod === period 
                         ? 'bg-blue-100 text-blue-600' 
@@ -681,9 +841,43 @@ export default function App() {
                     {period === 'week' && '7 วัน'}
                     {period === 'month' && 'เดือนนี้'}
                     {period === 'year' && 'ปีนี้'}
+                    {period === 'custom' && 'เลือกวันที่'}
                   </button>
                 ))}
               </div>
+              
+              {/* Custom Date Range Picker */}
+              {reportPeriod === 'custom' && (
+                <div className="mb-6 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                  <div className="flex flex-wrap gap-4 items-end">
+                    <div>
+                      <label className="text-xs font-bold text-blue-600 uppercase tracking-wider block mb-2">จากวันที่</label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="h-10 px-3 bg-white border border-blue-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-blue-600 uppercase tracking-wider block mb-2">ถึงวันที่</label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="h-10 px-3 bg-white border border-blue-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+                      />
+                    </div>
+                    <button
+                      onClick={() => loadAllOrders('custom', startDate, endDate)}
+                      disabled={!startDate || !endDate}
+                      className="h-10 px-6 bg-blue-600 disabled:bg-slate-300 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+                    >
+                      ดูรายงาน
+                    </button>
+                  </div>
+                </div>
+              )}
               
               {adminView === 'orders' ? (
                 <>
@@ -703,9 +897,26 @@ export default function App() {
                               })}
                             </span>
                           </div>
-                          <span className="font-black text-xl text-blue-600">
-                            ฿{(order.totalAmount || 0).toLocaleString()}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-xl text-blue-600">
+                              ฿{(order.totalAmount || 0).toLocaleString()}
+                            </span>
+                            {/* ปุ่มแก้ไขและลบ */}
+                            <button
+                              onClick={() => { setEditingOrder(order); setIsEditingOrder(true); }}
+                              className="h-8 w-8 bg-blue-100 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg flex items-center justify-center transition-all"
+                              title="แก้ไข"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => deleteOrder(order.id)}
+                              className="h-8 w-8 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded-lg flex items-center justify-center transition-all"
+                              title="ลบ"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
                         
                         {order.customerName && (
@@ -764,13 +975,6 @@ export default function App() {
                               <span>฿{(order.totalAmount || 0).toLocaleString()}</span>
                             </div>
                           </div>
-                          
-                          {/* หมายเหตุ */}
-                          {order.note && (
-                            <p className="mt-3 text-xs text-slate-500 italic bg-slate-50 p-2 rounded-lg">
-                              💬 {order.note}
-                            </p>
-                          )}
                         </div>
                       </div>
                     ))}
@@ -799,9 +1003,9 @@ export default function App() {
                   </div>
                   
                   {/* Top Breeds */}
-                  <div className="bg-white rounded-2xl border border-slate-100 p-6">
+                  <div className="bg-white rounded-2xl border border-slate-100 p-6 mb-6">
                     <h3 className="font-black text-lg mb-4 flex items-center gap-2">
-                      🏆 สายพันธุ์ขายดี
+                      🏆 Top 10 สายพันธุ์ขายดี
                     </h3>
                     
                     {dashboardStats.topBreeds.length === 0 ? (
@@ -831,8 +1035,364 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                  
+                  {/* Top Customers */}
+                  <div className="bg-white rounded-2xl border border-slate-100 p-6">
+                    <h3 className="font-black text-lg mb-4 flex items-center gap-2">
+                      👑 Top 10 ลูกค้าซื้อมากที่สุด
+                    </h3>
+                    
+                    {dashboardStats.topCustomers.length === 0 ? (
+                      <p className="text-slate-400 text-center py-8">ไม่มีข้อมูล</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {dashboardStats.topCustomers.map((customer, index) => (
+                          <div key={index} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+                            <div className="flex items-center gap-3">
+                              <span className={`
+                                w-8 h-8 rounded-full flex items-center justify-center font-black text-sm
+                                ${index === 0 ? 'bg-yellow-100 text-yellow-600' : ''}
+                                ${index === 1 ? 'bg-gray-100 text-gray-600' : ''}
+                                ${index === 2 ? 'bg-orange-100 text-orange-600' : ''}
+                                ${index > 2 ? 'bg-slate-100 text-slate-600' : ''}
+                              `}>
+                                {index + 1}
+                              </span>
+                              <div>
+                                <span className="font-bold text-slate-700 block">{customer.name}</span>
+                                <span className="text-xs text-slate-400">{customer.orders} ออเดอร์ • {customer.totalFish} ตัว</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-black text-green-600">฿{customer.totalSpent.toLocaleString()}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Order Modal */}
+      {isEditingOrder && editingOrder && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-orange-500 to-orange-600">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white/20 rounded-2xl">
+                  <Edit2 className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-black text-xl text-white tracking-tight">แก้ไขออเดอร์</h2>
+                  <p className="text-orange-200 text-sm">#{editingOrder.id?.slice(-6)}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setIsEditingOrder(false); setEditingOrder(null); }}
+                className="h-12 w-12 bg-white/20 hover:bg-white/30 rounded-2xl flex items-center justify-center text-white transition-all"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* ชื่อลูกค้า */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">ชื่อลูกค้า</label>
+                <input
+                  type="text"
+                  defaultValue={editingOrder.customerName}
+                  id="edit-customer-name"
+                  className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400"
+                  placeholder="ชื่อลูกค้า"
+                />
+              </div>
+              
+              {/* หมายเหตุ */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">หมายเหตุ</label>
+                <input
+                  type="text"
+                  defaultValue={editingOrder.note}
+                  id="edit-order-note"
+                  className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400"
+                  placeholder="หมายเหตุ"
+                />
+              </div>
+              
+              {/* รายการสินค้าปัจจุบัน */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">รายการสินค้า ({editingOrder.items?.length || 0} รายการ)</label>
+                <div className="space-y-3">
+                  {editingOrder.items?.map((item: OrderItem, index: number) => (
+                    <div key={item.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="font-bold text-slate-800">{item.breedName}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+                            {item.gender === 'male' ? '♂️ ผู้' : item.gender === 'female' ? '♀️ เมีย' : ''}
+                          </span>
+                          <button
+                            onClick={() => {
+                              // ลบรายการนี้ออก
+                              const newItems = editingOrder.items?.filter((_, i) => i !== index) || [];
+                              setEditingOrder({ ...editingOrder, items: newItems });
+                            }}
+                            className="h-6 w-6 bg-red-100 hover:bg-red-500 text-red-500 hover:text-white rounded-full flex items-center justify-center transition-all"
+                            title="ลบรายการ"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-1">จำนวน</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const newItems = [...(editingOrder.items || [])];
+                              newItems[index].quantity = Number(e.target.value) || 1;
+                              setEditingOrder({ ...editingOrder, items: newItems });
+                            }}
+                            className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 font-bold text-slate-700 outline-none focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-1">ส่วนลด</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.discount || 0}
+                            onChange={(e) => {
+                              const newItems = [...(editingOrder.items || [])];
+                              newItems[index].discount = Number(e.target.value) || 0;
+                              setEditingOrder({ ...editingOrder, items: newItems });
+                            }}
+                            className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 font-bold text-slate-700 outline-none focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-1">แถม</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.freeQty || 0}
+                            onChange={(e) => {
+                              const newItems = [...(editingOrder.items || [])];
+                              newItems[index].freeQty = Number(e.target.value) || 0;
+                              setEditingOrder({ ...editingOrder, items: newItems });
+                            }}
+                            className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 font-bold text-slate-700 outline-none focus:border-blue-400"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* เพิ่มสายพันธุ์ใหม่ */}
+              <div className="pt-4 border-t border-slate-200">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-3">➕ เพิ่มสายพันธุ์ใหม่</label>
+                <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
+                  <div className="mb-3">
+                    <label className="text-[10px] text-blue-600 font-bold block mb-1">เลือกสายพันธุ์</label>
+                    <select
+                      id="new-item-breed"
+                      className="w-full h-10 bg-white border border-blue-200 rounded-lg px-3 font-bold text-slate-700 outline-none focus:border-blue-400"
+                    >
+                      <option value="">-- เลือกสายพันธุ์ --</option>
+                      {breeds.map(breed => (
+                        <option key={breed.id} value={breed.id}>
+                          {breed.name} (฿{breed.price_piece}/ตัว, ฿{breed.price_pair}/คู่)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="grid grid-cols-4 gap-2 mb-3">
+                    <div>
+                      <label className="text-[10px] text-blue-600 font-bold block mb-1">เพศ</label>
+                      <select
+                        id="new-item-gender"
+                        className="w-full h-10 bg-white border border-blue-200 rounded-lg px-2 font-bold text-slate-700 outline-none focus:border-blue-400 text-xs"
+                      >
+                        <option value="male">♂️ ผู้</option>
+                        <option value="female">♀️ เมีย</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-blue-600 font-bold block mb-1">ประเภท</label>
+                      <select
+                        id="new-item-type"
+                        className="w-full h-10 bg-white border border-blue-200 rounded-lg px-2 font-bold text-slate-700 outline-none focus:border-blue-400 text-xs"
+                      >
+                        <option value="piece">ตัว</option>
+                        <option value="pair">คู่</option>
+                        <option value="set">Set</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-blue-600 font-bold block mb-1">จำนวน</label>
+                      <input
+                        type="number"
+                        id="new-item-qty"
+                        min="1"
+                        defaultValue="1"
+                        className="w-full h-10 bg-white border border-blue-200 rounded-lg px-3 font-bold text-slate-700 outline-none focus:border-blue-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-blue-600 font-bold block mb-1">ราคา</label>
+                      <input
+                        type="number"
+                        id="new-item-price"
+                        min="0"
+                        placeholder="ราคา"
+                        className="w-full h-10 bg-white border border-blue-200 rounded-lg px-3 font-bold text-slate-700 outline-none focus:border-blue-400"
+                      />
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => {
+                      const breedId = (document.getElementById('new-item-breed') as HTMLSelectElement)?.value;
+                      const gender = (document.getElementById('new-item-gender') as HTMLSelectElement)?.value as Gender;
+                      const type = (document.getElementById('new-item-type') as HTMLSelectElement)?.value as 'piece' | 'pair' | 'set';
+                      const qty = Number((document.getElementById('new-item-qty') as HTMLInputElement)?.value) || 1;
+                      const price = Number((document.getElementById('new-item-price') as HTMLInputElement)?.value) || 0;
+                      
+                      if (!breedId) {
+                        toast.error('กรุณาเลือกสายพันธุ์');
+                        return;
+                      }
+                      
+                      const breed = breeds.find(b => b.id === breedId);
+                      if (!breed) return;
+                      
+                      // ใช้ราคาจากที่กรอก หรือจากสายพันธุ์
+                      const finalPrice = price > 0 ? price : (type === 'piece' ? breed.price_piece : type === 'pair' ? breed.price_pair : breed.price_set || 0);
+                      
+                      const newItem: OrderItem = {
+                        id: Date.now().toString(),
+                        breedId: breed.id,
+                        breedName: breed.name,
+                        type,
+                        quantity: qty,
+                        price: finalPrice,
+                        gender
+                      };
+                      
+                      setEditingOrder({
+                        ...editingOrder,
+                        items: [...(editingOrder.items || []), newItem]
+                      });
+                      
+                      // Reset ฟอร์ม
+                      (document.getElementById('new-item-breed') as HTMLSelectElement).value = '';
+                      (document.getElementById('new-item-price') as HTMLInputElement).value = '';
+                      
+                      toast.success(`เพิ่ม ${breed.name} ลงออเดอร์`);
+                    }}
+                    className="w-full h-10 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    เพิ่มรายการ
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="p-6 border-t border-slate-100 bg-slate-50 space-y-3">
+              {/* ปุ่ม Copy & Share */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => {
+                    const currentItems = editingOrder.items || [];
+                    const totalFish = currentItems.reduce((sum: number, item: OrderItem) => sum + item.quantity, 0);
+                    const customerName = (document.getElementById('edit-customer-name') as HTMLInputElement)?.value;
+                    const note = (document.getElementById('edit-order-note') as HTMLInputElement)?.value;
+                    const message = generateOrderMessage(
+                      currentItems,
+                      totalFish,
+                      editingOrder.totalAmount || 0,
+                      customerName,
+                      note,
+                      editingOrder.shippingFee
+                    );
+                    if (message) {
+                      navigator.clipboard.writeText(message).then(() => {
+                        setEditCopySuccess(true);
+                        toast.success('คัดลอกข้อความแล้ว!');
+                        setTimeout(() => setEditCopySuccess(false), 2000);
+                      });
+                    }
+                  }}
+                  className={cn(
+                    "h-12 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2",
+                    editCopySuccess 
+                      ? "bg-blue-600 border-blue-600 text-white" 
+                      : "bg-white text-slate-600 border-slate-200 hover:border-blue-400"
+                  )}
+                >
+                  {editCopySuccess ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {editCopySuccess ? 'Copied!' : 'Copy'}
+                </button>
+                
+                <button
+                  onClick={() => {
+                    const currentItems = editingOrder.items || [];
+                    const totalFish = currentItems.reduce((sum: number, item: OrderItem) => sum + item.quantity, 0);
+                    const customerName = (document.getElementById('edit-customer-name') as HTMLInputElement)?.value;
+                    const note = (document.getElementById('edit-order-note') as HTMLInputElement)?.value;
+                    const message = generateOrderMessage(
+                      currentItems,
+                      totalFish,
+                      editingOrder.totalAmount || 0,
+                      customerName,
+                      note,
+                      editingOrder.shippingFee
+                    );
+                    if (message) {
+                      const lineUrl = `line://msg/text/${encodeURIComponent(message)}`;
+                      window.location.href = lineUrl;
+                      setTimeout(() => {
+                        window.open(`https://line.me/R/msg/text/?${encodeURIComponent(message)}`, '_blank');
+                      }, 500);
+                    }
+                  }}
+                  className="h-12 bg-[#06C755] hover:bg-[#05b34d] text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  Send LINE
+                </button>
+              </div>
+              
+              {/* ปุ่มบันทึก */}
+              <button
+                onClick={() => {
+                  const updatedItems = editingOrder.items || [];
+                  const updatedCustomerName = (document.getElementById('edit-customer-name') as HTMLInputElement)?.value;
+                  const updatedNote = (document.getElementById('edit-order-note') as HTMLInputElement)?.value;
+                  updateOrder(editingOrder.id, updatedItems, updatedCustomerName, updatedNote);
+                }}
+                className="w-full h-14 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black uppercase text-sm tracking-widest transition-all flex items-center justify-center gap-2"
+              >
+                <Save className="h-5 w-5" />
+                บันทึกการแก้ไข
+              </button>
             </div>
           </div>
         </div>

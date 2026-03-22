@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS breeds (
   price_piece integer NOT NULL DEFAULT 0,
   price_pair integer NOT NULL DEFAULT 0,
   price_set integer DEFAULT 0,
+  cost_piece integer DEFAULT 0,      -- ต้นทุนต่อตัว 🆕
+  cost_pair integer DEFAULT 0,       -- ต้นทุนต่อคู่ 🆕
+  cost_set integer DEFAULT 0,        -- ต้นทุนต่อ set 🆕
   created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -35,7 +38,9 @@ CREATE TABLE IF NOT EXISTS orders (
   items jsonb NOT NULL,              -- เก็บรายการสินค้าเป็น JSON
   total_amount integer NOT NULL,     -- ยอดรวมเงิน
   total_fish integer NOT NULL,       -- จำนวนปลารวม
-  shipping_fee integer DEFAULT 0,    -- ค่าส่ง
+  shipping_fee integer DEFAULT 0,    -- ค่าส่ง (ที่เก็บจากลูกค้า)
+  actual_shipping_fee integer DEFAULT 0, -- ค่าจัดส่งจริงที่จ่ายให้ขนส่ง 🆕
+  total_cost integer DEFAULT 0,      -- ต้นทุนปลารวมทั้งหมดในออเดอร์ 🆕
   customer_id uuid REFERENCES customers(id) ON DELETE SET NULL,  -- เชื่อมกับลูกค้า
   customer_name text,                -- ชื่อลูกค้า (สำรอง)
   customer_phone text,               -- เบอร์โทรลูกค้า (สำรอง)

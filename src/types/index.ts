@@ -9,12 +9,12 @@ export interface Breed {
   cost_piece?: number;
   cost_pair?: number;
   cost_set?: number;
-  premium_price_piece?: number;
-  premium_price_pair?: number;
-  premium_price_set?: number;
   premium_cost_piece?: number;
   premium_cost_pair?: number;
   premium_cost_set?: number;
+  premium_price_piece?: number;
+  premium_price_pair?: number;
+  premium_price_set?: number;
 }
 
 export type UserRole = 'admin' | 'user';

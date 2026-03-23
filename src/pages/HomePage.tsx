@@ -165,7 +165,7 @@ export default function HomePage() {
       const group = groups[item.breedId];
       group.items.push(item);
       group.totalQuantity += item.quantity;
-      group.totalFishCount += item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity;
+      group.totalFishCount += item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3;
       group.totalPrice += calculateItemTotal(item);
       group.totalDiscount += item.discount || 0;
       group.totalFreeQty += item.freeQty || 0;
@@ -178,7 +178,7 @@ export default function HomePage() {
     return orderItems.reduce((sum, item) => {
       if (item.type === 'piece') return sum + item.quantity;
       if (item.type === 'pair') return sum + (item.quantity * 2);
-      return sum + item.quantity;
+      return sum + (item.quantity * 3);
     }, 0);
   }, [orderItems]);
   

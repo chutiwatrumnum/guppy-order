@@ -102,16 +102,29 @@ export default function AdminPage() {
     }
   };
 
+  // Function สำหรับดึงค่าต้นทุนจาก breed โดยตรง (ไม่ดึงจาก item.cost)
+  const getItemCost = (breedId: string, grade: string, type: string): number => {
+    if (!breedId) return 0;
+    const breed = breeds.find((b: Breed) => b.id === breedId);
+    if (!breed) return 0;
+    if (grade === 'premium') {
+      return type === 'piece' ? (breed.premium_cost_piece || 0)
+        : type === 'pair' ? (breed.premium_cost_pair || 0)
+        : (breed.premium_cost_set || 0);
+    }
+    return type === 'piece' ? (breed.cost_piece || 0)
+      : type === 'pair' ? (breed.cost_pair || 0)
+      : (breed.cost_set || 0);
+  };
+
   // Dashboard stats
   const dashboardStats = useMemo(() => {
     const totalSales = allOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
-    const totalFish = allOrders.reduce((sum, order) => sum + (order.totalFish || 0), 0);
-    
     let totalFishNormal = 0;
     let totalFishPremium = 0;
     allOrders.forEach(order => {
       order.items?.forEach((item: OrderItem) => {
-        const qty = item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity;
+        const qty = item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3;
         if (item.grade === 'premium') {
           totalFishPremium += qty;
         } else {
@@ -120,15 +133,27 @@ export default function AdminPage() {
       });
     });
 
-    const totalFishCost = allOrders.reduce((sum, order) => sum + (order.totalCost || 0), 0);
+    const totalFish = totalFishNormal + totalFishPremium;
+
+    let totalFishCost = 0;
+    let totalProfit = 0;
     const totalShippingIncome = allOrders.reduce((sum, order) => sum + (order.shippingFee || 60), 0);
     const totalShippingCost = allOrders.reduce((sum, order) => sum + (order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : (order.shippingFee || 60)), 0);
-    const totalProfit = allOrders.reduce((sum, order) => {
+    
+    allOrders.forEach(order => {
+      const orderFishCost = order.items?.reduce((itemSum, item) => {
+        // ใช้ getItemCost เพื่อดึงค่าต้นทุนจาก breed โดยตรง
+        const itemCost = item.breedId ? getItemCost(item.breedId, item.grade, item.type) : 0;
+        return itemSum + (itemCost * item.quantity);
+      }, 0) || 0;
+      
+      totalFishCost += orderFishCost;
+      
       const revenue = order.totalAmount || 0;
-      const cost = order.totalCost || 0;
       const shipping = order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : (order.shippingFee || 60);
-      return sum + (revenue - cost - shipping);
-    }, 0);
+      totalProfit += (revenue - orderFishCost - shipping);
+    });
+
     const avgOrderValue = allOrders.length > 0 ? totalSales / allOrders.length : 0;
     
     // Breed stats
@@ -190,18 +215,10 @@ export default function AdminPage() {
         return sum + (item.price * paidQty) - (item.discount || 0);
       }, 0) - (updatedDiscount || 0) + (editingOrder?.shippingFee || 60);
       
-      const newTotalFish = updatedItems.reduce((sum, item) => sum + item.quantity, 0);
+      const newTotalFish = updatedItems.reduce((sum, item) => sum + (item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3), 0);
       const newTotalCost = updatedItems.reduce((sum, item) => {
-        let itemCost = item.cost;
-        if (itemCost === undefined) {
-          const breed = breeds.find((b: Breed) => b.id === item.breedId);
-          if (breed) {
-            itemCost = item.type === 'piece' ? (breed.cost_piece || 0) : item.type === 'pair' ? (breed.cost_pair || 0) : (breed.cost_set || 0);
-            item.cost = itemCost;
-          } else {
-            itemCost = 0;
-          }
-        }
+        // Use getItemCost for breed-based cost
+        const itemCost = item.breedId ? getItemCost(item.breedId, item.grade, item.type) : 0;
         return sum + (itemCost * item.quantity);
       }, 0);
       const newActualShippingFee = updatedActualShippingFee !== undefined ? updatedActualShippingFee : editingOrder?.actualShippingFee;
@@ -302,9 +319,9 @@ export default function AdminPage() {
       id: '',
       breedId,
       breedName: breed.name,
-      price: breed.price_piece || 0,
+      price: getItemPrice(breed.id, 'premium', 'piece'),
       quantity: 1,
-      grade: 'normal',
+      grade: 'premium',
       type: 'piece',
       gender: 'male',
       freeQty: 0,
@@ -326,6 +343,11 @@ export default function AdminPage() {
       const item = updated[index];
       if (item.breedId) {
         updated[index].price = getItemPrice(item.breedId, item.grade, item.type);
+        
+        if (field === 'breedId') {
+          const breed = breeds.find((b: Breed) => b.id === item.breedId);
+          if (breed) updated[index].breedName = breed.name;
+        }
       }
     }
     
@@ -474,17 +496,9 @@ export default function AdminPage() {
                       <div className="mb-4 text-sm text-slate-500">พบ {filteredOrders.length} รายการ {searchTerm && `(จาก ${allOrders.length} รายการ)`}</div>
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         {filteredOrders.map((order, index) => {
-                          // Calculate cost for each order
+                          // Calculate cost using getItemCost (breed-based)
                           const orderCost = order.items?.reduce((sum: number, item: OrderItem) => {
-                            const breed = breeds.find((b: Breed) => b.id === item.breedId);
-                            let cost = 0;
-                            if (breed) {
-                              cost = item.type === 'piece' 
-                                ? (item.grade === 'premium' ? (breed.premium_cost_piece || 0) : (breed.cost_piece || 0))
-                                : item.type === 'pair'
-                                ? (item.grade === 'premium' ? (breed.premium_cost_pair || 0) : (breed.cost_pair || 0))
-                                : (item.grade === 'premium' ? (breed.premium_cost_set || 0) : (breed.cost_set || 0));
-                            }
+                            const cost = item.breedId ? getItemCost(item.breedId, item.grade, item.type) : 0;
                             return sum + (cost * item.quantity);
                           }, 0) || 0;
                           const shippingFee = order.shippingFee || 60;
@@ -511,14 +525,8 @@ export default function AdminPage() {
                             <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-200">
                               <div className="space-y-1">
                                 {order.items?.map((item: OrderItem, i: number) => {
-                                  const breed = breeds.find((b: Breed) => b.id === item.breedId);
-                                  const itemCost = breed 
-                                    ? (item.type === 'piece' 
-                                        ? (item.grade === 'premium' ? (breed.premium_cost_piece || 0) : (breed.cost_piece || 0))
-                                        : item.type === 'pair'
-                                        ? (item.grade === 'premium' ? (breed.premium_cost_pair || 0) : (breed.cost_pair || 0))
-                                        : (item.grade === 'premium' ? (breed.premium_cost_set || 0) : (breed.cost_set || 0)))
-                                    : 0;
+                                  // Use getItemCost for breed-based cost
+                                  const itemCost = item.breedId ? getItemCost(item.breedId, item.grade, item.type) : 0;
                                   return (
                                   <div key={i} className="flex items-center justify-between text-xs sm:text-sm bg-white/50 rounded px-2 py-1">
                                     <div className="flex items-center gap-1 flex-wrap min-w-0">
@@ -527,37 +535,40 @@ export default function AdminPage() {
                                       <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">
                                         {item.quantity} {item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด'}{item.type === 'piece' && item.gender !== 'mixed' ? (item.gender === 'male' ? '(ผู้)' : '(เมีย)') : ''}
                                       </span>
-                                      {(item.freeQty || 0) > 0 && <span className="text-[9px] bg-green-100 text-green-600 px-1 rounded shrink-0">+{item.freeQty}</span>}
-                                      {(item.discount || 0) > 0 && <span className="text-[9px] bg-orange-100 text-orange-600 px-1 rounded shrink-0">-{item.discount}</span>}
-                                      {(item.freeQty || 0) > 0 && <span className="text-[8px] text-green-500 font-bold shrink-0">(แถม)</span>}
-                                      {(item.discount || 0) > 0 && <span className="text-[8px] text-orange-500 font-bold shrink-0">(ลด)</span>}
+                                      {(item.freeQty || 0) > 0 && <span className="text-[9px] bg-green-100 text-green-600 px-1 rounded shrink-0">แถม {item.freeQty}</span>}
+                                      {(item.discount || 0) > 0 && <span className="text-[9px] bg-orange-100 text-orange-600 px-1 rounded shrink-0">ลด {item.discount}</span>}
                                     </div>
                                     <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-1 text-[9px] sm:text-[10px]">
                                       <span className="text-red-400 font-bold">ทุน:{itemCost * item.quantity}</span>
-                                      <span className="font-bold text-green-600">ขาย:{item.price * item.quantity}</span>
+                                      <span className="font-bold text-green-600">ขาย:{(item.price * Math.max(0, item.quantity - (item.freeQty || 0))) - (item.discount || 0)}</span>
                                     </div>
                                   </div>
                                 )})}
-                                {/* Shipping fee as item */}
-                                <div className="flex items-center justify-between text-xs sm:text-sm bg-blue-50/50 rounded px-2 py-1 mt-1">
-                                  <div className="flex items-center gap-1">
-                                    <span className="font-medium text-blue-700">🚚 ค่าส่ง</span>
-                                  </div>
-                                  <span className="font-bold text-blue-600 shrink-0 ml-2">
-                                    ฿{shippingFee}
-                                  </span>
-                                </div>
-                                {/* Bill Discount as item */}
-                                {(order.discount || 0) > 0 && (
-                                  <div className="flex items-center justify-between text-xs sm:text-sm bg-orange-50/50 rounded px-2 py-1 mt-1 border border-orange-100/50">
-                                    <div className="flex items-center gap-1">
-                                      <span className="font-medium text-orange-700">💸 ส่วนลดท้ายบิล</span>
-                                    </div>
-                                    <span className="font-black text-orange-600 shrink-0 ml-2">
-                                      -฿{(order.discount || 0).toLocaleString()}
-                                    </span>
-                                  </div>
-                                )}
+                                {/* Bill Breakdown */}
+                                {(() => {
+                                  return (
+                                    <>
+                                      <div className="flex items-center justify-between text-xs sm:text-sm bg-blue-50/50 rounded px-2 py-1 mt-1">
+                                        <div className="flex items-center gap-1">
+                                          <span className="font-medium text-blue-700">🚚 ค่าส่ง</span>
+                                        </div>
+                                        <span className="font-bold text-blue-600 shrink-0 ml-2">
+                                          ฿{shippingFee}
+                                        </span>
+                                      </div>
+                                      {(order.discount || 0) > 0 && (
+                                        <div className="flex items-center justify-between text-xs sm:text-sm bg-orange-50/50 rounded px-2 py-1 mt-1 border border-orange-100/50">
+                                          <div className="flex items-center gap-1">
+                                            <span className="font-medium text-orange-700">💸 หักส่วนลดท้ายบิล</span>
+                                          </div>
+                                          <span className="font-black text-orange-600 shrink-0 ml-2">
+                                            -฿{(order.discount || 0).toLocaleString()}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                               </div>
                             </div>
                             
@@ -570,21 +581,12 @@ export default function AdminPage() {
                                     ฿{actualShipping}{order.actualShippingFee === undefined || order.actualShippingFee === null ? ' (ยังไม่ระบุ)' : ''}
                                   </button>
                                 </div>
-                                <span className="text-slate-400">ทุนปลา ฿{orderCost}</span>
+                                <span className="text-slate-400">ทุนปลา: ฿{orderCost}</span>
                               </div>
-                              {(() => {
-                                const totalDiscount = order.items?.reduce((sum: number, item: OrderItem) => sum + (item.discount || 0), 0) || 0;
-                                const totalFree = order.items?.reduce((sum: number, item: OrderItem) => sum + (item.freeQty || 0), 0) || 0;
-                                if (totalDiscount > 0 || totalFree > 0) {
-                                  return (
-                                    <div className="flex items-center justify-between text-[10px] sm:text-xs mt-1 pt-1 border-t border-orange-100">
-                                      {totalDiscount > 0 && <span className="text-orange-500">ส่วนลด ฿{totalDiscount}</span>}
-                                      {totalFree > 0 && <span className="text-green-600">แถม {totalFree} ตัว</span>}
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })()}
+                              <div className="flex items-center justify-between text-[10px] sm:text-xs mt-1">
+                                <span className="text-slate-400">รายได้สุทธิ:</span>
+                                <span className="text-slate-500 font-bold">฿{(order.totalAmount || 0).toLocaleString()}</span>
+                              </div>
                               <div className="flex items-center justify-between text-xs sm:text-sm mt-2 pt-2 border-t border-orange-200">
                                 <span className="text-slate-500 font-bold">กำไรสุทธิ:</span>
                                 <span className={`font-black text-lg sm:text-xl ${orderProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
@@ -769,7 +771,7 @@ export default function AdminPage() {
                         </button>
                         
                         <div className="grid grid-cols-12 gap-2 sm:gap-3 mb-3">
-                          <div className="col-span-12 sm:col-span-6">
+                          <div className="col-span-12 sm:col-span-4">
                             <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">🐟 สายพันธุ์</label>
                             <select
                               value={item.breedId}
@@ -781,7 +783,7 @@ export default function AdminPage() {
                               ))}
                             </select>
                           </div>
-                          <div className="col-span-6 sm:col-span-3">
+                          <div className={item.type === 'piece' ? "col-span-4 sm:col-span-3" : "col-span-6 sm:col-span-4"}>
                             <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">เกรด</label>
                             <select
                               value={item.grade}
@@ -792,7 +794,7 @@ export default function AdminPage() {
                               <option value="premium">👑 พรีเมียม</option>
                             </select>
                           </div>
-                          <div className="col-span-6 sm:col-span-3">
+                          <div className={item.type === 'piece' ? "col-span-4 sm:col-span-2" : "col-span-6 sm:col-span-4"}>
                             <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">ชนิด</label>
                             <select
                               value={item.type}
@@ -804,6 +806,20 @@ export default function AdminPage() {
                               <option value="set">ชุด</option>
                             </select>
                           </div>
+                          {item.type === 'piece' && (
+                            <div className="col-span-4 sm:col-span-3">
+                              <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">เพศ</label>
+                              <select
+                                value={item.gender || 'mixed'}
+                                onChange={(e) => updateEditItem(idx, 'gender', e.target.value)}
+                                className="w-full h-9 sm:h-10 bg-slate-50 border border-slate-200 rounded-lg px-2 text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+                              >
+                                <option value="male">ผู้</option>
+                                <option value="female">เมีย</option>
+                                <option value="mixed">รวม</option>
+                              </select>
+                            </div>
+                          )}
                         </div>
                         
                         <div className="grid grid-cols-3 gap-2 sm:gap-3 pt-3 border-t border-slate-100">
@@ -812,8 +828,12 @@ export default function AdminPage() {
                             <input
                               type="number"
                               min="1"
-                              value={item.quantity}
-                              onChange={(e) => updateEditItem(idx, 'quantity', parseInt(e.target.value) || 1)}
+                              placeholder="1"
+                              value={item.quantity === 0 ? '' : item.quantity}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                updateEditItem(idx, 'quantity', isNaN(val) ? 0 : Math.max(0, val));
+                              }}
                               className="w-full h-9 sm:h-10 bg-blue-50/50 border border-blue-100 rounded-lg text-xs sm:text-sm font-black text-blue-700 text-center outline-none focus:border-blue-400"
                             />
                           </div>

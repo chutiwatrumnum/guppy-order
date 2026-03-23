@@ -61,6 +61,7 @@ export interface SavedOrder {
   shippingFee?: number;
   actualShippingFee?: number;
   totalCost?: number;
+  discount?: number;
   customerName?: string;
   note?: string;
 }

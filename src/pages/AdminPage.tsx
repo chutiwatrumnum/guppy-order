@@ -89,8 +89,9 @@ export default function AdminPage() {
         totalAmount: order.total_amount || 0,
         totalFish: order.total_fish || 0,
         shippingFee: order.shipping_fee || 60,
-        actualShippingFee: order.actual_shipping_fee !== null ? order.actual_shipping_fee : (order.shipping_fee || 60),
+        actualShippingFee: order.actual_shipping_fee,
         totalCost: order.total_cost || 0,
+        discount: order.discount || 0,
         customerName: order.customer_name,
         note: order.note
       }));
@@ -182,12 +183,12 @@ export default function AdminPage() {
   }, [allOrders]);
 
   // Order actions
-  const updateOrder = async (orderId: string, updatedItems: OrderItem[], updatedCustomerName?: string, updatedNote?: string, updatedActualShippingFee?: number) => {
+  const updateOrder = async (orderId: string, updatedItems: OrderItem[], updatedCustomerName?: string, updatedNote?: string, updatedActualShippingFee?: number, updatedDiscount?: number) => {
     try {
       const newTotalAmount = updatedItems.reduce((sum, item) => {
         const paidQty = item.quantity - (item.freeQty || 0);
         return sum + (item.price * paidQty) - (item.discount || 0);
-      }, 0) + (editingOrder?.shippingFee || 60);
+      }, 0) - (updatedDiscount || 0) + (editingOrder?.shippingFee || 60);
       
       const newTotalFish = updatedItems.reduce((sum, item) => sum + item.quantity, 0);
       const newTotalCost = updatedItems.reduce((sum, item) => {
@@ -213,6 +214,7 @@ export default function AdminPage() {
           total_fish: newTotalFish,
           total_cost: newTotalCost,
           actual_shipping_fee: newActualShippingFee,
+          discount: updatedDiscount || 0,
           customer_name: updatedCustomerName || null,
           note: updatedNote || null
         })
@@ -222,7 +224,7 @@ export default function AdminPage() {
       
       setAllOrders(prev => prev.map(order => 
         order.id === orderId 
-          ? { ...order, items: updatedItems, totalAmount: newTotalAmount, totalFish: newTotalFish, totalCost: newTotalCost, actualShippingFee: newActualShippingFee, customerName: updatedCustomerName, note: updatedNote }
+          ? { ...order, items: updatedItems, totalAmount: newTotalAmount, totalFish: newTotalFish, totalCost: newTotalCost, actualShippingFee: newActualShippingFee, discount: updatedDiscount || 0, customerName: updatedCustomerName, note: updatedNote }
           : order
       ));
       
@@ -486,119 +488,117 @@ export default function AdminPage() {
                             return sum + (cost * item.quantity);
                           }, 0) || 0;
                           const shippingFee = order.shippingFee || 60;
-                          const actualShipping = order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : shippingFee;
-                          const orderProfit = (order.totalAmount || 0) - orderCost - actualShipping;
+                          const actualShipping = order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : 0;
+                          const orderProfit = (order.totalAmount || 0) - orderCost - (actualShipping || 0);
                           
                           return (
-                          <div key={order.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:shadow-md transition-all">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <span className="text-xl font-black text-blue-600">#{allOrders.length - index}</span>
-                                <span className="text-sm text-slate-500">
+                          <div key={order.id} className="p-3 sm:p-5 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100 hover:shadow-md transition-all">
+                            <div className="flex items-center justify-between mb-2 sm:mb-3">
+                              <div className="flex items-center gap-2 sm:gap-3">
+                                <span className="text-lg sm:text-xl font-black text-blue-600">#{allOrders.length - index}</span>
+                                <span className="text-xs sm:text-sm text-slate-500">
                                   {new Date(order.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-black text-2xl text-blue-600">฿{(order.totalAmount || 0).toLocaleString()}</span>
-                              </div>
+                              <span className="font-black text-xl sm:text-2xl text-blue-600">฿{(order.totalAmount || 0).toLocaleString()}</span>
                             </div>
                             
-                            {order.customerName && <p className="text-sm text-slate-600 mb-2">👤 {order.customerName}</p>}
+                            {order.customerName && <p className="text-xs sm:text-sm text-slate-600 mb-1">👤 {order.customerName}</p>}
                             <p className="text-xs text-slate-400">🐟 {(order.totalFish || 0)} ตัว • 📋 {(order.items?.length || 0)} รายการ</p>
                             
-                            {order.note && <p className="text-xs text-slate-400 mt-2 italic">💬 {order.note}</p>}
+                            {order.note && <p className="text-xs text-slate-400 mt-1 italic">💬 {order.note}</p>}
                             
-                            <div className="mt-3 pt-3 border-t border-slate-200">
-                              <div className="space-y-1.5">
+                            <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-200">
+                              <div className="space-y-1">
                                 {order.items?.map((item: OrderItem, i: number) => {
                                   const breed = breeds.find((b: Breed) => b.id === item.breedId);
-                                  const cost = breed 
+                                  const itemCost = breed 
                                     ? (item.type === 'piece' 
                                         ? (item.grade === 'premium' ? (breed.premium_cost_piece || 0) : (breed.cost_piece || 0))
                                         : item.type === 'pair'
                                         ? (item.grade === 'premium' ? (breed.premium_cost_pair || 0) : (breed.cost_pair || 0))
                                         : (item.grade === 'premium' ? (breed.premium_cost_set || 0) : (breed.cost_set || 0)))
                                     : 0;
-                                  const itemRevenue = (item.price * (item.quantity - (item.freeQty || 0))) - (item.discount || 0);
-                                  const itemCost = cost * item.quantity;
-                                  const itemProfit = itemRevenue - itemCost;
-                                  
                                   return (
-                                  <div key={i} className="flex items-center justify-between text-sm bg-white/50 rounded-lg px-2 py-1">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-medium text-slate-700 text-xs">{item.breedName}</span>
-                                      {item.grade === 'premium' && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-bold">👑</span>}
-                                      <span className="text-slate-400 text-xs">x{item.quantity}</span>
-                                      {(item.freeQty || 0) > 0 && <span className="text-[10px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded">+{item.freeQty}</span>}
-                                      {(item.discount || 0) > 0 && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded">-{item.discount}</span>}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-[10px]">
-                                      <span className="text-slate-500">ขาย <span className="font-bold text-green-600">{itemRevenue}</span></span>
-                                      <span className="text-slate-300">|</span>
-                                      <span className="text-slate-500">ทุน <span className="font-bold text-red-400">{itemCost}</span></span>
-                                      <span className="text-slate-300">|</span>
-                                      <span className={`font-bold ${itemProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                        กำไร {itemProfit}
+                                  <div key={i} className="flex items-center justify-between text-xs sm:text-sm bg-white/50 rounded px-2 py-1">
+                                    <div className="flex items-center gap-1 flex-wrap min-w-0">
+                                      <span className="font-medium text-slate-700 truncate">{item.breedName}</span>
+                                      {item.grade === 'premium' && <span className="text-[9px] bg-orange-100 text-orange-600 px-1 rounded font-bold shrink-0">👑</span>}
+                                      <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">
+                                        {item.quantity} {item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด'}{item.type === 'piece' && item.gender !== 'mixed' ? (item.gender === 'male' ? '(ผู้)' : '(เมีย)') : ''}
                                       </span>
+                                      {(item.freeQty || 0) > 0 && <span className="text-[9px] bg-green-100 text-green-600 px-1 rounded shrink-0">+{item.freeQty}</span>}
+                                      {(item.discount || 0) > 0 && <span className="text-[9px] bg-orange-100 text-orange-600 px-1 rounded shrink-0">-{item.discount}</span>}
+                                      {(item.freeQty || 0) > 0 && <span className="text-[8px] text-green-500 font-bold shrink-0">(แถม)</span>}
+                                      {(item.discount || 0) > 0 && <span className="text-[8px] text-orange-500 font-bold shrink-0">(ลด)</span>}
+                                    </div>
+                                    <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-1 text-[9px] sm:text-[10px]">
+                                      <span className="text-red-400 font-bold">ทุน:{itemCost * item.quantity}</span>
+                                      <span className="font-bold text-green-600">ขาย:{item.price * item.quantity}</span>
                                     </div>
                                   </div>
                                 )})}
+                                {/* Shipping fee as item */}
+                                <div className="flex items-center justify-between text-xs sm:text-sm bg-blue-50/50 rounded px-2 py-1 mt-1">
+                                  <div className="flex items-center gap-1">
+                                    <span className="font-medium text-blue-700">🚚 ค่าส่ง</span>
+                                  </div>
+                                  <span className="font-bold text-blue-600 shrink-0 ml-2">
+                                    ฿{shippingFee}
+                                  </span>
+                                </div>
+                                {/* Bill Discount as item */}
+                                {(order.discount || 0) > 0 && (
+                                  <div className="flex items-center justify-between text-xs sm:text-sm bg-orange-50/50 rounded px-2 py-1 mt-1 border border-orange-100/50">
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-medium text-orange-700">💸 ส่วนลดท้ายบิล</span>
+                                    </div>
+                                    <span className="font-black text-orange-600 shrink-0 ml-2">
+                                      -฿{(order.discount || 0).toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                             
-                            {/* Cost Summary - Simplified */}
-                            <div className="mt-3 pt-3 border-t border-slate-200 bg-orange-50/50 rounded-xl p-3">
-                              {/* Row 1: Revenue breakdown */}
-                              <div className="flex items-center gap-2 text-xs mb-2">
-                                <span className="text-slate-500">ราคาขาย</span>
-                                <span className="font-black text-green-600">฿{order.totalAmount}</span>
-                                <span className="text-slate-300">=</span>
-                                <span className="text-slate-400">ปลา {order.totalAmount - shippingFee}</span>
-                                <span className="text-slate-300">+</span>
-                                <span className="text-slate-400">ค่าส่งลูกค้า ฿{shippingFee}</span>
-                              </div>
-                              
-                              {/* Row 2: Cost breakdown */}
-                              <div className="flex items-center gap-2 text-xs mb-2">
-                                <span className="text-slate-500">หัก:</span>
-                                <span className="text-slate-400">ต้นทุนปลา <span className="font-bold text-red-500">฿{orderCost}</span></span>
-                                <span className="text-slate-300">+</span>
-                                <button 
-                                  onClick={() => openEditModal(order)}
-                                  className="text-slate-400 hover:text-orange-700 cursor-pointer"
-                                >
-                                  ค่าส่งจริง <span className="font-bold text-orange-500">฿{actualShipping}</span>
-                                </button>
-                              </div>
-                              
-                              {/* Row 3: Profit */}
-                              <div className="flex items-center justify-between pt-2 border-t border-orange-100">
-                                <div className="flex items-center gap-3 text-xs">
-                                  <span className="font-bold text-slate-600">กำไรปลา:</span>
-                                  <span className={`font-black ${(order.totalAmount - shippingFee - orderCost) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                    ฿{order.totalAmount - shippingFee - orderCost}
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-                                  <span className="font-bold text-slate-600">กำไรค่าส่ง:</span>
-                                  <span className={`font-black ${(shippingFee - actualShipping) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                    ฿{shippingFee - actualShipping}
-                                  </span>
-                                </div>
+                            {/* Cost Summary - Simple */}
+                            <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-200 bg-orange-50/50 rounded-lg sm:rounded-xl p-2 sm:p-3">
+                              <div className="flex items-center justify-between text-[10px] sm:text-xs">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs font-bold text-slate-600">= กำไรสุทธิ:</span>
-                                  <span className={`font-black text-xl ${orderProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                    ฿{orderProfit.toLocaleString()}
-                                  </span>
+                                  <span className="text-slate-400">ค่าจัดส่งจริง:</span>
+                                  <button onClick={() => openEditModal(order)} className={`font-bold ${order.actualShippingFee !== undefined && order.actualShippingFee !== null ? 'text-slate-400 hover:text-orange-700' : 'text-orange-400 italic'}`}>
+                                    ฿{actualShipping}{order.actualShippingFee === undefined || order.actualShippingFee === null ? ' (ยังไม่ระบุ)' : ''}
+                                  </button>
                                 </div>
+                                <span className="text-slate-400">ทุนปลา ฿{orderCost}</span>
+                              </div>
+                              {(() => {
+                                const totalDiscount = order.items?.reduce((sum: number, item: OrderItem) => sum + (item.discount || 0), 0) || 0;
+                                const totalFree = order.items?.reduce((sum: number, item: OrderItem) => sum + (item.freeQty || 0), 0) || 0;
+                                if (totalDiscount > 0 || totalFree > 0) {
+                                  return (
+                                    <div className="flex items-center justify-between text-[10px] sm:text-xs mt-1 pt-1 border-t border-orange-100">
+                                      {totalDiscount > 0 && <span className="text-orange-500">ส่วนลด ฿{totalDiscount}</span>}
+                                      {totalFree > 0 && <span className="text-green-600">แถม {totalFree} ตัว</span>}
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+                              <div className="flex items-center justify-between text-xs sm:text-sm mt-2 pt-2 border-t border-orange-200">
+                                <span className="text-slate-500 font-bold">กำไรสุทธิ:</span>
+                                <span className={`font-black text-lg sm:text-xl ${orderProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                  ฿{orderProfit.toLocaleString()}
+                                </span>
                               </div>
                             </div>
                             
-                            <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end gap-2">
-                              <button onClick={() => openEditModal(order)} className="h-9 px-4 bg-blue-100 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg flex items-center justify-center gap-2 transition-all text-sm font-bold" title="แก้ไข">
-                                <Edit2 className="h-4 w-4" /> แก้ไข
+                            <div className="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-200 flex justify-end gap-2">
+                              <button onClick={() => openEditModal(order)} className="h-8 sm:h-9 px-3 sm:px-4 bg-blue-100 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition-all text-xs sm:text-sm font-bold" title="แก้ไข">
+                                <Edit2 className="h-3 w-3 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">แก้ไข</span>
                               </button>
-                              <button onClick={() => deleteOrder(order.id)} className="h-9 px-4 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded-lg flex items-center justify-center gap-2 transition-all text-sm font-bold" title="ลบ">
-                                <Trash2 className="h-4 w-4" /> ลบ
+                              <button onClick={() => deleteOrder(order.id)} className="h-8 sm:h-9 px-3 sm:px-4 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition-all text-xs sm:text-sm font-bold" title="ลบ">
+                                <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">ลบ</span>
                               </button>
                             </div>
                           </div>
@@ -709,31 +709,39 @@ export default function AdminPage() {
 
       {/* Edit Order Modal */}
       {isEditingOrder && editingOrder && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-orange-500 to-orange-600">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-white/20 rounded-2xl"><Edit2 className="h-6 w-6 text-white" /></div>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] rounded-2xl sm:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-4 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-orange-500 to-orange-600">
+              <div className="flex items-center gap-3">
+                <div className="p-2 sm:p-3 bg-white/20 rounded-xl sm:rounded-2xl"><Edit2 className="h-5 w-5 sm:h-6 sm:w-6 text-white" /></div>
                 <div>
-                  <h2 className="font-black text-xl text-white tracking-tight">แก้ไขออเดอร์</h2>
-                  <p className="text-orange-200 text-sm">#{editingOrder.id?.slice(-6)}</p>
+                  <h2 className="font-black text-lg sm:text-xl text-white tracking-tight">แก้ไขออเดอร์</h2>
+                  <p className="text-orange-200 text-xs sm:text-sm">#{editingOrder.id?.slice(-6)}</p>
                 </div>
               </div>
-              <button onClick={() => { setIsEditingOrder(false); setEditingOrder(null); }} className="h-12 w-12 bg-white/20 hover:bg-white/30 rounded-2xl flex items-center justify-center text-white transition-all"><X className="h-6 w-6" /></button>
+              <button onClick={() => { setIsEditingOrder(false); setEditingOrder(null); }} className="h-10 w-10 sm:h-12 sm:w-12 bg-white/20 hover:bg-white/30 rounded-xl sm:rounded-2xl flex items-center justify-center text-white transition-all"><X className="h-5 w-5 sm:h-6 sm:w-6" /></button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">ชื่อลูกค้า</label>
-                <input type="text" defaultValue={editingOrder.customerName} id="edit-customer-name" className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400" placeholder="ชื่อลูกค้า" />
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">ชื่อลูกค้า</label>
+                  <input type="text" defaultValue={editingOrder.customerName} id="edit-customer-name" className="w-full h-10 sm:h-12 bg-slate-50 border border-slate-200 rounded-xl px-3 sm:px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm sm:text-base" placeholder="ชื่อลูกค้า" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">หมายเหตุ</label>
+                  <input type="text" defaultValue={editingOrder.note} id="edit-order-note" className="w-full h-10 sm:h-12 bg-slate-50 border border-slate-200 rounded-xl px-3 sm:px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm sm:text-base" placeholder="หมายเหตุ" />
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">หมายเหตุ</label>
-                <input type="text" defaultValue={editingOrder.note} id="edit-order-note" className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400" placeholder="หมายเหตุ" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block mb-2">🚚 ค่าจัดส่งจริง (ต้นทุนที่เสียไป)</label>
-                <input type="number" defaultValue={editingOrder.actualShippingFee !== undefined ? editingOrder.actualShippingFee : (editingOrder.shippingFee || 60)} id="edit-actual-shipping-fee" className="w-full h-12 bg-orange-50 border border-orange-200 rounded-xl px-4 font-bold text-orange-700 outline-none focus:border-orange-400" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block mb-2">🚚 ค่าจัดส่งจริง (ต้นทุนที่เสียไป)</label>
+                  <input type="number" defaultValue={editingOrder.actualShippingFee !== undefined && editingOrder.actualShippingFee !== null ? editingOrder.actualShippingFee : ''} id="edit-actual-shipping-fee" placeholder="ยังไม่ระบุ" className="w-full h-10 sm:h-12 bg-orange-50 border border-orange-200 rounded-xl px-3 sm:px-4 font-bold text-orange-700 outline-none focus:border-orange-400 text-sm sm:text-base" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-orange-600 uppercase tracking-wider block mb-2">💸 ส่วนลดท้ายบิลบัญชีนี้</label>
+                  <input type="number" defaultValue={editingOrder.discount || ''} id="edit-bill-discount" placeholder="0" className="w-full h-10 sm:h-12 bg-orange-100 border border-orange-300 rounded-xl px-3 sm:px-4 font-black text-orange-700 outline-none focus:border-orange-500 text-sm sm:text-base" />
+                </div>
               </div>
               
               {/* Edit Items Section */}
@@ -742,7 +750,7 @@ export default function AdminPage() {
                   <label className="text-xs font-bold text-blue-500 uppercase tracking-wider block">🐟 รายการปลา</label>
                   <select
                     onChange={(e) => { if (e.target.value) { addEditItem(e.target.value); e.target.value = ''; } }}
-                    className="h-9 bg-blue-50 border border-blue-200 rounded-lg px-3 text-sm font-bold text-blue-600 outline-none focus:border-blue-400"
+                    className="h-8 sm:h-9 bg-blue-50 border border-blue-200 rounded-lg px-2 sm:px-3 text-xs sm:text-sm font-bold text-blue-600 outline-none focus:border-blue-400"
                     value=""
                   >
                     <option value="">+ เพิ่มปลา</option>
@@ -751,84 +759,78 @@ export default function AdminPage() {
                     ))}
                   </select>
                 </div>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <div className="space-y-2 max-h-48 sm:max-h-64 overflow-y-auto">
                   {editItems.map((item: OrderItem, idx: number) => {
                     const breed = breeds.find((b: Breed) => b.id === item.breedId);
                     return (
-                      <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                        <div className="flex items-center justify-between mb-2">
-                          <select
-                            value={item.breedId}
-                            onChange={(e) => updateEditItem(idx, 'breedId', e.target.value)}
-                            className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-sm font-bold text-slate-700 outline-none"
-                          >
-                            {breeds.map((b: Breed) => (
-                              <option key={b.id} value={b.id}>{b.name}</option>
-                            ))}
-                          </select>
-                          <button onClick={() => removeEditItem(idx)} className="h-8 w-8 bg-red-100 hover:bg-red-500 text-red-500 hover:text-white rounded-lg flex items-center justify-center transition-all">
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div>
-                            <label className="text-[10px] text-slate-400 block">เกรด</label>
+                      <div key={idx} className="bg-white rounded-xl sm:rounded-2xl border-2 border-slate-100 shadow-sm relative pt-4 pb-3 sm:pb-4 px-3 sm:px-4 mt-3">
+                        <button onClick={() => removeEditItem(idx)} className="absolute -top-2.5 -right-2.5 h-6 w-6 sm:h-7 sm:w-7 bg-red-100 hover:bg-red-500 text-red-500 hover:text-white rounded-full flex items-center justify-center transition-all shadow-sm z-10 border border-white">
+                          <X className="h-3 w-3 sm:h-4 sm:w-4" />
+                        </button>
+                        
+                        <div className="grid grid-cols-12 gap-2 sm:gap-3 mb-3">
+                          <div className="col-span-12 sm:col-span-6">
+                            <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">🐟 สายพันธุ์</label>
+                            <select
+                              value={item.breedId}
+                              onChange={(e) => updateEditItem(idx, 'breedId', e.target.value)}
+                              className="w-full h-9 sm:h-10 bg-slate-50 border border-slate-200 rounded-lg px-2 sm:px-3 text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+                            >
+                              {breeds.map((b: Breed) => (
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-span-6 sm:col-span-3">
+                            <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">เกรด</label>
                             <select
                               value={item.grade}
                               onChange={(e) => updateEditItem(idx, 'grade', e.target.value)}
-                              className="w-full h-8 bg-white border border-slate-200 rounded-lg px-1 text-xs font-bold text-slate-700"
+                              className="w-full h-9 sm:h-10 bg-slate-50 border border-slate-200 rounded-lg px-2 text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
                             >
                               <option value="normal">ธรรมดา</option>
                               <option value="premium">👑 พรีเมียม</option>
                             </select>
                           </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 block">ชนิด</label>
+                          <div className="col-span-6 sm:col-span-3">
+                            <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">ชนิด</label>
                             <select
                               value={item.type}
                               onChange={(e) => updateEditItem(idx, 'type', e.target.value)}
-                              className="w-full h-8 bg-white border border-slate-200 rounded-lg px-1 text-xs font-bold text-slate-700"
+                              className="w-full h-9 sm:h-10 bg-slate-50 border border-slate-200 rounded-lg px-2 text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
                             >
                               <option value="piece">ตัว</option>
                               <option value="pair">คู่</option>
                               <option value="set">ชุด</option>
                             </select>
                           </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-2 sm:gap-3 pt-3 border-t border-slate-100">
                           <div>
-                            <label className="text-[10px] text-slate-400 block">จำนวน</label>
+                            <label className="text-[10px] sm:text-xs text-blue-600 font-bold block mb-1 text-center">จำนวน</label>
                             <input
                               type="number"
                               min="1"
                               value={item.quantity}
                               onChange={(e) => updateEditItem(idx, 'quantity', parseInt(e.target.value) || 1)}
-                              className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-700 text-center"
+                              className="w-full h-9 sm:h-10 bg-blue-50/50 border border-blue-100 rounded-lg text-xs sm:text-sm font-black text-blue-700 text-center outline-none focus:border-blue-400"
                             />
                           </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 mt-2">
                           <div>
-                            <label className="text-[10px] text-slate-400 block">แถม</label>
+                            <label className="text-[10px] sm:text-xs text-green-600 font-bold block mb-1 text-center">แถม</label>
                             <input
                               type="number"
                               min="0"
-                              value={item.freeQty || 0}
+                              value={item.freeQty || ''}
+                              placeholder="0"
                               onChange={(e) => updateEditItem(idx, 'freeQty', parseInt(e.target.value) || 0)}
-                              className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-700"
+                              className="w-full h-9 sm:h-10 bg-green-50/50 border border-green-100 rounded-lg text-xs sm:text-sm font-black text-green-700 text-center outline-none focus:border-green-400"
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] text-slate-400 block">ส่วนลด</label>
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.discount || 0}
-                              onChange={(e) => updateEditItem(idx, 'discount', parseInt(e.target.value) || 0)}
-                              className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-700"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 block">ราคา</label>
-                            <div className="w-full h-8 bg-green-50 border border-green-200 rounded-lg px-2 text-xs font-bold text-green-600 flex items-center justify-center">
+                            <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1 text-center">หน่วยละ</label>
+                            <div className="w-full h-9 sm:h-10 bg-slate-100 rounded-lg text-xs sm:text-sm font-black text-slate-500 flex items-center justify-center">
                               ฿{item.price}
                             </div>
                           </div>
@@ -837,13 +839,13 @@ export default function AdminPage() {
                     );
                   })}
                   {editItems.length === 0 && (
-                    <p className="text-center text-slate-400 text-sm py-4">ยังไม่มีรายการปลา</p>
+                    <p className="text-center text-slate-400 text-xs sm:text-sm py-3 sm:py-4">ยังไม่มีรายการปลา</p>
                   )}
                 </div>
               </div>
             </div>
             
-            <div className="p-6 border-t border-slate-100 bg-slate-50 space-y-3">
+            <div className="p-3 sm:p-6 border-t border-slate-100 bg-slate-50 space-y-2 sm:space-y-3">
               <button
                 onClick={() => {
                   const message = generateOrderMessage(
@@ -873,7 +875,8 @@ export default function AdminPage() {
                   const updatedCustomerName = (document.getElementById('edit-customer-name') as HTMLInputElement)?.value;
                   const updatedNote = (document.getElementById('edit-order-note') as HTMLInputElement)?.value;
                   const updatedActualShippingFee = (document.getElementById('edit-actual-shipping-fee') as HTMLInputElement)?.value ? Number((document.getElementById('edit-actual-shipping-fee') as HTMLInputElement)?.value) : undefined;
-                  updateOrder(editingOrder.id, updatedItems, updatedCustomerName, updatedNote, updatedActualShippingFee);
+                  const updatedDiscount = (document.getElementById('edit-bill-discount') as HTMLInputElement)?.value ? Number((document.getElementById('edit-bill-discount') as HTMLInputElement)?.value) : 0;
+                  updateOrder(editingOrder.id, updatedItems, updatedCustomerName, updatedNote, updatedActualShippingFee, updatedDiscount);
                 }}
                 className="w-full h-14 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black uppercase text-sm tracking-widest transition-all flex items-center justify-center gap-2"
               >

@@ -41,6 +41,7 @@ export default function HomePage() {
   const [showCart, setShowCart] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [orderNote, setOrderNote] = useState('');
+  const [billDiscount, setBillDiscount] = useState<number>(0);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
 
   // Load Data from Supabase
@@ -182,7 +183,7 @@ export default function HomePage() {
   }, [orderItems]);
   
   const totalFishPrice = useMemo(() => orderItems.reduce((sum, item) => sum + calculateItemTotal(item), 0), [orderItems]);
-  const grandTotal = totalFishPrice + (orderItems.length > 0 ? bankInfo.shipping_fee : 0);
+  const grandTotal = Math.max(0, totalFishPrice - billDiscount + (orderItems.length > 0 ? bankInfo.shipping_fee : 0));
 
   const lineMessage = useMemo(() => {
     if (orderItems.length === 0) return '';
@@ -199,21 +200,18 @@ export default function HomePage() {
         text += `${index + 1}. 🎁 ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
       } else if (item.freeQty && item.freeQty > 0) {
         text += `${index + 1}. ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel} (ซื้อ ${paidQty} + แถม ${item.freeQty})`;
-        if (item.discount && item.discount > 0) {
-          text += ` (ลด ${item.discount} บาท)`;
-        }
         text += ` = ${itemTotal.toLocaleString()}.-\n`;
       } else {
         text += `${index + 1}. ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel}`;
-        if (item.discount && item.discount > 0) {
-          text += ` (ลด ${item.discount} บาท)`;
-        }
         text += ` = ${itemTotal.toLocaleString()}.-\n`;
       }
     });
     text += `----------------------------\n`;
     text += `📊 จำนวนปลาทั้งหมด: ${totalFishCount} ตัว\n`;
     text += `💰 ค่าปลา: ${totalFishPrice.toLocaleString()} บาท\n`;
+    if (billDiscount > 0) {
+      text += `🎁 ส่วนลดท้ายบิล: -${billDiscount.toLocaleString()} บาท\n`;
+    }
     text += `🚚 ค่าจัดส่ง: ${bankInfo.shipping_fee.toLocaleString()} บาท\n`;
     text += `🔥 ยอดรวมทั้งสิ้น: ${grandTotal.toLocaleString()} บาท\n`;
     text += `----------------------------\n`;
@@ -260,7 +258,7 @@ export default function HomePage() {
         total_amount: grandTotal,
         total_fish: totalFishCount,
         shipping_fee: bankInfo.shipping_fee,
-        actual_shipping_fee: bankInfo.shipping_fee,
+        discount: billDiscount,
         total_cost: totalCost,
         customer_name: customerName || null,
         note: orderNote || null,
@@ -276,6 +274,7 @@ export default function HomePage() {
       setOrderItems([]);
       setCustomerName('');
       setOrderNote('');
+      setBillDiscount(0);
       
       toast.success('บันทึกออเดอร์เรียบร้อย!');
     } catch (err) {
@@ -396,7 +395,7 @@ export default function HomePage() {
                   <div className="max-w-4xl mx-auto flex items-center justify-between">
                     <div>
                       <p className="text-[10px] sm:text-xs font-black text-slate-500 uppercase tracking-widest">ยอดรวมทั้งหมด</p>
-                      <p className="text-xl sm:text-2xl font-black text-blue-600 tracking-tighter">฿{(orderItems.reduce((acc, item) => acc + item.price, 0) + (bankInfo.shipping_fee || 0)).toLocaleString()}</p>
+                      <p className="text-xl sm:text-2xl font-black text-blue-600 tracking-tighter">฿{grandTotal.toLocaleString()}</p>
                     </div>
                     <button 
                       onClick={() => { setShowCart(true); window.scrollTo({ top: 0, behavior: 'instant' }); }}
@@ -480,19 +479,6 @@ export default function HomePage() {
                               </div>
                               <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-[10px] font-bold text-slate-400">ส่วนลด:</span>
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-slate-400 text-sm">-฿</span>
-                                    <input
-                                      type="number"
-                                      value={item.discount || ''}
-                                      onChange={(e) => setItemDiscount(item.id, Number(e.target.value) || 0)}
-                                      placeholder="0"
-                                      className="w-16 h-9 sm:h-7 bg-slate-50 border border-slate-200 rounded-lg px-2 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 min-h-[36px]"
-                                    />
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
                                   <span className="text-[10px] font-bold text-green-600">🎁 แถม:</span>
                                   <div className="flex items-center gap-1">
                                     <input
@@ -532,6 +518,18 @@ export default function HomePage() {
                             placeholder="หมายเหตุ"
                             className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
                           />
+                          <div className="relative">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-orange-600">💸 ส่วนลดท้ายบิล</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={billDiscount || ''}
+                              onChange={(e) => setBillDiscount(Number(e.target.value) || 0)}
+                              placeholder="0"
+                              className="w-full h-11 sm:h-10 bg-orange-50/50 border border-orange-200 rounded-xl px-4 pl-36 text-sm font-bold text-orange-700 outline-none focus:border-orange-400"
+                            />
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-orange-600">บาท</span>
+                          </div>
                           <button
                             onClick={saveOrder}
                             disabled={isSavingOrder}
@@ -551,6 +549,9 @@ export default function HomePage() {
                         <span className="text-white font-black">{totalFishCount} ตัว</span>
                       </div>
                       <div className="flex justify-between items-center text-xs font-black text-slate-500"><span className="uppercase tracking-[0.2em]">Shipping</span><span className="text-white font-black">฿{bankInfo.shipping_fee}</span></div>
+                      {billDiscount > 0 && (
+                        <div className="flex justify-between items-center text-xs font-black text-orange-400"><span className="uppercase tracking-[0.2em]">Discount</span><span className="font-black">-฿{billDiscount.toLocaleString()}</span></div>
+                      )}
                       <div className="flex justify-between items-center pt-2"><span className="font-black text-lg sm:text-xl tracking-tight uppercase">Total Amount</span><span className="font-black text-2xl sm:text-3xl text-blue-400 tracking-tighter">฿{grandTotal.toLocaleString()}</span></div>
                       <div className="pt-4 grid grid-cols-1 gap-3">
                         <button onClick={shareToLine} className="h-14 sm:h-14 bg-[#06C755] text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 active:scale-[0.98] min-h-[56px]"><MessageCircle className="h-5 w-5" /> Send to LINE</button>

@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_fee integer DEFAULT 0,    -- ค่าส่ง (ที่เก็บจากลูกค้า)
   actual_shipping_fee integer DEFAULT 0, -- ค่าจัดส่งจริงที่จ่ายให้ขนส่ง 🆕
   total_cost integer DEFAULT 0,      -- ต้นทุนปลารวมทั้งหมดในออเดอร์ 🆕
+  discount integer DEFAULT 0,        -- ส่วนลดท้ายบิล 🆕
   customer_id uuid REFERENCES customers(id) ON DELETE SET NULL,  -- เชื่อมกับลูกค้า
   customer_name text,                -- ชื่อลูกค้า (สำรอง)
   customer_phone text,               -- เบอร์โทรลูกค้า (สำรอง)

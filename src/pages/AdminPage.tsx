@@ -257,7 +257,25 @@ export default function AdminPage() {
   // Edit items helpers
   const openEditModal = (order: SavedOrder) => {
     setEditingOrder(order);
-    setEditItems(order.items || []);
+    // Recalculate prices from breed settings
+    const itemsWithUpdatedPrices = (order.items || []).map((item: OrderItem) => {
+      const breed = breeds.find((b: Breed) => b.id === item.breedId);
+      if (breed) {
+        let newPrice = 0;
+        if (item.grade === 'premium') {
+          newPrice = item.type === 'piece' ? (breed.premium_price_piece || 0) 
+            : item.type === 'pair' ? (breed.premium_price_pair || 0) 
+            : (breed.premium_price_set || 0);
+        } else {
+          newPrice = item.type === 'piece' ? (breed.price_piece || 0) 
+            : item.type === 'pair' ? (breed.price_pair || 0) 
+            : (breed.price_set || 0);
+        }
+        return { ...item, price: newPrice };
+      }
+      return item;
+    });
+    setEditItems(itemsWithUpdatedPrices);
     setIsEditingOrder(true);
   };
 
@@ -546,7 +564,7 @@ export default function AdminPage() {
                                 <span className="text-slate-400">ต้นทุนปลา <span className="font-bold text-red-500">฿{orderCost}</span></span>
                                 <span className="text-slate-300">+</span>
                                 <button 
-                                  onClick={() => { setEditingOrder(order); setIsEditingOrder(true); }}
+                                  onClick={() => openEditModal(order)}
                                   className="text-slate-400 hover:text-orange-700 cursor-pointer"
                                 >
                                   ค่าส่งจริง <span className="font-bold text-orange-500">฿{actualShipping}</span>
@@ -576,7 +594,7 @@ export default function AdminPage() {
                             </div>
                             
                             <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end gap-2">
-                              <button onClick={() => { setEditingOrder(order); setEditItems(order.items || []); setIsEditingOrder(true); }} className="h-9 px-4 bg-blue-100 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg flex items-center justify-center gap-2 transition-all text-sm font-bold" title="แก้ไข">
+                              <button onClick={() => openEditModal(order)} className="h-9 px-4 bg-blue-100 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg flex items-center justify-center gap-2 transition-all text-sm font-bold" title="แก้ไข">
                                 <Edit2 className="h-4 w-4" /> แก้ไข
                               </button>
                               <button onClick={() => deleteOrder(order.id)} className="h-9 px-4 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded-lg flex items-center justify-center gap-2 transition-all text-sm font-bold" title="ลบ">
@@ -752,7 +770,7 @@ export default function AdminPage() {
                             <X className="h-4 w-4" />
                           </button>
                         </div>
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                           <div>
                             <label className="text-[10px] text-slate-400 block">เกรด</label>
                             <select
@@ -786,17 +804,8 @@ export default function AdminPage() {
                               className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-700 text-center"
                             />
                           </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400 block">ราคา</label>
-                            <input
-                              type="number"
-                              value={item.price}
-                              onChange={(e) => updateEditItem(idx, 'price', parseInt(e.target.value) || 0)}
-                              className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-green-600 text-center"
-                            />
-                          </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 mt-2">
+                        <div className="grid grid-cols-3 gap-2 mt-2">
                           <div>
                             <label className="text-[10px] text-slate-400 block">แถม</label>
                             <input
@@ -816,6 +825,12 @@ export default function AdminPage() {
                               onChange={(e) => updateEditItem(idx, 'discount', parseInt(e.target.value) || 0)}
                               className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-700"
                             />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 block">ราคา</label>
+                            <div className="w-full h-8 bg-green-50 border border-green-200 rounded-lg px-2 text-xs font-bold text-green-600 flex items-center justify-center">
+                              ฿{item.price}
+                            </div>
                           </div>
                         </div>
                       </div>

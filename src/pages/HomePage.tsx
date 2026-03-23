@@ -36,7 +36,7 @@ export default function HomePage() {
   });
   const [loading, setLoading] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
-  const [selectedGrade, setSelectedGrade] = useState<'all' | 'normal' | 'premium'>('all');
+  const [selectedGrade, setSelectedGrade] = useState<'normal' | 'premium'>('premium');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCart, setShowCart] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -334,12 +334,6 @@ export default function HomePage() {
                 <h2 className="font-black uppercase tracking-tight text-base lg:text-xl text-slate-800">Select Species</h2>
                 <div className="flex bg-slate-100 p-1 rounded-xl">
                   <button 
-                    onClick={() => setSelectedGrade('all')}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all ${selectedGrade === 'all' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                  >
-                    ทั้งหมด
-                  </button>
-                  <button 
                     onClick={() => setSelectedGrade('premium')}
                     className={`px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all ${selectedGrade === 'premium' ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                   >
@@ -359,20 +353,20 @@ export default function HomePage() {
                     <div>
                       <h4 className="font-bold text-sm text-slate-800 mb-1.5 leading-tight line-clamp-1">{breed.name}</h4>
                       <div className="flex gap-1.5 mb-1.5">
-                        <button onClick={() => addToOrder(breed, 'piece', 'male', selectedGrade === 'all' ? 'normal' : selectedGrade)} className="flex-1 py-2 bg-blue-50 hover:bg-blue-500 hover:text-white text-blue-600 rounded-lg text-[11px] font-bold transition-all">
+                        <button onClick={() => addToOrder(breed, 'piece', 'male', selectedGrade)} className="flex-1 py-2 bg-blue-50 hover:bg-blue-500 hover:text-white text-blue-600 rounded-lg text-[11px] font-bold transition-all">
                           ตัวผู้ (฿{selectedGrade === 'premium' && breed.premium_price_piece ? breed.premium_price_piece : breed.price_piece})
                         </button>
-                        <button onClick={() => addToOrder(breed, 'piece', 'female', selectedGrade === 'all' ? 'normal' : selectedGrade)} className="flex-1 py-2 bg-pink-50 hover:bg-pink-500 hover:text-white text-pink-600 rounded-lg text-[11px] font-bold transition-all">
+                        <button onClick={() => addToOrder(breed, 'piece', 'female', selectedGrade)} className="flex-1 py-2 bg-pink-50 hover:bg-pink-500 hover:text-white text-pink-600 rounded-lg text-[11px] font-bold transition-all">
                           ตัวเมีย (฿{selectedGrade === 'premium' && breed.premium_price_piece ? breed.premium_price_piece : breed.price_piece})
                         </button>
                       </div>
                       <div className={`grid gap-1.5 ${breed.price_set && breed.price_set > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        <button onClick={() => addToOrder(breed, 'pair', 'mixed', selectedGrade === 'all' ? 'normal' : selectedGrade)} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
+                        <button onClick={() => addToOrder(breed, 'pair', 'mixed', selectedGrade)} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
                           <p className="text-[8px] font-black uppercase tracking-wider opacity-60">Pair</p>
                           <p className="font-black text-sm">฿{selectedGrade === 'premium' && breed.premium_price_pair ? breed.premium_price_pair : breed.price_pair}</p>
                         </button>
                         {breed.price_set && breed.price_set > 0 ? (
-                          <button onClick={() => addToOrder(breed, 'set', 'mixed', selectedGrade === 'all' ? 'normal' : selectedGrade)} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
+                          <button onClick={() => addToOrder(breed, 'set', 'mixed', selectedGrade)} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
                             <p className="text-[8px] font-black uppercase tracking-wider opacity-60">Set</p>
                             <p className="font-black text-sm">฿{selectedGrade === 'premium' && breed.premium_price_set ? breed.premium_price_set : breed.price_set}</p>
                           </button>

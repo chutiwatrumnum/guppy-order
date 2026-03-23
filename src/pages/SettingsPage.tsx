@@ -31,6 +31,7 @@ export default function SettingsPage() {
   const [isBreedModalOpen, setIsBreedModalOpen] = useState(false);
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [editingBreed, setEditingBreed] = useState<Breed | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Load Data
   useEffect(() => {
@@ -175,8 +176,35 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Search Bar */}
+        <div className="mb-4 px-2">
+          <div className="relative">
+            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="ค้นหาสายพันธุ์ปลา..."
+              className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 pl-10 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm"
+            />
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-400 text-xs transition-colors"
+                title="Clear Search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
-          {breeds.map(breed => (
+          {breeds
+            .filter(breed => breed.name.toLowerCase().includes(searchTerm.toLowerCase()))
+            .map(breed => (
             <div key={breed.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col group hover:shadow-md hover:border-blue-100 transition-all">
               <div className="flex items-center gap-3.5 flex-1 min-w-0 mb-3">
                 <div className="min-w-0 pr-2 w-full">

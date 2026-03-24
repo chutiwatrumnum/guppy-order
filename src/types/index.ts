@@ -119,3 +119,16 @@ export interface User {
   role: UserRole;
   email?: string;
 }
+
+// Customer type
+export interface Customer {
+  id: string;
+  name: string;
+  phone?: string;
+  address?: string;
+  note?: string;
+  points?: number;
+  total_orders?: number;
+  total_spent?: number;
+  created_at: string;
+}

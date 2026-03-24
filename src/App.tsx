@@ -5,6 +5,7 @@ import AuthScreen from './components/AuthScreen';
 import HomePage from './pages/HomePage';
 import SettingsPage from './pages/SettingsPage';
 import AdminPage from './pages/AdminPage';
+import CustomersPage from './pages/CustomersPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -64,6 +65,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <AdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/customers"
+          element={
+            <ProtectedRoute>
+              <CustomersPage />
             </ProtectedRoute>
           }
         />

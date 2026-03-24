@@ -5,7 +5,8 @@ import {
   Settings2,
   ClipboardList,
   LogOut,
-  Home
+  Home,
+  Users
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
@@ -74,6 +75,18 @@ export default function Layout({ children }: LayoutProps) {
                 >
                   <Settings2 className="h-4 w-4" />
                   <span className="hidden sm:inline">Settings</span>
+                </Link>
+                <Link 
+                  to="/customers"
+                  className={cn(
+                    "h-9 sm:h-10 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-wider sm:tracking-widest transition-all",
+                    location.pathname === '/customers' 
+                      ? "bg-slate-800 text-white shadow-lg shadow-slate-900/10" 
+                      : "bg-purple-50 text-purple-600 hover:bg-purple-100"
+                  )}
+                >
+                  <Users className="h-4 w-4" />
+                  <span className="hidden sm:inline">ลูกค้า</span>
                 </Link>
               </>
             )}

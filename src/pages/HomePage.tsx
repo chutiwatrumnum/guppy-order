@@ -18,7 +18,8 @@ import { toast, Toaster } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
 import { calculateItemTotal, getGenderLabel } from '../utils/message';
-import type { Breed, Gender, OrderItem, SavedOrder, GroupedOrderItem } from '../types';
+import type { Breed, Gender, OrderItem, SavedOrder, GroupedOrderItem, Customer } from '../types';
+import { User } from 'lucide-react';
 import Layout from './Layout';
 
 export default function HomePage() {
@@ -39,10 +40,31 @@ export default function HomePage() {
   const [selectedGrade, setSelectedGrade] = useState<'normal' | 'premium'>('premium');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCart, setShowCart] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
   const [orderNote, setOrderNote] = useState('');
   const [billDiscount, setBillDiscount] = useState<number>(0);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+
+  // Handle customer selection
+  const handleCustomerChange = (customerId: string) => {
+    setSelectedCustomerId(customerId);
+    if (customerId) {
+      const customer = customers.find(c => c.id === customerId);
+      if (customer) {
+        setCustomerName(customer.name || '');
+        setCustomerPhone(customer.phone || '');
+        setCustomerAddress(customer.address || '');
+      }
+    } else {
+      setCustomerName('');
+      setCustomerPhone('');
+      setCustomerAddress('');
+    }
+  };
 
   // Load Data from Supabase
   useEffect(() => {
@@ -66,6 +88,9 @@ export default function HomePage() {
       if (settingsData && settingsData.length > 0) {
         setBankInfo(settingsData[0]);
       }
+      
+      const { data: customersData } = await supabase.from('customers').select('*').order('name');
+      setCustomers(customersData || []);
     } catch (err) {
       console.error('Fetch error:', err);
     } finally {
@@ -188,7 +213,18 @@ export default function HomePage() {
   const lineMessage = useMemo(() => {
     if (orderItems.length === 0) return '';
     let text = `🐠 รายการสั่งซื้อปลาหางนกยูง\n`;
-    text += `----------------------------\n`;
+    
+    // เพิ่มข้อมูลลูกค้าถ้ามี
+    if (customerName) {
+      text += `👤 ลูกค้า: ${customerName}`;
+      if (customerPhone) text += ` (${customerPhone})`;
+      text += `\n`;
+      if (customerAddress) {
+        text += `📍 ที่อยู่: ${customerAddress}\n`;
+      }
+      text += `----------------------------\n`;
+    }
+    
     orderItems.forEach((item, index) => {
       const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set';
       const genderLabel = item.gender === 'male' ? '♂️' : item.gender === 'female' ? '♀️' : '⚥';
@@ -220,9 +256,16 @@ export default function HomePage() {
     text += `เลขบัญชี: ${bankInfo.account_number || 'ไม่ระบุเลขบัญชี'}\n`;
     text += `ชื่อบัญชี: ${bankInfo.account_name || 'ไม่ระบุชื่อ'}\n`;
     text += `----------------------------\n`;
-    text += `ชำระแล้วรบกวนส่งสลิปแจ้งชื่อที่อยู่ได้เลยครับ 🙏✨`;
+    
+    // ถ้าเลือกลูกค้าจาก dropdown แสดงข้อความสั้น ไม่ต้องขอชื่อที่อยู่
+    if (selectedCustomerId) {
+      text += `ชำระแล้วส่งสลิปได้เลยครับ 🙏✨`;
+    } else {
+      text += `ชำระแล้วรบกวนส่งสลิปแจ้งชื่อที่อยู่ได้เลยครับ 🙏✨`;
+    }
+    
     return text;
-  }, [orderItems, totalFishCount, totalFishPrice, bankInfo, grandTotal]);
+  }, [orderItems, totalFishCount, totalFishPrice, bankInfo, grandTotal, customerName, customerPhone, customerAddress, selectedCustomerId]);
 
   const copyToClipboard = () => {
     if (!lineMessage) return;
@@ -271,8 +314,30 @@ export default function HomePage() {
       
       if (error) throw error;
       
+      // Update customer stats if selected from dropdown
+      if (selectedCustomerId) {
+        const { data: customerData } = await supabase
+          .from('customers')
+          .select('total_orders, total_spent')
+          .eq('id', selectedCustomerId)
+          .single();
+        
+        if (customerData) {
+          await supabase
+            .from('customers')
+            .update({
+              total_orders: (customerData.total_orders || 0) + 1,
+              total_spent: (customerData.total_spent || 0) + grandTotal
+            })
+            .eq('id', selectedCustomerId);
+        }
+      }
+      
       setOrderItems([]);
+      setSelectedCustomerId('');
       setCustomerName('');
+      setCustomerPhone('');
+      setCustomerAddress('');
       setOrderNote('');
       setBillDiscount(0);
       
@@ -498,13 +563,38 @@ export default function HomePage() {
                       <div className="mt-4 sm:mt-6 p-4 bg-blue-50 rounded-2xl border border-blue-100">
                         <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-3">ข้อมูลลูกค้า (ไม่บังคับ)</p>
                         <div className="space-y-3">
+                          <div className="relative">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <select
+                              value={selectedCustomerId}
+                              onChange={(e) => handleCustomerChange(e.target.value)}
+                              className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl pl-10 pr-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 appearance-none cursor-pointer"
+                            >
+                              <option value="">เลือกลูกค้า (ถ้ามี)</option>
+                              {customers.map(customer => (
+                                <option key={customer.id} value={customer.id}>
+                                  {customer.name} {customer.phone ? `(${customer.phone})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                           <input
                             type="text"
                             value={customerName}
-                            onChange={(e) => setCustomerName(e.target.value)}
-                            placeholder="ชื่อลูกค้า"
+                            onChange={(e) => { setCustomerName(e.target.value); setSelectedCustomerId(''); }}
+                            placeholder="หรือพิมพ์ชื่อเอง"
                             className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
                           />
+                          {selectedCustomerId && customerPhone && (
+                            <div className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-100 px-4 py-2 rounded-xl">
+                              📱 {customerPhone}
+                            </div>
+                          )}
+                          {selectedCustomerId && customerAddress && (
+                            <div className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-100 px-4 py-2 rounded-xl">
+                              📍 {customerAddress}
+                            </div>
+                          )}
                           <input
                             type="text"
                             value={orderNote}

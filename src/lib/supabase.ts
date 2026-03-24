@@ -14,7 +14,7 @@ const PROJECT_NEW_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 // ==========================================
 const USE_PROJECT: 'old' | 'new' = 'new'
 
-const supabaseUrl = USE_PROJECT === 'new' ? PROJECT_NEW_URL : PROJECT_OLD_URL
-const supabaseAnonKey = USE_PROJECT === 'new' ? PROJECT_NEW_KEY : PROJECT_OLD_KEY
+const supabaseUrl = USE_PROJECT === 'old' ? PROJECT_NEW_URL : PROJECT_OLD_URL
+const supabaseAnonKey = USE_PROJECT === 'old' ? PROJECT_NEW_KEY : PROJECT_OLD_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)

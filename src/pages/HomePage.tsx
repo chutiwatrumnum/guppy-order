@@ -298,11 +298,11 @@ export default function HomePage() {
       const orderData = {
         shop_id: user?.shop_name || 'default',
         items: orderItems,
-        total_amount: grandTotal,
+        total_amount: Math.round(grandTotal),
         total_fish: totalFishCount,
-        shipping_fee: bankInfo.shipping_fee,
-        discount: billDiscount,
-        total_cost: totalCost,
+        shipping_fee: Math.round(bankInfo.shipping_fee || 0),
+        discount: Math.round(billDiscount || 0),
+        total_cost: Math.round(totalCost),
         customer_name: customerName || null,
         note: orderNote || null,
         created_by: user?.username || 'unknown'

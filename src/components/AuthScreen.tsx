@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Fish, User as UserIcon, Lock, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -23,47 +22,34 @@ const Label = ({ children, className }: { children: React.ReactNode, className?:
   </label>
 );
 
+// Supabase Auth ใช้อีเมลเป็น identifier แต่พนักงานยังพิมพ์ username เหมือนเดิม
+// ถ้ากรอกมาเป็นอีเมลอยู่แล้วก็ใช้ตามนั้น ไม่งั้นเติมโดเมนให้
+const USERNAME_EMAIL_DOMAIN = 'guppy-order.local';
+
+const toEmail = (identifier: string) => {
+  const value = identifier.trim().toLowerCase();
+  return value.includes('@') ? value : `${value}@${USERNAME_EMAIL_DOMAIN}`;
+};
+
 export default function AuthScreen() {
-  const { login } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [shopName, setShopName] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleAuth = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      if (isLogin) {
-        const { data, error } = await supabase
-          .from('app_users')
-          .select('*')
-          .eq('username', username.trim().toLowerCase())
-          .eq('password', password)
-          .single();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: toEmail(username),
+        password,
+      });
 
-        if (error || !data) throw new Error('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง');
+      // ข้อความเดียวกันหมดไม่ว่าพลาดตรงไหน จะได้ไม่บอกใบ้ว่ามี username นี้อยู่จริงหรือเปล่า
+      if (error) throw new Error('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง');
 
-        login({ id: data.id, username: data.username, shop_name: data.shop_name, role: data.role || 'user' });
-        toast.success('เข้าสู่ระบบสำเร็จ');
-      } else {
-        const { data, error } = await supabase
-          .from('app_users')
-          .insert([{
-            username: username.trim().toLowerCase(),
-            password: password,
-            shop_name: shopName,
-            role: 'user'
-          }])
-          .select()
-          .single();
-
-        if (error) throw new Error('ชื่อผู้ใช้นี้ถูกใช้ไปแล้วครับ');
-
-        login({ id: data.id, username: data.username, shop_name: data.shop_name, role: data.role || 'user' });
-        toast.success('สมัครสมาชิกสำเร็จ!');
-      }
+      // ไม่ต้อง setUser เอง — AuthContext ฟัง onAuthStateChange อยู่แล้ว
+      toast.success('เข้าสู่ระบบสำเร็จ');
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -83,27 +69,12 @@ export default function AuthScreen() {
         </div>
 
         <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-lg">
-          <div className="flex p-1.5 bg-slate-100 rounded-2xl mb-10">
-            <button onClick={() => setIsLogin(true)} className={cn("flex-1 h-12 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", isLogin ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-700')}>เข้าสู่ระบบ</button>
-            <button onClick={() => setIsLogin(false)} className={cn("flex-1 h-12 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", !isLogin ? 'bg-white shadow-md text-blue-600' : 'text-slate-500 hover:text-slate-700')}>สมัครสมาชิก</button>
-          </div>
-
-          <form onSubmit={handleAuth} className="space-y-6">
-            {!isLogin && (
-              <div className="space-y-2">
-                <Label>ชื่อร้าน / ชื่อฟาร์ม</Label>
-                <div className="relative group">
-                  <Fish className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors group-focus-within:text-blue-500" />
-                  <Input placeholder="เช่น เจมส์ Guppy" value={shopName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setShopName(e.target.value)} required className="pl-12" />
-                </div>
-              </div>
-            )}
-
+          <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
               <Label>ชื่อผู้ใช้งาน (Username)</Label>
               <div className="relative group">
                 <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors group-focus-within:text-blue-500" />
-                <Input placeholder="Username" value={username} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)} required className="pl-12" />
+                <Input placeholder="Username" value={username} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)} required className="pl-12" autoComplete="username" />
               </div>
             </div>
 
@@ -111,14 +82,18 @@ export default function AuthScreen() {
               <Label>รหัสผ่าน</Label>
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors group-focus-within:text-blue-500" />
-                <Input type="password" placeholder="••••••••" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} required className="pl-12" />
+                <Input type="password" placeholder="••••••••" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} required className="pl-12" autoComplete="current-password" />
               </div>
             </div>
 
             <button type="submit" className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 active:scale-95 transition-all rounded-2xl font-bold flex items-center justify-center gap-2 h-14 px-6 shadow-md text-xs uppercase tracking-[0.2em]" disabled={loading}>
-              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : (isLogin ? 'Login to ERP' : 'Create My Shop')}
+              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : 'Login to ERP'}
             </button>
           </form>
+
+          <p className="text-[10px] text-slate-400 text-center mt-8 leading-relaxed">
+            บัญชีผู้ใช้งานสร้างโดยผู้ดูแลระบบเท่านั้น<br />ต้องการเพิ่มผู้ใช้ กรุณาติดต่อแอดมินร้าน
+          </p>
         </div>
       </div>
     </div>

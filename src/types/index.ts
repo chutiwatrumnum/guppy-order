@@ -17,6 +17,9 @@ export type Gender = 'male' | 'female' | 'mixed';
 
 export type OrderItemType = 'piece' | 'pair' | 'set';
 
+export type OrderStatus = 'pending' | 'shipped' | 'delivered' | 'cancelled';
+export type PaymentStatus = 'unpaid' | 'deposit' | 'paid';
+
 export interface OrderItem {
   id: string;
   breedId: string;
@@ -54,6 +57,10 @@ export interface SavedOrder {
   totalCost?: number;
   discount?: number;
   orderNumber?: string;
+  status?: OrderStatus;
+  paymentStatus?: PaymentStatus;
+  paidAmount?: number;
+  trackingNumber?: string;
   customerId?: string | null;
   customerName?: string;
   customerPhone?: string;

@@ -13,8 +13,21 @@ import { supabase } from '../lib/supabase';
 import { toast, Toaster } from 'sonner';
 import { cn } from '../lib/utils';
 import { generateOrderMessage } from '../utils/message';
-import type { OrderItem, SavedOrder, Breed } from '../types';
+import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '../types';
 import Layout from './Layout';
+
+const STATUS_LABEL: Record<OrderStatus, { text: string; cls: string }> = {
+  pending:   { text: '📦 รอส่ง',   cls: 'bg-amber-100 text-amber-700' },
+  shipped:   { text: '🚚 ส่งแล้ว', cls: 'bg-blue-100 text-blue-700' },
+  delivered: { text: '✅ ถึงแล้ว', cls: 'bg-green-100 text-green-700' },
+  cancelled: { text: '✖ ยกเลิก',  cls: 'bg-slate-200 text-slate-500' },
+};
+
+const PAYMENT_LABEL: Record<PaymentStatus, { text: string; cls: string }> = {
+  unpaid:  { text: '⏳ ยังไม่จ่าย', cls: 'bg-red-100 text-red-600' },
+  deposit: { text: '💵 มัดจำ',      cls: 'bg-amber-100 text-amber-700' },
+  paid:    { text: '💰 จ่ายแล้ว',   cls: 'bg-green-100 text-green-700' },
+};
 
 export default function AdminPage() {
   // State
@@ -26,6 +39,7 @@ export default function AdminPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
   
   // Edit state
   const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
@@ -91,6 +105,10 @@ export default function AdminPage() {
         totalCost: order.total_cost || 0,
         discount: order.discount || 0,
         orderNumber: order.order_number,
+        status: order.status,
+        paymentStatus: order.payment_status,
+        paidAmount: order.paid_amount || 0,
+        trackingNumber: order.tracking_number,
         customerId: order.customer_id,
         customerName: order.customer_name,
         customerPhone: order.customer_phone,
@@ -112,6 +130,39 @@ export default function AdminPage() {
     return type === 'piece' ? (breed.premium_cost_piece || 0)
       : type === 'pair' ? (breed.premium_cost_pair || 0)
       : (breed.premium_cost_set || 0);
+  };
+
+  // อัปเดตสถานะแบบ optimistic แล้ว rollback ถ้าเซิร์ฟเวอร์ปฏิเสธ
+  const setOrderStatus = async (order: SavedOrder, status: OrderStatus) => {
+    const previous = allOrders;
+    setAllOrders(orders => orders.map(o => o.id === order.id ? { ...o, status } : o));
+
+    const { error } = await supabase.from('orders').update({ status }).eq('id', order.id);
+    if (error) {
+      setAllOrders(previous);
+      toast.error('อัปเดตสถานะไม่สำเร็จ');
+    }
+  };
+
+  const setPaymentStatus = async (order: SavedOrder, paymentStatus: PaymentStatus) => {
+    // จ่ายครบ = ยอดที่จ่ายเท่ายอดบิล, ยังไม่จ่าย = 0, มัดจำปล่อยให้กรอกเอง
+    const paidAmount =
+      paymentStatus === 'paid' ? (order.totalAmount || 0)
+      : paymentStatus === 'unpaid' ? 0
+      : (order.paidAmount || 0);
+
+    const previous = allOrders;
+    setAllOrders(orders => orders.map(o => o.id === order.id ? { ...o, paymentStatus, paidAmount } : o));
+
+    const { error } = await supabase
+      .from('orders')
+      .update({ payment_status: paymentStatus, paid_amount: paidAmount })
+      .eq('id', order.id);
+
+    if (error) {
+      setAllOrders(previous);
+      toast.error('อัปเดตการชำระเงินไม่สำเร็จ');
+    }
   };
 
   // Dashboard stats
@@ -452,8 +503,12 @@ export default function AdminPage() {
                 
                 {/* Filtered Orders */}
                 {(() => {
-                  const filteredOrders = searchTerm.trim() 
-                    ? allOrders.filter(order => {
+                  const byPayment = paymentFilter === 'all'
+                    ? allOrders
+                    : allOrders.filter(o => (o.paymentStatus || 'unpaid') === paymentFilter);
+
+                  const filteredOrders = searchTerm.trim()
+                    ? byPayment.filter(order => {
                         const term = searchTerm.toLowerCase();
                         const matchCustomer = order.customerName?.toLowerCase().includes(term);
                         const matchItems = order.items?.some((item: OrderItem) => 
@@ -463,10 +518,35 @@ export default function AdminPage() {
                         const matchId = order.id?.toLowerCase().includes(term);
                         return matchCustomer || matchItems || matchNote || matchId;
                       })
-                    : allOrders;
-                  
+                    : byPayment;
+
+                  const outstanding = allOrders
+                    .filter(o => (o.paymentStatus || 'unpaid') !== 'paid' && o.status !== 'cancelled')
+                    .reduce((sum, o) => sum + Math.max(0, (o.totalAmount || 0) - (o.paidAmount || 0)), 0);
+
                   return (
                     <div>
+                      {/* ตัวกรองสถานะการชำระเงิน */}
+                      <div className="flex flex-wrap items-center gap-2 mb-4">
+                        {([['all', 'ทั้งหมด'], ['unpaid', '⏳ ยังไม่จ่าย'], ['deposit', '💵 มัดจำ'], ['paid', '💰 จ่ายแล้ว']] as const).map(([key, label]) => (
+                          <button
+                            key={key}
+                            onClick={() => setPaymentFilter(key as 'all' | PaymentStatus)}
+                            className={cn(
+                              'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
+                              paymentFilter === key ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                        {outstanding > 0 && (
+                          <span className="ml-auto text-xs font-black text-red-600 bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg">
+                            ค้างชำระรวม ฿{outstanding.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+
                       <div className="mb-4 text-sm text-slate-500">พบ {filteredOrders.length} รายการ {searchTerm && `(จาก ${allOrders.length} รายการ)`}</div>
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         {filteredOrders.map((order, index) => {
@@ -491,6 +571,38 @@ export default function AdminPage() {
                               <span className="font-black text-xl sm:text-2xl text-blue-600">฿{(order.totalAmount || 0).toLocaleString()}</span>
                             </div>
                             
+                            <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                              <span className={cn('text-[10px] font-black px-2 py-1 rounded-md', PAYMENT_LABEL[(order.paymentStatus || 'unpaid') as PaymentStatus].cls)}>
+                                {PAYMENT_LABEL[(order.paymentStatus || 'unpaid') as PaymentStatus].text}
+                                {order.paymentStatus === 'deposit' && (order.paidAmount || 0) > 0 && ` ฿${(order.paidAmount || 0).toLocaleString()}`}
+                              </span>
+                              <span className={cn('text-[10px] font-black px-2 py-1 rounded-md', STATUS_LABEL[(order.status || 'pending') as OrderStatus].cls)}>
+                                {STATUS_LABEL[(order.status || 'pending') as OrderStatus].text}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              <select
+                                value={order.paymentStatus || 'unpaid'}
+                                onChange={(e) => setPaymentStatus(order, e.target.value as PaymentStatus)}
+                                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-[11px] font-bold text-slate-600 outline-none focus:border-blue-400"
+                              >
+                                <option value="unpaid">⏳ ยังไม่จ่าย</option>
+                                <option value="deposit">💵 มัดจำ</option>
+                                <option value="paid">💰 จ่ายแล้ว</option>
+                              </select>
+                              <select
+                                value={order.status || 'pending'}
+                                onChange={(e) => setOrderStatus(order, e.target.value as OrderStatus)}
+                                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-[11px] font-bold text-slate-600 outline-none focus:border-blue-400"
+                              >
+                                <option value="pending">📦 รอส่ง</option>
+                                <option value="shipped">🚚 ส่งแล้ว</option>
+                                <option value="delivered">✅ ถึงแล้ว</option>
+                                <option value="cancelled">✖ ยกเลิก</option>
+                              </select>
+                            </div>
+
                             {order.customerName && <p className="text-xs sm:text-sm text-slate-600 mb-1">👤 {order.customerName}</p>}
                             {order.customerPhone && <p className="text-xs text-slate-500 mb-1">📱 {order.customerPhone}</p>}
                             {order.customerAddress && <p className="text-xs text-slate-500 mb-1">📍 {order.customerAddress}</p>}

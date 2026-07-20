@@ -53,7 +53,11 @@ export interface SavedOrder {
   actualShippingFee?: number;
   totalCost?: number;
   discount?: number;
+  orderNumber?: string;
+  customerId?: string | null;
   customerName?: string;
+  customerPhone?: string;
+  customerAddress?: string;
   note?: string;
 }
 

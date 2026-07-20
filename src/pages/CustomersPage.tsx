@@ -20,10 +20,11 @@ interface Customer {
   name: string;
   phone: string;
   address: string;
-  points: number;
+  created_at: string;
+  // คำนวณสดจาก view customer_order_stats ไม่ใช่คอลัมน์ในตาราง customers
   total_orders: number;
   total_spent: number;
-  created_at: string;
+  last_order_at: string | null;
 }
 
 export default function CustomersPage() {
@@ -47,13 +48,25 @@ export default function CustomersPage() {
   const fetchCustomers = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .order('name');
-      
+      const [{ data, error }, { data: stats, error: statsError }] = await Promise.all([
+        supabase.from('customers').select('*').order('name'),
+        supabase.from('customer_order_stats').select('*'),
+      ]);
+
       if (error) throw error;
-      setCustomers(data || []);
+      if (statsError) throw statsError;
+
+      const byCustomer = new Map((stats || []).map((s: any) => [s.customer_id, s]));
+
+      setCustomers((data || []).map((c: any) => {
+        const s = byCustomer.get(c.id);
+        return {
+          ...c,
+          total_orders: Number(s?.total_orders ?? 0),
+          total_spent: Number(s?.total_spent ?? 0),
+          last_order_at: s?.last_order_at ?? null,
+        };
+      }));
     } catch (err) {
       console.error('Fetch customers error:', err);
     } finally {
@@ -236,6 +249,9 @@ export default function CustomersPage() {
                       <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
                         <span>📋 {customer.total_orders || 0} ออเดอร์</span>
                         <span>💰 ฿{(customer.total_spent || 0).toLocaleString()}</span>
+                        {customer.last_order_at && (
+                          <span>🕒 ล่าสุด {new Date(customer.last_order_at).toLocaleDateString('th-TH')}</span>
+                        )}
                       </div>
                     </div>
                     <div className="flex gap-2 ml-4">

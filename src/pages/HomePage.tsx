@@ -275,7 +275,10 @@ export default function HomePage() {
         shipping_fee: Math.round(bankInfo.shipping_fee || 0),
         discount: Math.round(billDiscount || 0),
         total_cost: Math.round(totalCost),
+        customer_id: selectedCustomerId || null,
         customer_name: customerName || null,
+        customer_phone: customerPhone || null,
+        customer_address: customerAddress || null,
         note: orderNote || null,
         created_by: user?.username || 'unknown'
       };
@@ -286,25 +289,10 @@ export default function HomePage() {
       
       if (error) throw error;
       
-      // Update customer stats if selected from dropdown
-      if (selectedCustomerId) {
-        const { data: customerData } = await supabase
-          .from('customers')
-          .select('total_orders, total_spent')
-          .eq('id', selectedCustomerId)
-          .single();
-        
-        if (customerData) {
-          await supabase
-            .from('customers')
-            .update({
-              total_orders: (customerData.total_orders || 0) + 1,
-              total_spent: (customerData.total_spent || 0) + grandTotal
-            })
-            .eq('id', selectedCustomerId);
-        }
-      }
-      
+      // ยอดสะสมลูกค้าคำนวณสดจาก view customer_order_stats แล้ว
+      // ไม่ต้องบวกเองตรงนี้ (ของเดิมบวกอย่างเดียว ลบออเดอร์แล้วไม่เคยลด)
+
+
       setOrderItems([]);
       setSelectedCustomerId('');
       setCustomerName('');

@@ -90,7 +90,11 @@ export default function AdminPage() {
         actualShippingFee: order.actual_shipping_fee,
         totalCost: order.total_cost || 0,
         discount: order.discount || 0,
+        orderNumber: order.order_number,
+        customerId: order.customer_id,
         customerName: order.customer_name,
+        customerPhone: order.customer_phone,
+        customerAddress: order.customer_address,
         note: order.note
       }));
       
@@ -479,7 +483,7 @@ export default function AdminPage() {
                           <div key={order.id} className="p-3 sm:p-5 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100 hover:shadow-md transition-all">
                             <div className="flex items-center justify-between mb-2 sm:mb-3">
                               <div className="flex items-center gap-2 sm:gap-3">
-                                <span className="text-lg sm:text-xl font-black text-blue-600">#{allOrders.length - index}</span>
+                                <span className="text-lg sm:text-xl font-black text-blue-600">{order.orderNumber || `#${allOrders.length - index}`}</span>
                                 <span className="text-xs sm:text-sm text-slate-500">
                                   {new Date(order.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}
                                 </span>
@@ -488,6 +492,8 @@ export default function AdminPage() {
                             </div>
                             
                             {order.customerName && <p className="text-xs sm:text-sm text-slate-600 mb-1">👤 {order.customerName}</p>}
+                            {order.customerPhone && <p className="text-xs text-slate-500 mb-1">📱 {order.customerPhone}</p>}
+                            {order.customerAddress && <p className="text-xs text-slate-500 mb-1">📍 {order.customerAddress}</p>}
                             <p className="text-xs text-slate-400">🐟 {(order.totalFish || 0)} ตัว • 📋 {(order.items?.length || 0)} รายการ</p>
                             
                             {order.note && <p className="text-xs text-slate-400 mt-1 italic">💬 {order.note}</p>}

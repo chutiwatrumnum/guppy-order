@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { toast, Toaster } from 'sonner';
 import { cn } from '../lib/utils';
 import { generateOrderMessage } from '../utils/message';
+import { getPublicOrderUrl } from '../utils/publicUrl';
 import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '../types';
 import Layout from './Layout';
 
@@ -607,7 +608,7 @@ export default function AdminPage() {
                             {order.publicToken && (
                               <button
                                 onClick={async () => {
-                                  const url = `${window.location.origin}/o/${order.publicToken}`;
+                                  const url = getPublicOrderUrl(order.publicToken!);
                                   try {
                                     await navigator.clipboard.writeText(`🐠 ใบสรุปออเดอร์ ${order.orderNumber || ''}\n${url}`);
                                     toast.success('คัดลอกลิงก์ใบสรุปแล้ว');

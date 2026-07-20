@@ -17,6 +17,7 @@ import { cn } from '../lib/utils';
 import { calculateItemTotal, getGenderLabel } from '../utils/message';
 import { parseThaiAddress } from '../utils/address';
 import PromptPayQR from '../components/PromptPayQR';
+import { getPublicOrderUrl } from '../utils/publicUrl';
 import type { Breed, Gender, OrderItem, GroupedOrderItem, Customer } from '../types';
 import { User } from 'lucide-react';
 import Layout from './Layout';
@@ -336,8 +337,15 @@ export default function HomePage() {
 
       if (saved?.public_token) {
         setLastOrderLink({
-          url: `${window.location.origin}/o/${saved.public_token}`,
+          url: getPublicOrderUrl(saved.public_token),
           orderNumber: saved.order_number,
+        });
+      } else {
+        // ออเดอร์บันทึกแล้วแต่ไม่ได้ token กลับมา ลิงก์จะเสีย
+        // บอกให้รู้ดีกว่าโชว์ลิงก์ที่เปิดไม่ได้
+        setLastOrderLink(null);
+        toast.warning('บันทึกออเดอร์แล้ว แต่สร้างลิงก์ใบสรุปไม่สำเร็จ', {
+          description: 'คัดลอกลิงก์ได้จากหน้าแอดมินแทน',
         });
       }
       

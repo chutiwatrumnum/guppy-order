@@ -17,7 +17,7 @@ import { cn } from '../lib/utils';
 import { calculateItemTotal, getGenderLabel } from '../utils/message';
 import { parseThaiAddress } from '../utils/address';
 import PromptPayQR from '../components/PromptPayQR';
-import { getPublicOrderUrl } from '../utils/publicUrl';
+import { getLiffOrderUrl } from '../utils/liff';
 import type { Breed, Gender, OrderItem, GroupedOrderItem, Customer } from '../types';
 import { User } from 'lucide-react';
 import Layout from './Layout';
@@ -337,7 +337,7 @@ export default function HomePage() {
 
       if (saved?.public_token) {
         setLastOrderLink({
-          url: getPublicOrderUrl(saved.public_token),
+          url: getLiffOrderUrl(saved.public_token),
           orderNumber: saved.order_number,
         });
       } else {

@@ -58,6 +58,7 @@ export interface SavedOrder {
   discount?: number;
   orderNumber?: string;
   publicToken?: string;
+  lineUserId?: string | null;
   status?: OrderStatus;
   paymentStatus?: PaymentStatus;
   paidAmount?: number;

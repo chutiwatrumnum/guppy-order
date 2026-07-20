@@ -4,6 +4,7 @@ import { Fish, Loader2, Check, Send } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { supabase } from '../lib/supabase';
 import PromptPayQR from '../components/PromptPayQR';
+import { getLineUserId } from '../utils/liff';
 
 // หน้านี้เปิดได้โดยไม่ต้องล็อกอิน — ทุกอย่างผ่าน RPC ที่รับ token เท่านั้น
 // ห้ามเรียกตารางตรง ๆ ในไฟล์นี้ anon ไม่มีสิทธิ์อยู่แล้วและไม่ควรมี
@@ -61,6 +62,7 @@ export default function PublicOrderPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [linkedToLine, setLinkedToLine] = useState(false);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -75,14 +77,28 @@ export default function PublicOrderPage() {
 
       if (error || !data) {
         setOrder(null);
-      } else {
-        const o = data as PublicOrder;
-        setOrder(o);
-        setName(o.customer_name || '');
-        setPhone(o.customer_phone || '');
-        setAddress(o.customer_address || '');
+        setLoading(false);
+        return;
       }
+
+      const o = data as PublicOrder;
+      setOrder(o);
+      setName(o.customer_name || '');
+      setPhone(o.customer_phone || '');
+      setAddress(o.customer_address || '');
       setLoading(false);
+
+      // ถ้าเปิดในแอป LINE ให้ผูกบัญชีกับออเดอร์เงียบ ๆ
+      // ลูกค้าจะได้รับอัปเดตพัสดุอัตโนมัติโดยไม่ต้องทำอะไรเพิ่ม
+      // เปิดในเบราว์เซอร์ธรรมดาก็ข้ามไป หน้ายังใช้งานได้ครบ
+      const lineUserId = await getLineUserId();
+      if (!active || !lineUserId) return;
+
+      const { data: linked } = await supabase.rpc('link_order_line_user', {
+        p_token: token,
+        p_line_user_id: lineUserId,
+      });
+      if (active && linked?.ok) setLinkedToLine(true);
     })();
 
     return () => { active = false; };
@@ -281,6 +297,13 @@ export default function PublicOrderPage() {
             </div>
           )}
         </div>
+
+        {linkedToLine && (
+          <div className="bg-green-50 border border-green-200 rounded-3xl p-4 text-center">
+            <p className="text-xs font-bold text-green-700">🔔 เชื่อมบัญชี LINE แล้ว</p>
+            <p className="text-[11px] text-green-600 mt-1">เมื่อร้านจัดส่ง ระบบจะแจ้งสถานะพัสดุให้อัตโนมัติ</p>
+          </div>
+        )}
 
         {order.note && (
           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5">

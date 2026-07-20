@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { toast, Toaster } from 'sonner';
 import { cn } from '../lib/utils';
 import { generateOrderMessage } from '../utils/message';
+import { getLiffOrderUrl } from '../utils/liff';
 import { getPublicOrderUrl } from '../utils/publicUrl';
 import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '../types';
 import Layout from './Layout';
@@ -107,6 +108,7 @@ export default function AdminPage() {
         discount: order.discount || 0,
         orderNumber: order.order_number,
         publicToken: order.public_token,
+        lineUserId: order.line_user_id,
         status: order.status,
         paymentStatus: order.payment_status,
         paidAmount: order.paid_amount || 0,
@@ -165,6 +167,56 @@ export default function AdminPage() {
       setAllOrders(previous);
       toast.error('อัปเดตการชำระเงินไม่สำเร็จ');
     }
+  };
+
+  // กรอกเลขพัสดุ → บันทึกลงออเดอร์ แล้วสมัครติดตามให้บอท LINE ในคราวเดียว
+  // บอท poll ตาราง parcel_subscriptions อยู่แล้ว จึงไม่ต้องมี API คั่นกลาง
+  const saveTrackingNumber = async (order: SavedOrder, raw: string) => {
+    const tracking = raw.trim().toUpperCase();
+    if (!tracking) return;
+
+    if (!/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(tracking)) {
+      toast.error('รูปแบบเลขพัสดุไม่ถูกต้อง', { description: 'ต้องเป็นแบบ EX123456789TH' });
+      return;
+    }
+
+    const { error } = await supabase
+      .from('orders')
+      .update({ tracking_number: tracking, status: 'shipped' })
+      .eq('id', order.id);
+
+    if (error) {
+      toast.error('บันทึกเลขพัสดุไม่สำเร็จ');
+      return;
+    }
+
+    setAllOrders(orders => orders.map(o =>
+      o.id === order.id ? { ...o, trackingNumber: tracking, status: 'shipped' as OrderStatus } : o
+    ));
+
+    if (!order.lineUserId) {
+      toast.warning('บันทึกเลขพัสดุแล้ว แต่ยังแจ้งเตือนอัตโนมัติไม่ได้', {
+        description: 'ลูกค้ายังไม่เคยเปิดใบสรุปในแอป LINE',
+        duration: 6000,
+      });
+      return;
+    }
+
+    const { error: subError } = await supabase
+      .from('parcel_subscriptions')
+      .upsert({
+        tracking_number: tracking,
+        line_user_id: order.lineUserId,
+        order_id: order.id,
+        last_status: null,
+      }, { onConflict: 'tracking_number' });
+
+    if (subError) {
+      toast.error('บันทึกเลขพัสดุแล้ว แต่สมัครติดตามไม่สำเร็จ', { description: subError.message });
+      return;
+    }
+
+    toast.success('บันทึกแล้ว — บอทจะแจ้งสถานะพัสดุให้ลูกค้าอัตโนมัติ');
   };
 
   // Dashboard stats
@@ -605,10 +657,11 @@ export default function AdminPage() {
                               </select>
                             </div>
 
+                            <div className="flex flex-wrap items-center gap-1.5 mb-2">
                             {order.publicToken && (
                               <button
                                 onClick={async () => {
-                                  const url = getPublicOrderUrl(order.publicToken!);
+                                  const url = getLiffOrderUrl(order.publicToken!);
                                   try {
                                     await navigator.clipboard.writeText(`🐠 ใบสรุปออเดอร์ ${order.orderNumber || ''}\n${url}`);
                                     toast.success('คัดลอกลิงก์ใบสรุปแล้ว');
@@ -616,11 +669,55 @@ export default function AdminPage() {
                                     toast.error('คัดลอกไม่สำเร็จ');
                                   }
                                 }}
-                                className="mb-2 h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95"
+                                className="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95"
                               >
                                 <Copy className="h-3 w-3" /> คัดลอกลิงก์ใบสรุป
                               </button>
                             )}
+                            {order.publicToken && (
+                              <button
+                                onClick={async () => {
+                                  // สำรองไว้เวลาลูกค้ากดลิงก์ LIFF ไม่ได้ (LINE เก่า / เปิดจากแอปอื่น)
+                                  // ลิงก์นี้เปิดในเบราว์เซอร์ไหนก็ได้ แต่จะไม่ผูกบัญชี LINE ให้
+                                  try {
+                                    await navigator.clipboard.writeText(getPublicOrderUrl(order.publicToken!));
+                                    toast.success('คัดลอกลิงก์ธรรมดาแล้ว', { description: 'เปิดได้ทุกเบราว์เซอร์ แต่จะไม่แจ้งเตือนพัสดุอัตโนมัติ' });
+                                  } catch {
+                                    toast.error('คัดลอกไม่สำเร็จ');
+                                  }
+                                }}
+                                className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-400 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+                                title="ลิงก์สำรองสำหรับลูกค้าที่เปิดลิงก์ LINE ไม่ได้"
+                              >
+                                สำรอง
+                              </button>
+                            )}
+                            </div>
+
+                            {/* เลขพัสดุ — กรอกแล้วบอท LINE จะเริ่มติดตามให้ลูกค้าทันที */}
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <input
+                                defaultValue={order.trackingNumber || ''}
+                                placeholder="เลขพัสดุ EX123456789TH"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') saveTrackingNumber(order, (e.target as HTMLInputElement).value);
+                                }}
+                                onBlur={(e) => {
+                                  const v = e.target.value.trim().toUpperCase();
+                                  if (v && v !== (order.trackingNumber || '')) saveTrackingNumber(order, v);
+                                }}
+                                className="flex-1 h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-[11px] font-bold text-slate-700 outline-none focus:border-blue-400 uppercase"
+                              />
+                              {order.lineUserId ? (
+                                <span title="ลูกค้าเชื่อม LINE แล้ว จะได้รับแจ้งเตือนอัตโนมัติ" className="text-[10px] font-black text-green-600 bg-green-50 px-2 py-1 rounded-md shrink-0">
+                                  🔔 LINE
+                                </span>
+                              ) : (
+                                <span title="ลูกค้ายังไม่เคยเปิดใบสรุปในแอป LINE จึงแจ้งเตือนอัตโนมัติไม่ได้" className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-md shrink-0">
+                                  ไม่มี LINE
+                                </span>
+                              )}
+                            </div>
 
                             {order.customerName && <p className="text-xs sm:text-sm text-slate-600 mb-1">👤 {order.customerName}</p>}
                             {order.customerPhone && <p className="text-xs text-slate-500 mb-1">📱 {order.customerPhone}</p>}

@@ -16,6 +16,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@line/liff": "^2.29.1",
     "@supabase/supabase-js": "^2.95.3",
     "@vitejs/plugin-react": "^5.1.4",
     "clsx": "^2.1.1",

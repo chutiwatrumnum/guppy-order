@@ -7,12 +7,10 @@ import {
   Save,
   X,
   CreditCard,
-  Loader2,
-  Settings2
+  Loader2
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast, Toaster } from 'sonner';
-import { cn } from '../lib/utils';
 import type { Breed } from '../types';
 import Layout from './Layout';
 

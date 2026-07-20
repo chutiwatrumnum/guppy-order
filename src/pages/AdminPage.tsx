@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ClipboardList,
   Trash2,
@@ -7,9 +7,7 @@ import {
   Loader2,
   Copy,
   Check,
-  Save,
-  Plus,
-  Minus
+  Save
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast, Toaster } from 'sonner';
@@ -730,7 +728,6 @@ export default function AdminPage() {
                 </div>
                 <div className="space-y-2 max-h-48 sm:max-h-64 overflow-y-auto">
                   {editItems.map((item: OrderItem, idx: number) => {
-                    const breed = breeds.find((b: Breed) => b.id === item.breedId);
                     return (
                       <div key={idx} className="bg-white rounded-xl sm:rounded-2xl border-2 border-slate-100 shadow-sm relative pt-4 pb-3 sm:pb-4 px-3 sm:px-4 mt-3">
                         <button onClick={() => removeEditItem(idx)} className="absolute -top-2.5 -right-2.5 h-6 w-6 sm:h-7 sm:w-7 bg-red-100 hover:bg-red-500 text-red-500 hover:text-white rounded-full flex items-center justify-center transition-all shadow-sm z-10 border border-white">

@@ -5,7 +5,6 @@ import {
   Settings2,
   ClipboardList,
   LogOut,
-  Home,
   Users
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';

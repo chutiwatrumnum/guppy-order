@@ -1,24 +1,21 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Fish,
-  Plus,
   Trash2,
   Copy,
   MessageCircle,
   Save,
-  X,
-  Edit2,
   Check,
   Loader2,
   ArrowLeft,
   ShoppingCart
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { toast, Toaster } from 'sonner';
+import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
 import { calculateItemTotal, getGenderLabel } from '../utils/message';
-import type { Breed, Gender, OrderItem, SavedOrder, GroupedOrderItem, Customer } from '../types';
+import type { Breed, Gender, OrderItem, GroupedOrderItem, Customer } from '../types';
 import { User } from 'lucide-react';
 import Layout from './Layout';
 
@@ -135,12 +132,6 @@ export default function HomePage() {
         duration: 2000,
       });
     }
-  };
-
-  const setItemDiscount = (itemId: string, discount: number) => {
-    setOrderItems(orderItems.map(item => 
-      item.id === itemId ? { ...item, discount } : item
-    ));
   };
 
   const setFreeQty = (itemId: string, freeQty: number) => {

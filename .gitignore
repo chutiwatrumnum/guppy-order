@@ -30,3 +30,12 @@ yarn-error.log*
 # IDE Settings
 .vscode/
 .idea/
+
+# โปรเจกต์ LINE bot แยก repo ของตัวเอง และมี .env ที่เก็บ channel token
+# กันไม่ให้ git add -A ในโปรเจกต์หลักเผลอกวาดความลับขึ้นไป
+line-tacking/
+
+# ความลับทุกที่
+.env
+.env.*
+!.env.example

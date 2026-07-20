@@ -22,6 +22,7 @@ export default function SettingsPage() {
     bank_name: 'กสิกรไทย',
     account_number: '',
     account_name: '',
+    promptpay_id: '',
     shipping_fee: 60
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -67,6 +68,7 @@ export default function SettingsPage() {
         bank_name: bankInfo.bank_name,
         account_number: bankInfo.account_number,
         account_name: bankInfo.account_name,
+        promptpay_id: bankInfo.promptpay_id || null,
         shipping_fee: Number(bankInfo.shipping_fee)
       };
 
@@ -260,6 +262,18 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">ชื่อบัญชี</label>
                   <input value={bankInfo.account_name} onChange={e => setBankInfo({ ...bankInfo, account_name: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl h-12 px-4 font-bold outline-none focus:border-blue-400" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                    เลขพร้อมเพย์ <span className="text-blue-500">(สำหรับสร้าง QR)</span>
+                  </label>
+                  <input
+                    value={bankInfo.promptpay_id || ''}
+                    onChange={e => setBankInfo({ ...bankInfo, promptpay_id: e.target.value })}
+                    placeholder="เบอร์มือถือ 10 หลัก หรือเลขบัตรประชาชน 13 หลัก"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl h-12 px-4 font-bold outline-none focus:border-blue-400"
+                  />
+                  <p className="text-[10px] text-slate-400 ml-1">ใส่แล้วระบบจะสร้าง QR พร้อมยอดเงินให้อัตโนมัติในหน้าสรุปออเดอร์</p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">ค่าจัดส่ง</label>

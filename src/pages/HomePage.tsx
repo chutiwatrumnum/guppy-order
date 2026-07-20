@@ -16,6 +16,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
 import { calculateItemTotal, getGenderLabel } from '../utils/message';
 import { parseThaiAddress } from '../utils/address';
+import PromptPayQR from '../components/PromptPayQR';
 import type { Breed, Gender, OrderItem, GroupedOrderItem, Customer } from '../types';
 import { User } from 'lucide-react';
 import Layout from './Layout';
@@ -632,6 +633,15 @@ export default function HomePage() {
                         <div className="flex justify-between items-center text-xs font-black text-orange-400"><span className="uppercase tracking-[0.2em]">Discount</span><span className="font-black">-฿{billDiscount.toLocaleString()}</span></div>
                       )}
                       <div className="flex justify-between items-center pt-2"><span className="font-black text-lg sm:text-xl tracking-tight uppercase">Total Amount</span><span className="font-black text-2xl sm:text-3xl text-blue-400 tracking-tighter">฿{grandTotal.toLocaleString()}</span></div>
+                      {/* QR พร้อมเพย์ฝังยอด ลูกค้าสแกนแล้วยอดขึ้นเอง ไม่ต้องพิมพ์ */}
+                      <div className="pt-4">
+                        <PromptPayQR
+                          promptPayId={bankInfo.promptpay_id}
+                          amount={grandTotal}
+                          reference={customerName || undefined}
+                        />
+                      </div>
+
                       <div className="pt-4 grid grid-cols-1 gap-3">
                         <button onClick={shareToLine} className="h-14 sm:h-14 bg-[#06C755] text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 active:scale-[0.98] min-h-[56px]"><MessageCircle className="h-5 w-5" /> Send to LINE</button>
                         <button onClick={copyToClipboard} className={cn("h-14 sm:h-14 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-[0.98] border-2 min-h-[56px]", copySuccess ? "bg-blue-600 border-blue-600 text-white" : "bg-transparent text-slate-400 border-slate-800")}>{copySuccess ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}{copySuccess ? 'Copied Success' : 'Copy Text'}</button>

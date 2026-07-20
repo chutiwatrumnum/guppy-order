@@ -57,6 +57,7 @@ export interface SavedOrder {
   totalCost?: number;
   discount?: number;
   orderNumber?: string;
+  publicToken?: string;
   status?: OrderStatus;
   paymentStatus?: PaymentStatus;
   paidAmount?: number;

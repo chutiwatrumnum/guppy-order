@@ -47,6 +47,8 @@ export default function HomePage() {
   const [billDiscount, setBillDiscount] = useState<number>(0);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [addressPaste, setAddressPaste] = useState('');
+  // ลิงก์ใบสรุปของบิลที่เพิ่งบันทึก เอาไว้ส่งให้ลูกค้าในไลน์
+  const [lastOrderLink, setLastOrderLink] = useState<{ url: string; orderNumber: string } | null>(null);
 
   // Handle customer selection
   const handleCustomerChange = (customerId: string) => {
@@ -271,6 +273,23 @@ export default function HomePage() {
     });
   };
 
+  const copyOrderLink = async () => {
+    if (!lastOrderLink) return;
+    const message = `🐠 ใบสรุปออเดอร์ ${lastOrderLink.orderNumber}\nดูรายการ ยอดเงิน และแจ้งที่อยู่ได้ที่ลิงก์นี้ครับ\n${lastOrderLink.url}`;
+    try {
+      await navigator.clipboard.writeText(message);
+      toast.success('คัดลอกลิงก์แล้ว', { description: 'วางในไลน์ส่งให้ลูกค้าได้เลย' });
+    } catch {
+      toast.error('คัดลอกไม่สำเร็จ');
+    }
+  };
+
+  const shareLinkToLine = () => {
+    if (!lastOrderLink) return;
+    const message = `🐠 ใบสรุปออเดอร์ ${lastOrderLink.orderNumber}\nดูรายการ ยอดเงิน และแจ้งที่อยู่ได้ที่ลิงก์นี้ครับ\n${lastOrderLink.url}`;
+    window.open(`https://line.me/R/msg/text/?${encodeURIComponent(message)}`, '_blank');
+  };
+
   const shareToLine = () => {
     if (!lineMessage) return;
     const lineUrl = `line://msg/text/${encodeURIComponent(lineMessage)}`;
@@ -307,11 +326,20 @@ export default function HomePage() {
         created_by: user?.username || 'unknown'
       };
       
-      const { error } = await supabase
+      const { data: saved, error } = await supabase
         .from('orders')
-        .insert([orderData]);
-      
+        .insert([orderData])
+        .select('public_token, order_number')
+        .single();
+
       if (error) throw error;
+
+      if (saved?.public_token) {
+        setLastOrderLink({
+          url: `${window.location.origin}/o/${saved.public_token}`,
+          orderNumber: saved.order_number,
+        });
+      }
       
       // ยอดสะสมลูกค้าคำนวณสดจาก view customer_order_stats แล้ว
       // ไม่ต้องบวกเองตรงนี้ (ของเดิมบวกอย่างเดียว ลบออเดอร์แล้วไม่เคยลด)
@@ -419,6 +447,42 @@ export default function HomePage() {
                 </div>
               )}
               
+              {/* บันทึกออเดอร์แล้ว — ส่งลิงก์ใบสรุปให้ลูกค้ากรอกที่อยู่เอง */}
+              {lastOrderLink && orderItems.length === 0 && (
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t-2 border-green-200 z-50 shadow-[0_-5px_40px_rgba(0,0,0,0.12)]">
+                  <div className="max-w-4xl mx-auto">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">บันทึกแล้ว · {lastOrderLink.orderNumber}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5 truncate">{lastOrderLink.url}</p>
+                      </div>
+                      <button
+                        onClick={() => setLastOrderLink(null)}
+                        className="shrink-0 text-slate-300 hover:text-slate-500 text-xl leading-none px-1"
+                        aria-label="ปิด"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={shareLinkToLine}
+                        className="h-12 bg-[#06C755] text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98]"
+                      >
+                        <MessageCircle className="h-4 w-4" /> ส่งลิงก์ในไลน์
+                      </button>
+                      <button
+                        onClick={copyOrderLink}
+                        className="h-12 bg-slate-100 text-slate-600 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98]"
+                      >
+                        <Copy className="h-4 w-4" /> คัดลอกลิงก์
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 text-center mt-2">ลูกค้าเปิดลิงก์แล้วสแกนจ่ายและกรอกที่อยู่เองได้เลย</p>
+                  </div>
+                </div>
+              )}
+
               {orderItems.length > 0 && (
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-slate-200 z-50 shadow-[0_-5px_40px_rgba(0,0,0,0.08)]">
                   <div className="max-w-4xl mx-auto flex items-center justify-between">

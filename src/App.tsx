@@ -6,6 +6,7 @@ import HomePage from './pages/HomePage';
 import SettingsPage from './pages/SettingsPage';
 import AdminPage from './pages/AdminPage';
 import CustomersPage from './pages/CustomersPage';
+import PublicOrderPage from './pages/PublicOrderPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -37,6 +38,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* ใบสรุปสำหรับลูกค้า — เปิดได้โดยไม่ต้องล็อกอิน ต้องอยู่นอก ProtectedRoute */}
+        <Route path="/o/:token" element={<PublicOrderPage />} />
+
         {/* Auth Route - Always accessible */}
         <Route 
           path="/auth" 

@@ -105,6 +105,7 @@ export default function AdminPage() {
         totalCost: order.total_cost || 0,
         discount: order.discount || 0,
         orderNumber: order.order_number,
+        publicToken: order.public_token,
         status: order.status,
         paymentStatus: order.payment_status,
         paidAmount: order.paid_amount || 0,
@@ -602,6 +603,23 @@ export default function AdminPage() {
                                 <option value="cancelled">✖ ยกเลิก</option>
                               </select>
                             </div>
+
+                            {order.publicToken && (
+                              <button
+                                onClick={async () => {
+                                  const url = `${window.location.origin}/o/${order.publicToken}`;
+                                  try {
+                                    await navigator.clipboard.writeText(`🐠 ใบสรุปออเดอร์ ${order.orderNumber || ''}\n${url}`);
+                                    toast.success('คัดลอกลิงก์ใบสรุปแล้ว');
+                                  } catch {
+                                    toast.error('คัดลอกไม่สำเร็จ');
+                                  }
+                                }}
+                                className="mb-2 h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95"
+                              >
+                                <Copy className="h-3 w-3" /> คัดลอกลิงก์ใบสรุป
+                              </button>
+                            )}
 
                             {order.customerName && <p className="text-xs sm:text-sm text-slate-600 mb-1">👤 {order.customerName}</p>}
                             {order.customerPhone && <p className="text-xs text-slate-500 mb-1">📱 {order.customerPhone}</p>}

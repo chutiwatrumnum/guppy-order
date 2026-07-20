@@ -102,15 +102,9 @@ export default function SettingsPage() {
     const formData = new FormData(e.currentTarget);
     const breedData = {
       name: formData.get('name') as string,
-      price_piece: Number(formData.get('price_piece')) || null,
-      price_pair: Number(formData.get('price_pair')) || null,
-      price_set: Number(formData.get('price_set')) || null,
-      cost_piece: Number(formData.get('cost_piece')) || 0,
-      cost_pair: Number(formData.get('cost_pair')) || 0,
-      cost_set: Number(formData.get('cost_set')) || 0,
-      premium_price_piece: Number(formData.get('premium_price_piece')) || null,
-      premium_price_pair: Number(formData.get('premium_price_pair')) || null,
-      premium_price_set: Number(formData.get('premium_price_set')) || null,
+      premium_price_piece: Number(formData.get('premium_price_piece')) || 0,
+      premium_price_pair: Number(formData.get('premium_price_pair')) || 0,
+      premium_price_set: Number(formData.get('premium_price_set')) || 0,
       premium_cost_piece: Number(formData.get('premium_cost_piece')) || 0,
       premium_cost_pair: Number(formData.get('premium_cost_pair')) || 0,
       premium_cost_set: Number(formData.get('premium_cost_set')) || 0,
@@ -223,16 +217,6 @@ export default function SettingsPage() {
                          {(breed.premium_price_set || 0) > 0 && <span className="font-bold text-orange-500">ชุด:{breed.premium_price_set}</span>}
                        </div>
                      )}
-                     {(breed.price_piece || 0) > 0 && (
-                       <div className="flex items-center gap-1">
-                         <span className="text-slate-400">🐟</span>
-                         <span className="font-bold text-blue-500">ตัว:{breed.price_piece}</span>
-                         {(breed.price_pair || 0) > 0 && <span className="text-slate-300">|</span>}
-                         {(breed.price_pair || 0) > 0 && <span className="font-bold text-blue-500">คู่:{breed.price_pair}</span>}
-                         {(breed.price_set || 0) > 0 && <span className="text-slate-300">|</span>}
-                         {(breed.price_set || 0) > 0 && <span className="font-bold text-blue-500">ชุด:{breed.price_set}</span>}
-                       </div>
-                     )}
                    </div>
                 </div>
               </div>
@@ -336,7 +320,7 @@ export default function SettingsPage() {
                   </div>
                   
                   <div className="space-y-6">
-                    {/* Premium Grade */}
+                    {/* ราคาขาย */}
                     <div className="bg-orange-50/50 p-6 rounded-[2rem] border-2 border-orange-100 shadow-sm space-y-4">
                       <p className="text-sm font-black text-orange-600 uppercase tracking-widest flex items-center gap-2"><span className="text-lg">👑</span> งานคัดเกรด</p>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -376,52 +360,6 @@ export default function SettingsPage() {
                             <div>
                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ต้นทุน</label>
                               <input name="premium_cost_set" type="number" defaultValue={editingBreed?.premium_cost_set || ''} placeholder="0" className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold outline-none text-sm text-slate-500 focus:border-slate-300" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Normal Grade - Not Required */}
-                    <div className="bg-slate-50 p-6 rounded-[2rem] border-2 border-slate-200 shadow-sm space-y-4">
-                      <p className="text-sm font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">🐟 เกรดปกติ (ไม่บังคับ)</p>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="space-y-3 p-4 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm">
-                          <p className="text-xs font-bold text-center text-slate-600 uppercase tracking-widest">Piece (ต่อตัว)</p>
-                          <div className="space-y-2">
-                            <div>
-                              <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest ml-1">ราคาขาย</label>
-                              <input name="price_piece" type="number" defaultValue={editingBreed?.price_piece || ''} placeholder="0" className="w-full h-11 bg-blue-50/30 border border-blue-100 rounded-xl px-4 font-black outline-none text-sm focus:border-blue-300" />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ต้นทุน</label>
-                              <input name="cost_piece" type="number" defaultValue={editingBreed?.cost_piece || 0} placeholder="0" className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold outline-none text-sm text-slate-500 focus:border-slate-300" />
-                            </div>
-                          </div>
-                        </div>
-                        <div className="space-y-3 p-4 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm">
-                          <p className="text-xs font-bold text-center text-slate-600 uppercase tracking-widest">Pair (คู่)</p>
-                          <div className="space-y-2">
-                            <div>
-                              <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest ml-1">ราคาขาย</label>
-                              <input name="price_pair" type="number" defaultValue={editingBreed?.price_pair || ''} placeholder="0" className="w-full h-11 bg-blue-50/30 border border-blue-100 rounded-xl px-4 font-black outline-none text-sm focus:border-blue-300" />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ต้นทุน</label>
-                              <input name="cost_pair" type="number" defaultValue={editingBreed?.cost_pair || 0} placeholder="0" className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold outline-none text-sm text-slate-500 focus:border-slate-300" />
-                            </div>
-                          </div>
-                        </div>
-                        <div className="space-y-3 p-4 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm">
-                          <p className="text-xs font-bold text-center text-slate-600 uppercase tracking-widest">Set (ชุด)</p>
-                          <div className="space-y-2">
-                            <div>
-                              <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest ml-1">ราคาขาย</label>
-                              <input name="price_set" type="number" defaultValue={editingBreed?.price_set || ''} placeholder="0" className="w-full h-11 bg-blue-50/30 border border-blue-100 rounded-xl px-4 font-black outline-none text-sm focus:border-blue-300" />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ต้นทุน</label>
-                              <input name="cost_set" type="number" defaultValue={editingBreed?.cost_set || 0} placeholder="0" className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold outline-none text-sm text-slate-500 focus:border-slate-300" />
                             </div>
                           </div>
                         </div>

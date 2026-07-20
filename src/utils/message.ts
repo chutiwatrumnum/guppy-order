@@ -36,7 +36,6 @@ export const generateLineMessage = (
   orderItems.forEach((item, index) => {
     const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set';
     const genderLabel = item.gender === 'male' ? '♂️' : item.gender === 'female' ? '♀️' : '⚥';
-    const gradeLabel = item.grade === 'premium' ? ' 👑[งานคัดเกรด]' : '';
     
     // new logic
     const paidQty = Math.max(0, item.quantity - (item.freeQty || 0));
@@ -48,15 +47,15 @@ export const generateLineMessage = (
     totalFreeValue += freeValue;
     
     if (item.freeQty && item.freeQty >= item.quantity) {
-      text += `${index + 1}. 🎁 ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
+      text += `${index + 1}. 🎁 ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
     } else if (item.freeQty && item.freeQty > 0) {
-      text += `${index + 1}. ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel} (แถม ${item.freeQty} มูลค่า -${freeValue})`;
+      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} (แถม ${item.freeQty} มูลค่า -${freeValue})`;
       if (item.discount && item.discount > 0) {
         text += ` (ลดเพิ่ม -${item.discount})`;
       }
       text += ` = ${itemPaid.toLocaleString()}.-\n`;
     } else {
-      text += `${index + 1}. ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel}`;
+      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel}`;
       if (item.discount && item.discount > 0) {
         text += ` (ลด -${item.discount} บาท)`;
       }
@@ -114,21 +113,20 @@ export const generateOrderMessage = (
   items.forEach((item, index) => {
     const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set';
     const genderLabel = item.gender === 'male' ? '♂️' : item.gender === 'female' ? '♀️' : '⚥';
-    const gradeLabel = item.grade === 'premium' ? ' 👑[งานคัดเกรด]' : '';
     const paidQty = Math.max(0, item.quantity - (item.freeQty || 0));
     const itemPaid = (item.price * paidQty) - (item.discount || 0);
     const freeValue = (item.freeQty || 0) * item.price;
     
     if (item.freeQty && item.freeQty >= item.quantity) {
-      text += `${index + 1}. 🎁 ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
+      text += `${index + 1}. 🎁 ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
     } else if (item.freeQty && item.freeQty > 0) {
-      text += `${index + 1}. ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel} (แถม ${item.freeQty} มูลค่า -${freeValue})`;
+      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} (แถม ${item.freeQty} มูลค่า -${freeValue})`;
       if (item.discount && item.discount > 0) {
         text += ` (ลดเพิ่ม -${item.discount})`;
       }
       text += ` = ${itemPaid.toLocaleString()}.-\n`;
     } else {
-      text += `${index + 1}. ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel}`;
+      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel}`;
       if (item.discount && item.discount > 0) {
         text += ` (ลด -${item.discount} บาท)`;
       }

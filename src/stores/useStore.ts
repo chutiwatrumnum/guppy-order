@@ -6,7 +6,6 @@ import type {
   BankInfo, 
   SavedOrder, 
   GroupedOrderItem,
-  Grade,
   Gender
 } from '../types';
 
@@ -22,7 +21,6 @@ interface AppState {
   showAdminDashboard: boolean;
   showCart: boolean;
   showOrderHistory: boolean;
-  selectedGrade: Grade;
   searchTerm: string;
   
   // Loading States
@@ -59,7 +57,6 @@ interface AppState {
   setShowAdminDashboard: (value: boolean) => void;
   setShowCart: (value: boolean) => void;
   setShowOrderHistory: (value: boolean) => void;
-  setSelectedGrade: (grade: Grade) => void;
   setSearchTerm: (term: string) => void;
   setLoading: (loading: boolean) => void;
   setIsSavingSettings: (saving: boolean) => void;
@@ -86,7 +83,7 @@ interface AppState {
   fetchAllOrders: (period?: 'today' | 'week' | 'month' | 'year' | 'custom', customStart?: string, customEnd?: string) => Promise<void>;
   
   // Order Actions
-  addToOrder: (breed: Breed, type: 'piece' | 'pair' | 'set', gender: Gender, grade: Grade) => void;
+  addToOrder: (breed: Breed, type: 'piece' | 'pair' | 'set', gender: Gender) => void;
   removeFromOrder: (id: string) => void;
   setItemDiscount: (itemId: string, discount: number) => void;
   setFreeQty: (itemId: string, freeQty: number) => void;
@@ -121,7 +118,6 @@ export const useStore = create<AppState>((set, get) => ({
   showAdminDashboard: false,
   showCart: false,
   showOrderHistory: false,
-  selectedGrade: 'premium',
   searchTerm: '',
   
   loading: true,
@@ -153,7 +149,6 @@ export const useStore = create<AppState>((set, get) => ({
   setShowAdminDashboard: (showAdminDashboard) => set({ showAdminDashboard }),
   setShowCart: (showCart) => set({ showCart }),
   setShowOrderHistory: (showOrderHistory) => set({ showOrderHistory }),
-  setSelectedGrade: (selectedGrade) => set({ selectedGrade }),
   setSearchTerm: (searchTerm) => set({ searchTerm }),
   setLoading: (loading) => set({ loading }),
   setIsSavingSettings: (isSavingSettings) => set({ isSavingSettings }),
@@ -251,25 +246,17 @@ export const useStore = create<AppState>((set, get) => ({
   },
   
   // Add to Order
-  addToOrder: (breed, type, gender, grade) => {
+  addToOrder: (breed, type, gender) => {
     const { orderItems } = get();
-    
-    let price = 0;
-    let cost = 0;
-    
-    if (grade === 'premium') {
-      price = type === 'piece' ? (breed.premium_price_piece || breed.price_piece) : 
-              type === 'pair' ? (breed.premium_price_pair || breed.price_pair) : 
-              (breed.premium_price_set || breed.price_set || 0);
-      cost = type === 'piece' ? (breed.premium_cost_piece || breed.cost_piece || 0) : 
-             type === 'pair' ? (breed.premium_cost_pair || breed.cost_pair || 0) : 
-             (breed.premium_cost_set || breed.cost_set || 0);
-    } else {
-      price = type === 'piece' ? breed.price_piece : type === 'pair' ? breed.price_pair : breed.price_set || 0;
-      cost = type === 'piece' ? (breed.cost_piece || 0) : type === 'pair' ? (breed.cost_pair || 0) : (breed.cost_set || 0);
-    }
 
-    const existing = orderItems.find(item => item.breedId === breed.id && item.type === type && item.gender === gender && item.grade === grade);
+    const price = type === 'piece' ? breed.premium_price_piece :
+                  type === 'pair' ? breed.premium_price_pair :
+                  (breed.premium_price_set || 0);
+    const cost = type === 'piece' ? (breed.premium_cost_piece || 0) :
+                 type === 'pair' ? (breed.premium_cost_pair || 0) :
+                 (breed.premium_cost_set || 0);
+
+    const existing = orderItems.find(item => item.breedId === breed.id && item.type === type && item.gender === gender);
     
     if (existing) {
       set({
@@ -284,11 +271,10 @@ export const useStore = create<AppState>((set, get) => ({
           breedId: breed.id, 
           breedName: breed.name, 
           type, 
-          quantity: 1, 
-          price, 
-          cost, 
-          grade, 
-          gender 
+          quantity: 1,
+          price,
+          cost,
+          gender
         }]
       });
     }
@@ -475,7 +461,7 @@ export const useStore = create<AppState>((set, get) => ({
         if (itemCost === undefined) {
           const breed = breeds.find((b: Breed) => b.id === item.breedId);
           if (breed) {
-            itemCost = item.type === 'piece' ? (breed.cost_piece || 0) : item.type === 'pair' ? (breed.cost_pair || 0) : (breed.cost_set || 0);
+            itemCost = item.type === 'piece' ? (breed.premium_cost_piece || 0) : item.type === 'pair' ? (breed.premium_cost_pair || 0) : (breed.premium_cost_set || 0);
             item.cost = itemCost;
           } else {
             itemCost = 0;
@@ -600,20 +586,10 @@ export const useGroupedOrderItems = (): GroupedOrderItem[] => {
 
 export const useFilteredBreeds = (): Breed[] => {
   const breeds = useStore(state => state.breeds);
-  const selectedGrade = useStore(state => state.selectedGrade);
   const searchTerm = useStore(state => state.searchTerm);
-  
+
   let list = breeds;
-  
-  // Filter by Premium Grade if selected
-  if (selectedGrade === 'premium') {
-    list = list.filter(breed => 
-      (breed.premium_price_piece && breed.premium_price_piece > 0) || 
-      (breed.premium_price_pair && breed.premium_price_pair > 0) || 
-      (breed.premium_price_set && breed.premium_price_set > 0)
-    );
-  }
-  
+
   // Filter by Search Term
   if (searchTerm.trim()) {
     const term = searchTerm.toLowerCase();
@@ -660,19 +636,6 @@ export const useDashboardStats = () => {
   const totalSales = allOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
   const totalFish = allOrders.reduce((sum, order) => sum + (order.totalFish || 0), 0);
   
-  let totalFishNormal = 0;
-  let totalFishPremium = 0;
-  allOrders.forEach(order => {
-    order.items?.forEach((item: OrderItem) => {
-      const qty = item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity;
-      if (item.grade === 'premium') {
-        totalFishPremium += qty;
-      } else {
-        totalFishNormal += qty;
-      }
-    });
-  });
-
   const totalFishCost = allOrders.reduce((sum, order) => sum + (order.totalCost || 0), 0);
   const totalShippingIncome = allOrders.reduce((sum, order) => sum + (order.shippingFee || 60), 0);
   const totalShippingCost = allOrders.reduce((sum, order) => sum + (order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : (order.shippingFee || 60)), 0);
@@ -685,13 +648,13 @@ export const useDashboardStats = () => {
   const avgOrderValue = allOrders.length > 0 ? totalSales / allOrders.length : 0;
   
   // Breed stats
-  const breedStats: { [key: string]: { name: string; qty: number; sales: number; isPremium?: boolean } } = {};
+  const breedStats: { [key: string]: { name: string; qty: number; sales: number } } = {};
   allOrders.forEach(order => {
     order.items.forEach((item: OrderItem) => {
-      const statKey = `${item.breedId}${item.grade === 'premium' ? '-premium' : '-normal'}`;
-      
+      const statKey = item.breedId;
+
       if (!breedStats[statKey]) {
-        breedStats[statKey] = { name: item.breedName, qty: 0, sales: 0, isPremium: item.grade === 'premium' };
+        breedStats[statKey] = { name: item.breedName, qty: 0, sales: 0 };
       }
       breedStats[statKey].qty += item.quantity;
       breedStats[statKey].sales += (item.price * item.quantity) - (item.discount || 0);
@@ -725,8 +688,6 @@ export const useDashboardStats = () => {
     totalShippingIncome,
     totalShippingCost,
     totalFish,
-    totalFishNormal,
-    totalFishPremium,
     totalProfit,
     avgOrderValue,
     topBreeds,

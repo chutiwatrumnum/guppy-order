@@ -37,7 +37,6 @@ export default function HomePage() {
   });
   const [loading, setLoading] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
-  const [selectedGrade, setSelectedGrade] = useState<'normal' | 'premium'>('premium');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCart, setShowCart] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -101,54 +100,37 @@ export default function HomePage() {
   // Filter breeds
   const filteredBreeds = useMemo(() => {
     let list = breeds;
-    
-    if (selectedGrade === 'premium') {
-      list = list.filter(breed => 
-        (breed.premium_price_piece && breed.premium_price_piece > 0) || 
-        (breed.premium_price_pair && breed.premium_price_pair > 0) || 
-        (breed.premium_price_set && breed.premium_price_set > 0)
-      );
-    }
-    
+
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       list = list.filter(breed => breed.name.toLowerCase().includes(term));
     }
-    
+
     return list;
-  }, [breeds, searchTerm, selectedGrade]);
+  }, [breeds, searchTerm]);
 
-  const addToOrder = (breed: Breed, type: 'piece' | 'pair' | 'set', gender: Gender = 'mixed', grade: 'normal' | 'premium' = 'normal') => {
-    let price = 0;
-    let cost = 0;
-    
-    if (grade === 'premium') {
-      price = type === 'piece' ? (breed.premium_price_piece || breed.price_piece) : 
-              type === 'pair' ? (breed.premium_price_pair || breed.price_pair) : 
-              (breed.premium_price_set || breed.price_set || 0);
-      cost = type === 'piece' ? (breed.premium_cost_piece || breed.cost_piece || 0) : 
-             type === 'pair' ? (breed.premium_cost_pair || breed.cost_pair || 0) : 
-             (breed.premium_cost_set || breed.cost_set || 0);
-    } else {
-      price = type === 'piece' ? breed.price_piece : type === 'pair' ? breed.price_pair : breed.price_set || 0;
-      cost = type === 'piece' ? (breed.cost_piece || 0) : type === 'pair' ? (breed.cost_pair || 0) : (breed.cost_set || 0);
-    }
+  const addToOrder = (breed: Breed, type: 'piece' | 'pair' | 'set', gender: Gender = 'mixed') => {
+    const price = type === 'piece' ? breed.premium_price_piece :
+                  type === 'pair' ? breed.premium_price_pair :
+                  (breed.premium_price_set || 0);
+    const cost = type === 'piece' ? (breed.premium_cost_piece || 0) :
+                 type === 'pair' ? (breed.premium_cost_pair || 0) :
+                 (breed.premium_cost_set || 0);
 
-    const existing = orderItems.find(item => item.breedId === breed.id && item.type === type && item.gender === gender && item.grade === grade);
-    
+    const existing = orderItems.find(item => item.breedId === breed.id && item.type === type && item.gender === gender);
+
     const genderText = gender === 'male' ? 'ตัวผู้' : gender === 'female' ? 'ตัวเมีย' : '';
     const typeText = type === 'piece' ? 'ตัว' : type === 'pair' ? 'คู่' : 'set';
-    const gradeText = grade === 'premium' ? ' (คัดเกรด)' : '';
-    
+
     if (existing) {
       setOrderItems(orderItems.map(item => item === existing ? { ...item, quantity: item.quantity + 1 } : item));
-      toast.success(`เพิ่ม ${breed.name}${gradeText} ${genderText ? `(${genderText})` : ''} อีก 1 ${typeText}`, {
+      toast.success(`เพิ่ม ${breed.name} ${genderText ? `(${genderText})` : ''} อีก 1 ${typeText}`, {
         description: `จำนวนในออเดอร์: ${existing.quantity + 1} ${typeText}`,
         duration: 2000,
       });
     } else {
-      setOrderItems([...orderItems, { id: Date.now().toString(), breedId: breed.id, breedName: breed.name, type, quantity: 1, price, cost, grade, gender }]);
-      toast.success(`เพิ่ม ${breed.name}${gradeText} ${genderText ? `(${genderText})` : ''} ลงออเดอร์`, {
+      setOrderItems([...orderItems, { id: Date.now().toString(), breedId: breed.id, breedName: breed.name, type, quantity: 1, price, cost, gender }]);
+      toast.success(`เพิ่ม ${breed.name} ${genderText ? `(${genderText})` : ''} ลงออเดอร์`, {
         description: `1 ${typeText} - ฿${price.toLocaleString()}`,
         duration: 2000,
       });
@@ -228,17 +210,16 @@ export default function HomePage() {
     orderItems.forEach((item, index) => {
       const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set';
       const genderLabel = item.gender === 'male' ? '♂️' : item.gender === 'female' ? '♀️' : '⚥';
-      const gradeLabel = item.grade === 'premium' ? ' 👑[งานคัดเกรด]' : '';
       const itemTotal = calculateItemTotal(item);
       const paidQty = item.quantity - (item.freeQty || 0);
       
       if (item.freeQty && item.freeQty >= item.quantity) {
-        text += `${index + 1}. 🎁 ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
+        text += `${index + 1}. 🎁 ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
       } else if (item.freeQty && item.freeQty > 0) {
-        text += `${index + 1}. ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel} (ซื้อ ${paidQty} + แถม ${item.freeQty})`;
+        text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} (ซื้อ ${paidQty} + แถม ${item.freeQty})`;
         text += ` = ${itemTotal.toLocaleString()}.-\n`;
       } else {
-        text += `${index + 1}. ${item.breedName}${gradeLabel} ${genderLabel}: ${item.quantity} ${typeLabel}`;
+        text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel}`;
         text += ` = ${itemTotal.toLocaleString()}.-\n`;
       }
     });
@@ -397,20 +378,6 @@ export default function HomePage() {
 
               <div className="flex items-center justify-between px-2 mb-4">
                 <h2 className="font-black uppercase tracking-tight text-base lg:text-xl text-slate-800">Select Species</h2>
-                <div className="flex bg-slate-100 p-1 rounded-xl">
-                  <button 
-                    onClick={() => setSelectedGrade('premium')}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all ${selectedGrade === 'premium' ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                  >
-                    👑 คัดเกรด
-                  </button>
-                  <button 
-                    onClick={() => setSelectedGrade('normal')}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all ${selectedGrade === 'normal' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                  >
-                    เกรดปกติ
-                  </button>
-                </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
                 {filteredBreeds.map(breed => (
@@ -418,22 +385,22 @@ export default function HomePage() {
                     <div>
                       <h4 className="font-bold text-sm text-slate-800 mb-1.5 leading-tight line-clamp-1">{breed.name}</h4>
                       <div className="flex gap-1.5 mb-1.5">
-                        <button onClick={() => addToOrder(breed, 'piece', 'male', selectedGrade)} className="flex-1 py-2 bg-blue-50 hover:bg-blue-500 hover:text-white text-blue-600 rounded-lg text-[11px] font-bold transition-all">
-                          ตัวผู้ (฿{selectedGrade === 'premium' && breed.premium_price_piece ? breed.premium_price_piece : breed.price_piece})
+                        <button onClick={() => addToOrder(breed, 'piece', 'male')} className="flex-1 py-2 bg-blue-50 hover:bg-blue-500 hover:text-white text-blue-600 rounded-lg text-[11px] font-bold transition-all">
+                          ตัวผู้ (฿{breed.premium_price_piece})
                         </button>
-                        <button onClick={() => addToOrder(breed, 'piece', 'female', selectedGrade)} className="flex-1 py-2 bg-pink-50 hover:bg-pink-500 hover:text-white text-pink-600 rounded-lg text-[11px] font-bold transition-all">
-                          ตัวเมีย (฿{selectedGrade === 'premium' && breed.premium_price_piece ? breed.premium_price_piece : breed.price_piece})
+                        <button onClick={() => addToOrder(breed, 'piece', 'female')} className="flex-1 py-2 bg-pink-50 hover:bg-pink-500 hover:text-white text-pink-600 rounded-lg text-[11px] font-bold transition-all">
+                          ตัวเมีย (฿{breed.premium_price_piece})
                         </button>
                       </div>
-                      <div className={`grid gap-1.5 ${breed.price_set && breed.price_set > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        <button onClick={() => addToOrder(breed, 'pair', 'mixed', selectedGrade)} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
+                      <div className={`grid gap-1.5 ${breed.premium_price_set && breed.premium_price_set > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <button onClick={() => addToOrder(breed, 'pair', 'mixed')} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
                           <p className="text-[8px] font-black uppercase tracking-wider opacity-60">Pair</p>
-                          <p className="font-black text-sm">฿{selectedGrade === 'premium' && breed.premium_price_pair ? breed.premium_price_pair : breed.price_pair}</p>
+                          <p className="font-black text-sm">฿{breed.premium_price_pair}</p>
                         </button>
-                        {breed.price_set && breed.price_set > 0 ? (
-                          <button onClick={() => addToOrder(breed, 'set', 'mixed', selectedGrade)} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
+                        {breed.premium_price_set && breed.premium_price_set > 0 ? (
+                          <button onClick={() => addToOrder(breed, 'set', 'mixed')} className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all">
                             <p className="text-[8px] font-black uppercase tracking-wider opacity-60">Set</p>
-                            <p className="font-black text-sm">฿{selectedGrade === 'premium' && breed.premium_price_set ? breed.premium_price_set : breed.price_set}</p>
+                            <p className="font-black text-sm">฿{breed.premium_price_set}</p>
                           </button>
                         ) : null}
                       </div>
@@ -517,9 +484,6 @@ export default function HomePage() {
                                   <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">
                                     {item.quantity} {item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set'}
                                   </span>
-                                  {item.grade === 'premium' && (
-                                    <span className="text-[10px] text-orange-500 font-bold bg-orange-100 px-2 py-0.5 rounded-full">👑 คัดเกรด</span>
-                                  )}
                                   {item.freeQty ? (
                                     <span className="text-[10px] text-green-600 font-bold bg-green-100 px-2 py-0.5 rounded-full">แถม {item.freeQty}</span>
                                   ) : null}

@@ -108,11 +108,6 @@ export default function OrderSummary({
                           <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">
                             {item.quantity} {item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set'}
                           </span>
-                          {item.grade === 'premium' && (
-                            <span className="text-[10px] text-orange-500 font-bold bg-orange-100 px-2 py-0.5 rounded-full">
-                              👑 คัดเกรด
-                            </span>
-                          )}
                           {item.freeQty ? (
                             <span className="text-[10px] text-green-600 font-bold bg-green-100 px-2 py-0.5 rounded-full">
                               แถม {item.freeQty}

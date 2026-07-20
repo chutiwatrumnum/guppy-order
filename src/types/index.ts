@@ -3,18 +3,12 @@
 export interface Breed {
   id: string;
   name: string;
-  price_piece: number;
-  price_pair: number;
-  price_set?: number;
-  cost_piece?: number;
-  cost_pair?: number;
-  cost_set?: number;
+  premium_price_piece: number;
+  premium_price_pair: number;
+  premium_price_set?: number;
   premium_cost_piece?: number;
   premium_cost_pair?: number;
   premium_cost_set?: number;
-  premium_price_piece?: number;
-  premium_price_pair?: number;
-  premium_price_set?: number;
 }
 
 export type UserRole = 'admin' | 'user';
@@ -22,8 +16,6 @@ export type UserRole = 'admin' | 'user';
 export type Gender = 'male' | 'female' | 'mixed';
 
 export type OrderItemType = 'piece' | 'pair' | 'set';
-
-export type Grade = 'normal' | 'premium';
 
 export interface OrderItem {
   id: string;
@@ -33,7 +25,6 @@ export interface OrderItem {
   quantity: number;
   price: number;
   cost?: number;
-  grade?: Grade;
   gender: Gender;
   discount?: number;
   freeQty?: number;
@@ -83,8 +74,6 @@ export interface DashboardStats {
   totalShippingIncome: number;
   totalShippingCost: number;
   totalFish: number;
-  totalFishNormal: number;
-  totalFishPremium: number;
   totalProfit: number;
   avgOrderValue: number;
   topBreeds: BreedStat[];
@@ -95,7 +84,6 @@ export interface BreedStat {
   name: string;
   qty: number;
   sales: number;
-  isPremium?: boolean;
 }
 
 export interface CustomerStat {

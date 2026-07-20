@@ -1,36 +1,26 @@
 import { Fish, Edit2, Trash2 } from 'lucide-react';
-import type { Breed, Grade, Gender } from '../types';
+import type { Breed, Gender } from '../types';
 
 interface BreedCardProps {
   breed: Breed;
-  onAddToOrder: (breed: Breed, type: 'piece' | 'pair' | 'set', gender: Gender, grade: Grade) => void;
+  onAddToOrder: (breed: Breed, type: 'piece' | 'pair' | 'set', gender: Gender) => void;
   onEdit?: (breed: Breed) => void;
   onDelete?: (id: string) => void;
   isAdmin?: boolean;
-  selectedGrade: Grade;
   compact?: boolean;
 }
 
-export default function BreedCard({ 
-  breed, 
-  onAddToOrder, 
-  onEdit, 
-  onDelete, 
+export default function BreedCard({
+  breed,
+  onAddToOrder,
+  onEdit,
+  onDelete,
   isAdmin = false,
-  selectedGrade,
   compact = false
 }: BreedCardProps) {
-  const pricePiece = selectedGrade === 'premium' && breed.premium_price_piece 
-    ? breed.premium_price_piece 
-    : breed.price_piece;
-  
-  const pricePair = selectedGrade === 'premium' && breed.premium_price_pair 
-    ? breed.premium_price_pair 
-    : breed.price_pair;
-  
-  const priceSet = selectedGrade === 'premium' && breed.premium_price_set 
-    ? breed.premium_price_set 
-    : breed.price_set;
+  const pricePiece = breed.premium_price_piece;
+  const pricePair = breed.premium_price_pair;
+  const priceSet = breed.premium_price_set;
 
   if (isAdmin) {
     return (
@@ -41,14 +31,7 @@ export default function BreedCard({
               {breed.name}
             </h4>
             <div className="text-[9.5px] sm:text-[10px] font-bold tracking-tight mt-1.5 space-y-0.5">
-              {breed.premium_price_piece ? (
-                <>
-                  <p className="text-orange-500 truncate">👑 คัด: ฿{breed.premium_price_piece}/{breed.premium_price_pair}{breed.premium_price_set && breed.premium_price_set > 0 && `/${breed.premium_price_set}`}</p>
-                  <p className="text-slate-400 truncate opacity-80">🐟 ปกติ: ฿{breed.price_piece}/{breed.price_pair}{breed.price_set && breed.price_set > 0 && `/${breed.price_set}`}</p>
-                </>
-              ) : (
-                <p className="text-slate-400 truncate mt-1">฿{breed.price_piece} / ฿{breed.price_pair} {breed.price_set && breed.price_set > 0 && `/ ฿${breed.price_set}`}</p>
-              )}
+              <p className="text-orange-500 truncate">฿{pricePiece}/{pricePair}{priceSet && priceSet > 0 ? `/${priceSet}` : ''}</p>
             </div>
           </div>
         </div>
@@ -78,13 +61,13 @@ export default function BreedCard({
         {/* Gender Selection */}
         <div className="flex gap-1.5 mb-1.5">
           <button 
-            onClick={() => onAddToOrder(breed, 'piece', 'male', selectedGrade)} 
+            onClick={() => onAddToOrder(breed, 'piece', 'male')}
             className="flex-1 py-2 bg-blue-50 hover:bg-blue-500 hover:text-white text-blue-600 rounded-lg text-[11px] font-bold transition-all"
           >
             ตัวผู้ (฿{pricePiece})
           </button>
           <button 
-            onClick={() => onAddToOrder(breed, 'piece', 'female', selectedGrade)} 
+            onClick={() => onAddToOrder(breed, 'piece', 'female')}
             className="flex-1 py-2 bg-pink-50 hover:bg-pink-500 hover:text-white text-pink-600 rounded-lg text-[11px] font-bold transition-all"
           >
             ตัวเมีย (฿{pricePiece})
@@ -92,9 +75,9 @@ export default function BreedCard({
         </div>
         
         {/* Price Buttons */}
-        <div className={`grid gap-1.5 ${breed.price_set && priceSet > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div className={`grid gap-1.5 ${priceSet && priceSet > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <button 
-            onClick={() => onAddToOrder(breed, 'pair', 'mixed', selectedGrade)} 
+            onClick={() => onAddToOrder(breed, 'pair', 'mixed')}
             className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all"
           >
             <p className="text-[8px] font-black uppercase tracking-wider opacity-60">Pair</p>
@@ -102,7 +85,7 @@ export default function BreedCard({
           </button>
           {priceSet && priceSet > 0 ? (
             <button 
-              onClick={() => onAddToOrder(breed, 'set', 'mixed', selectedGrade)} 
+              onClick={() => onAddToOrder(breed, 'set', 'mixed')}
               className="flex flex-col items-center bg-slate-50 hover:bg-blue-600 hover:text-white py-2 rounded-lg transition-all"
             >
               <p className="text-[8px] font-black uppercase tracking-wider opacity-60">Set</p>

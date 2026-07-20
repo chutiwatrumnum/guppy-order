@@ -103,37 +103,24 @@ export default function AdminPage() {
   };
 
   // Function สำหรับดึงค่าต้นทุนจาก breed โดยตรง (ไม่ดึงจาก item.cost)
-  const getItemCost = (breedId: string, grade: string, type: string): number => {
+  const getItemCost = (breedId: string, type: string): number => {
     if (!breedId) return 0;
     const breed = breeds.find((b: Breed) => b.id === breedId);
     if (!breed) return 0;
-    if (grade === 'premium') {
-      return type === 'piece' ? (breed.premium_cost_piece || 0)
-        : type === 'pair' ? (breed.premium_cost_pair || 0)
-        : (breed.premium_cost_set || 0);
-    }
-    return type === 'piece' ? (breed.cost_piece || 0)
-      : type === 'pair' ? (breed.cost_pair || 0)
-      : (breed.cost_set || 0);
+    return type === 'piece' ? (breed.premium_cost_piece || 0)
+      : type === 'pair' ? (breed.premium_cost_pair || 0)
+      : (breed.premium_cost_set || 0);
   };
 
   // Dashboard stats
   const dashboardStats = useMemo(() => {
     const totalSales = allOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
-    let totalFishNormal = 0;
-    let totalFishPremium = 0;
+    let totalFish = 0;
     allOrders.forEach(order => {
       order.items?.forEach((item: OrderItem) => {
-        const qty = item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3;
-        if (item.grade === 'premium') {
-          totalFishPremium += qty;
-        } else {
-          totalFishNormal += qty;
-        }
+        totalFish += item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3;
       });
     });
-
-    const totalFish = totalFishNormal + totalFishPremium;
 
     let totalFishCost = 0;
     let totalProfit = 0;
@@ -143,7 +130,7 @@ export default function AdminPage() {
     allOrders.forEach(order => {
       const orderFishCost = order.items?.reduce((itemSum, item) => {
         // ใช้ getItemCost เพื่อดึงค่าต้นทุนจาก breed โดยตรง
-        const itemCost = item.breedId ? getItemCost(item.breedId, item.grade, item.type) : 0;
+        const itemCost = item.breedId ? getItemCost(item.breedId, item.type) : 0;
         return itemSum + (itemCost * item.quantity);
       }, 0) || 0;
       
@@ -157,13 +144,13 @@ export default function AdminPage() {
     const avgOrderValue = allOrders.length > 0 ? totalSales / allOrders.length : 0;
     
     // Breed stats
-    const breedStats: { [key: string]: { name: string; qty: number; sales: number; isPremium?: boolean } } = {};
+    const breedStats: { [key: string]: { name: string; qty: number; sales: number } } = {};
     allOrders.forEach(order => {
       order.items.forEach((item: OrderItem) => {
-        const statKey = `${item.breedId}${item.grade === 'premium' ? '-premium' : '-normal'}`;
-        
+        const statKey = item.breedId;
+
         if (!breedStats[statKey]) {
-          breedStats[statKey] = { name: item.breedName, qty: 0, sales: 0, isPremium: item.grade === 'premium' };
+          breedStats[statKey] = { name: item.breedName, qty: 0, sales: 0 };
         }
         const paidQty = item.quantity - (item.freeQty || 0);
         breedStats[statKey].qty += item.quantity;
@@ -198,8 +185,6 @@ export default function AdminPage() {
       totalShippingIncome,
       totalShippingCost,
       totalFish,
-      totalFishNormal,
-      totalFishPremium,
       totalProfit,
       avgOrderValue,
       topBreeds,
@@ -218,7 +203,7 @@ export default function AdminPage() {
       const newTotalFish = updatedItems.reduce((sum, item) => sum + (item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3), 0);
       const newTotalCost = updatedItems.reduce((sum, item) => {
         // Use getItemCost for breed-based cost
-        const itemCost = item.breedId ? getItemCost(item.breedId, item.grade, item.type) : 0;
+        const itemCost = item.breedId ? getItemCost(item.breedId, item.type) : 0;
         return sum + (itemCost * item.quantity);
       }, 0);
       const newActualShippingFee = updatedActualShippingFee !== undefined ? updatedActualShippingFee : editingOrder?.actualShippingFee;
@@ -280,16 +265,9 @@ export default function AdminPage() {
     const itemsWithUpdatedPrices = (order.items || []).map((item: OrderItem) => {
       const breed = breeds.find((b: Breed) => b.id === item.breedId);
       if (breed) {
-        let newPrice = 0;
-        if (item.grade === 'premium') {
-          newPrice = item.type === 'piece' ? (breed.premium_price_piece || 0) 
-            : item.type === 'pair' ? (breed.premium_price_pair || 0) 
-            : (breed.premium_price_set || 0);
-        } else {
-          newPrice = item.type === 'piece' ? (breed.price_piece || 0) 
-            : item.type === 'pair' ? (breed.price_pair || 0) 
-            : (breed.price_set || 0);
-        }
+        const newPrice = item.type === 'piece' ? (breed.premium_price_piece || 0)
+          : item.type === 'pair' ? (breed.premium_price_pair || 0)
+          : (breed.premium_price_set || 0);
         return { ...item, price: newPrice };
       }
       return item;
@@ -298,18 +276,13 @@ export default function AdminPage() {
     setIsEditingOrder(true);
   };
 
-  const getItemPrice = (breedId: string, grade: string, type: string) => {
+  const getItemPrice = (breedId: string, type: string) => {
     if (!breedId) return 0;
     const breed = breeds.find((b: Breed) => b.id === breedId);
     if (!breed) return 0;
-    if (grade === 'premium') {
-      return type === 'piece' ? (breed.premium_price_piece || 0) 
-        : type === 'pair' ? (breed.premium_price_pair || 0) 
-        : (breed.premium_price_set || 0);
-    }
-    return type === 'piece' ? (breed.price_piece || 0) 
-      : type === 'pair' ? (breed.price_pair || 0) 
-      : (breed.price_set || 0);
+    return type === 'piece' ? (breed.premium_price_piece || 0)
+      : type === 'pair' ? (breed.premium_price_pair || 0)
+      : (breed.premium_price_set || 0);
   };
 
   const addEditItem = (breedId: string) => {
@@ -319,9 +292,8 @@ export default function AdminPage() {
       id: '',
       breedId,
       breedName: breed.name,
-      price: getItemPrice(breed.id, 'premium', 'piece'),
+      price: getItemPrice(breed.id, 'piece'),
       quantity: 1,
-      grade: 'premium',
       type: 'piece',
       gender: 'male',
       freeQty: 0,
@@ -338,11 +310,11 @@ export default function AdminPage() {
     const updated = [...editItems];
     updated[index] = { ...updated[index], [field]: value };
     
-    // Auto-update price when breed/grade/type changes
-    if (field === 'breedId' || field === 'grade' || field === 'type') {
+    // Auto-update price when breed/type changes
+    if (field === 'breedId' || field === 'type') {
       const item = updated[index];
       if (item.breedId) {
-        updated[index].price = getItemPrice(item.breedId, item.grade, item.type);
+        updated[index].price = getItemPrice(item.breedId, item.type);
         
         if (field === 'breedId') {
           const breed = breeds.find((b: Breed) => b.id === item.breedId);
@@ -498,7 +470,7 @@ export default function AdminPage() {
                         {filteredOrders.map((order, index) => {
                           // Calculate cost using getItemCost (breed-based)
                           const orderCost = order.items?.reduce((sum: number, item: OrderItem) => {
-                            const cost = item.breedId ? getItemCost(item.breedId, item.grade, item.type) : 0;
+                            const cost = item.breedId ? getItemCost(item.breedId, item.type) : 0;
                             return sum + (cost * item.quantity);
                           }, 0) || 0;
                           const shippingFee = order.shippingFee || 60;
@@ -526,12 +498,11 @@ export default function AdminPage() {
                               <div className="space-y-1">
                                 {order.items?.map((item: OrderItem, i: number) => {
                                   // Use getItemCost for breed-based cost
-                                  const itemCost = item.breedId ? getItemCost(item.breedId, item.grade, item.type) : 0;
+                                  const itemCost = item.breedId ? getItemCost(item.breedId, item.type) : 0;
                                   return (
                                   <div key={i} className="flex items-center justify-between text-xs sm:text-sm bg-white/50 rounded px-2 py-1">
                                     <div className="flex items-center gap-1 flex-wrap min-w-0">
                                       <span className="font-medium text-slate-700 truncate">{item.breedName}</span>
-                                      {item.grade === 'premium' && <span className="text-[9px] bg-orange-100 text-orange-600 px-1 rounded font-bold shrink-0">👑</span>}
                                       <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">
                                         {item.quantity} {item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด'}{item.type === 'piece' && item.gender !== 'mixed' ? (item.gender === 'male' ? '(ผู้)' : '(เมีย)') : ''}
                                       </span>
@@ -657,15 +628,11 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Fish Count by Grade */}
-                <div className="grid grid-cols-2 gap-4 mb-8">
+                {/* Fish Count */}
+                <div className="mb-8">
                   <div className="p-5 bg-orange-50 border-2 border-orange-100 rounded-2xl">
-                    <p className="text-xs uppercase tracking-widest text-orange-600 font-bold mb-2">👑 ปลาคัดเกรด</p>
-                    <p className="font-black text-3xl text-orange-600">{dashboardStats.totalFishPremium} <span className="text-sm font-bold text-orange-400">ตัว</span></p>
-                  </div>
-                  <div className="p-5 bg-blue-50 border-2 border-blue-100 rounded-2xl">
-                    <p className="text-xs uppercase tracking-widest text-blue-600 font-bold mb-2">🐟 ปลาเกรดปกติ</p>
-                    <p className="font-black text-3xl text-blue-600">{dashboardStats.totalFishNormal} <span className="text-sm font-bold text-blue-400">ตัว</span></p>
+                    <p className="text-xs uppercase tracking-widest text-orange-600 font-bold mb-2">🐟 จำนวนปลาทั้งหมด</p>
+                    <p className="font-black text-3xl text-orange-600">{dashboardStats.totalFish} <span className="text-sm font-bold text-orange-400">ตัว</span></p>
                   </div>
                 </div>
 
@@ -677,7 +644,7 @@ export default function AdminPage() {
                       {dashboardStats.topBreeds.map((breed: any, idx: number) => (
                         <div key={idx} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-lg">{breed.isPremium ? '👑' : '🐟'}</span>
+                            <span className="text-lg">🐟</span>
                             <span className="font-bold text-xs text-slate-600 truncate">{breed.name}</span>
                           </div>
                           <p className="font-black text-lg text-slate-800">฿{breed.sales.toLocaleString()}</p>
@@ -783,18 +750,7 @@ export default function AdminPage() {
                               ))}
                             </select>
                           </div>
-                          <div className={item.type === 'piece' ? "col-span-4 sm:col-span-3" : "col-span-6 sm:col-span-4"}>
-                            <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">เกรด</label>
-                            <select
-                              value={item.grade}
-                              onChange={(e) => updateEditItem(idx, 'grade', e.target.value)}
-                              className="w-full h-9 sm:h-10 bg-slate-50 border border-slate-200 rounded-lg px-2 text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                            >
-                              <option value="normal">ธรรมดา</option>
-                              <option value="premium">👑 พรีเมียม</option>
-                            </select>
-                          </div>
-                          <div className={item.type === 'piece' ? "col-span-4 sm:col-span-2" : "col-span-6 sm:col-span-4"}>
+                          <div className={item.type === 'piece' ? "col-span-8 sm:col-span-5" : "col-span-12 sm:col-span-8"}>
                             <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">ชนิด</label>
                             <select
                               value={item.type}

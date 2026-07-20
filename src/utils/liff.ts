@@ -1,4 +1,4 @@
-// จับ LINE userId ตอนลูกค้าเปิดใบสรุปผ่าน LIFF
+// เชื่อมกับ LINE ผ่าน LIFF
 //
 // LIFF ID ไม่ใช่ความลับ — มันโผล่ใน URL ที่ลูกค้าเห็นอยู่แล้ว
 // (ต่างจาก channel secret / access token ที่ห้ามอยู่ฝั่งเบราว์เซอร์)
@@ -9,6 +9,21 @@ export function getLiffOrderUrl(token: string): string {
   return `https://liff.line.me/${LIFF_ID}/o/${token}`;
 }
 
+// init ถูกเรียกจาก 2 ที่: ตอนบูตแอป (เพื่อจัดการ liff.state) และตอนดึง userId
+// เก็บ promise ไว้ใช้ซ้ำ จะได้ init จริงครั้งเดียว
+let initPromise: Promise<typeof import('@line/liff').default> | null = null;
+
+export function ensureLiffInit() {
+  if (!initPromise) {
+    initPromise = (async () => {
+      const liff = (await import('@line/liff')).default;
+      await liff.init({ liffId: LIFF_ID });
+      return liff;
+    })();
+  }
+  return initPromise;
+}
+
 /**
  * คืน LINE userId ถ้าเปิดอยู่ในแอป LINE ไม่งั้นคืน null
  *
@@ -17,10 +32,7 @@ export function getLiffOrderUrl(token: string): string {
  */
 export async function getLineUserId(): Promise<string | null> {
   try {
-    // โหลดตอนใช้จริงเท่านั้น จะได้ไม่ถ่วงบันเดิลหลักของหน้าร้าน
-    const liff = (await import('@line/liff')).default;
-
-    await liff.init({ liffId: LIFF_ID });
+    const liff = await ensureLiffInit();
 
     // เปิดนอกแอป LINE → ไม่ต้องบังคับให้ล็อกอิน
     if (!liff.isInClient()) return null;
@@ -30,7 +42,7 @@ export async function getLineUserId(): Promise<string | null> {
     return profile.userId || null;
   } catch (err) {
     // LIFF พังไม่ควรทำให้ใบสรุปเปิดไม่ได้ — บันทึกไว้เฉย ๆ แล้วไปต่อ
-    console.warn('LIFF init failed:', err);
+    console.warn('LIFF getProfile failed:', err);
     return null;
   }
 }

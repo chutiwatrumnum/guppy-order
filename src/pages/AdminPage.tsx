@@ -17,6 +17,7 @@ import { getLiffOrderUrl } from '../utils/liff';
 import { getPublicOrderUrl } from '../utils/publicUrl';
 import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '../types';
 import Layout from './Layout';
+import PendingSlips from '../components/PendingSlips';
 
 const STATUS_LABEL: Record<OrderStatus, { text: string; cls: string }> = {
   pending:   { text: '📦 รอส่ง',   cls: 'bg-amber-100 text-amber-700' },
@@ -36,7 +37,7 @@ export default function AdminPage() {
   const [allOrders, setAllOrders] = useState<SavedOrder[]>([]);
   const [breeds, setBreeds] = useState<Breed[]>([]);
   const [loading, setLoading] = useState(true);
-  const [adminView, setAdminView] = useState<'orders' | 'dashboard'>('orders');
+  const [adminView, setAdminView] = useState<'orders' | 'dashboard' | 'slips'>('orders');
   const [reportPeriod, setReportPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -525,11 +526,23 @@ export default function AdminPage() {
             >
               📊 Dashboard
             </button>
+            <button
+              onClick={() => setAdminView('slips')}
+              className={`px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
+                adminView === 'slips'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              🧾 สลิป
+            </button>
           </div>
           
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
-            {adminView === 'orders' ? (
+            {adminView === 'slips' ? (
+              <PendingSlips onConfirmed={() => loadAllOrders(reportPeriod)} />
+            ) : adminView === 'orders' ? (
               <>
                 {/* Search Bar */}
                 <div className="mb-4">

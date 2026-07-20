@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
 import { calculateItemTotal, getGenderLabel } from '../utils/message';
+import { parseThaiAddress } from '../utils/address';
 import type { Breed, Gender, OrderItem, GroupedOrderItem, Customer } from '../types';
 import { User } from 'lucide-react';
 import Layout from './Layout';
@@ -44,6 +45,7 @@ export default function HomePage() {
   const [orderNote, setOrderNote] = useState('');
   const [billDiscount, setBillDiscount] = useState<number>(0);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [addressPaste, setAddressPaste] = useState('');
 
   // Handle customer selection
   const handleCustomerChange = (customerId: string) => {
@@ -59,7 +61,28 @@ export default function HomePage() {
       setCustomerName('');
       setCustomerPhone('');
       setCustomerAddress('');
+      setAddressPaste('');
     }
+  };
+
+  // แยกที่อยู่ที่ลูกค้าพิมพ์มาในไลน์ ใส่ลงช่องให้อัตโนมัติ
+  // เติมเฉพาะช่องที่แยกได้ ช่องที่เดาไม่ออกปล่อยค่าเดิมไว้ให้พิมพ์เอง
+  const applyPastedAddress = (text: string) => {
+    setAddressPaste(text);
+    if (!text.trim()) return;
+
+    const parsed = parseThaiAddress(text);
+    if (!parsed.name && !parsed.phone && !parsed.address) {
+      toast.error('แยกข้อมูลไม่ออก ลองกรอกเองด้านล่างครับ');
+      return;
+    }
+
+    if (parsed.name) { setCustomerName(parsed.name); setSelectedCustomerId(''); }
+    if (parsed.phone) setCustomerPhone(parsed.phone);
+    if (parsed.address) setCustomerAddress(parsed.address);
+
+    const filled = [parsed.name && 'ชื่อ', parsed.phone && 'เบอร์', parsed.address && 'ที่อยู่'].filter(Boolean);
+    toast.success(`แยกได้: ${filled.join(' / ')}`, { description: 'ตรวจอีกครั้งก่อนบันทึกนะครับ', duration: 3000 });
   };
 
   // Load Data from Supabase
@@ -528,16 +551,45 @@ export default function HomePage() {
                             placeholder="หรือพิมพ์ชื่อเอง"
                             className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
                           />
-                          {selectedCustomerId && customerPhone && (
-                            <div className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-100 px-4 py-2 rounded-xl">
-                              📱 {customerPhone}
+                          {/* วางที่อยู่ที่ลูกค้าพิมพ์มาในไลน์ทั้งก้อน แล้วแยกใส่ช่องให้อัตโนมัติ */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest">
+                                📋 วางที่อยู่จากไลน์
+                              </label>
+                              {addressPaste && (
+                                <button
+                                  type="button"
+                                  onClick={() => setAddressPaste('')}
+                                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600"
+                                >
+                                  ล้าง
+                                </button>
+                              )}
                             </div>
-                          )}
-                          {selectedCustomerId && customerAddress && (
-                            <div className="flex items-center gap-2 text-sm font-bold text-slate-600 bg-slate-100 px-4 py-2 rounded-xl">
-                              📍 {customerAddress}
-                            </div>
-                          )}
+                            <textarea
+                              value={addressPaste}
+                              onChange={(e) => applyPastedAddress(e.target.value)}
+                              placeholder={'copy ข้อความที่ลูกค้าส่งมาแล้ววางตรงนี้\nระบบจะแยก ชื่อ / เบอร์ / ที่อยู่ ให้เอง'}
+                              rows={3}
+                              className="w-full bg-white border border-dashed border-blue-300 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-500 resize-y"
+                            />
+                          </div>
+
+                          <input
+                            type="tel"
+                            value={customerPhone}
+                            onChange={(e) => setCustomerPhone(e.target.value)}
+                            placeholder="📱 เบอร์โทร"
+                            className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+                          />
+                          <textarea
+                            value={customerAddress}
+                            onChange={(e) => setCustomerAddress(e.target.value)}
+                            placeholder="📍 ที่อยู่จัดส่ง"
+                            rows={2}
+                            className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 resize-y"
+                          />
                           <input
                             type="text"
                             value={orderNote}

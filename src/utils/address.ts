@@ -17,20 +17,36 @@ const NAME_RE  = /^(ชื่อผู้รับ|ชื่อ-สกุล|ช
 const PHONE_RE = /^(เบอร์โทรศัพท์|เบอร์โทร|เบอร์|โทรศัพท์|โทร|tel|phone)\s*\.?\s*[:：]?\s*/i;
 const ADDR_RE  = /^(ที่อยู่|address|addr)\s*[:：]?\s*/i;
 
+// ป้ายกำกับเบอร์ที่โผล่กลางบรรทัดได้ เช่น "จ.ยะลา 95000 โทร 0824364256"
+// ต้องจับมาด้วยเพื่อตัดทิ้งพร้อมตัวเลข ไม่งั้นคำว่า "โทร" จะค้างท้ายที่อยู่
+const PHONE_LABEL_INLINE = '(?:เบอร์โทรศัพท์|เบอร์โทร|เบอร์|โทรศัพท์|โทร|tel|phone)\\s*\\.?\\s*[:：]?\\s*';
+
 // เบอร์ไทย: ขึ้นต้น 0 ตามด้วยอีก 8-9 หลัก อนุญาตให้มีเว้นวรรค/ขีดคั่น
 //
-// ต้องไม่เริ่มกลางกลุ่มตัวเลข ไม่งั้น "10900 0812345678" (รหัสไปรษณีย์ติดเบอร์)
-// จะถูกจับเป็น "0900 08123" กลายเป็นเบอร์ที่ไม่มีอยู่จริง
-// ใช้ capture group แทน lookbehind เพราะ Safari เก่ายังไม่รองรับ lookbehind
-// ถ้าใช้ lookbehind แล้วเปิดบน iOS รุ่นเก่า จะพังทั้งบันเดิลตั้งแต่โหลด
-const PHONE_ANYWHERE = /(^|[^\d])(0\d(?:[\s-]?\d){7,8})(?!\d)/;
+// (^|[^\d]) กันไม่ให้เริ่มกลางกลุ่มตัวเลข — "10900 0812345678" (รหัสไปรษณีย์ติดเบอร์)
+// เคยถูกจับเป็น "0900 08123" ได้เบอร์ที่ไม่มีจริงและรหัสไปรษณีย์เพี้ยนไปด้วย
+//
+// ใช้ capture group แทน lookbehind เพราะ Safari เก่าไม่รองรับ lookbehind
+// และจะ throw ตั้งแต่ตอน parse ทำให้ทั้งบันเดิลพังบน iOS รุ่นเก่า
+const PHONE_ANYWHERE = new RegExp(
+  `(^|[^\\d])(${PHONE_LABEL_INLINE})?(0\\d(?:[\\s-]?\\d){7,8})(?!\\d)`,
+  'i'
+);
 
 const cleanPhone = (raw: string) => raw.replace(/[^\d]/g, '');
 
-// คืนเบอร์ที่เจอ (ยังไม่ล้างรูปแบบ) เพื่อเอาไปตัดออกจากข้อความต้นทางได้ตรง ๆ
-const findPhone = (text: string): string | undefined => {
+interface PhoneMatch {
+  /** เลขล้วน ไว้เก็บลงฐานข้อมูล */
+  digits: string;
+  /** ข้อความที่ต้องตัดออกจากต้นทาง รวมป้ายกำกับถ้ามี */
+  matched: string;
+}
+
+const findPhone = (text: string): PhoneMatch | undefined => {
   const m = text.match(PHONE_ANYWHERE);
-  return m ? m[2] : undefined;
+  if (!m) return undefined;
+  const [, , label = '', number] = m;
+  return { digits: cleanPhone(number), matched: `${label}${number}` };
 };
 
 export function parseThaiAddress(raw: string): ParsedAddress {
@@ -55,7 +71,7 @@ export function parseThaiAddress(raw: string): ParsedAddress {
 
     if (PHONE_RE.test(line)) {
       const found = findPhone(line.replace(PHONE_RE, '').trim());
-      if (found) phone = cleanPhone(found);
+      if (found) phone = found.digits;
       continue;
     }
 
@@ -81,8 +97,8 @@ export function parseThaiAddress(raw: string): ParsedAddress {
   if (!phone) {
     const found = findPhone(address) || findPhone(raw);
     if (found) {
-      phone = cleanPhone(found);
-      address = address.replace(found, '').trim();
+      phone = found.digits;
+      address = address.replace(found.matched, ' ').trim();
     }
   }
 

@@ -85,7 +85,7 @@ export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void
 
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('total_amount')
+      .select('total_amount, order_number, public_token')
       .eq('id', orderId)
       .single();
 
@@ -115,14 +115,32 @@ export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void
       })
       .eq('id', slip.id);
 
-    setBusy(null);
-
     if (slipError) {
+      setBusy(null);
       toast.error('ปิดบิลแล้ว แต่บันทึกสลิปไม่สำเร็จ');
       return;
     }
 
-    toast.success('ยืนยันรับเงินแล้ว');
+    // หยอดคิวให้บอทแจ้งลูกค้าว่ายืนยันเงินแล้ว — ไม่ให้ลูกค้าต้องมากดดูเอง
+    // ล้มเหลวตรงนี้ไม่ควรทำให้การปิดบิลพัง แค่เตือน
+    const summaryUrl = `https://liff.line.me/2010766267-xz9flUvC/o/${order.public_token}`;
+    const { error: notifyError } = await supabase.from('line_notifications').insert({
+      line_user_id: slip.line_user_id,
+      order_id: orderId,
+      message:
+        `✅ ยืนยันการชำระเงินแล้วครับ\n` +
+        `บิล ${order.order_number} · ฿${Number(order.total_amount).toLocaleString()}\n\n` +
+        `ทางร้านกำลังจัดเตรียมพัสดุ เมื่อจัดส่งจะแจ้งเลขพัสดุให้อีกครั้งครับ 🐟\n` +
+        `ดูใบสรุป: ${summaryUrl}`,
+    });
+
+    setBusy(null);
+
+    if (notifyError) {
+      toast.warning('ยืนยันรับเงินแล้ว แต่ส่งแจ้งเตือนหาลูกค้าไม่สำเร็จ');
+    } else {
+      toast.success('ยืนยันรับเงินแล้ว — แจ้งลูกค้าในไลน์ให้อัตโนมัติ');
+    }
     setSlips(prev => prev.filter(s => s.id !== slip.id));
     onConfirmed?.();
   };

@@ -47,6 +47,7 @@ export default function HomePage() {
   const [billDiscount, setBillDiscount] = useState<number>(0);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [addressPaste, setAddressPaste] = useState('');
+  const [quickBreedIds, setQuickBreedIds] = useState<string[]>([]);
   // ลิงก์ใบสรุปของบิลที่เพิ่งบันทึก เอาไว้ส่งให้ลูกค้าในไลน์
   const [lastOrderLink, setLastOrderLink] = useState<{ url: string; orderNumber: string; message: string } | null>(null);
 
@@ -88,6 +89,20 @@ export default function HomePage() {
     toast.success(`แยกได้: ${filled.join(' / ')}`, { description: 'ตรวจอีกครั้งก่อนบันทึกนะครับ', duration: 3000 });
   };
 
+  // เบอร์ครบแล้ว → หาลูกค้าเดิมด้วยเบอร์ ถ้าเจอเติมชื่อ/ที่อยู่ให้อัตโนมัติ
+  // ลูกค้าประจำจะออกบิลเร็วขึ้นรอบสอง ไม่ต้องพิมพ์ที่อยู่ใหม่
+  const lookupCustomerByPhone = async (phone: string) => {
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 9) return;
+    const { data } = await supabase.rpc('find_customer_by_phone', { p_phone: digits });
+    const match = Array.isArray(data) ? data[0] : data;
+    if (!match) return;
+    setSelectedCustomerId(match.id);
+    if (match.name) setCustomerName(match.name);
+    if (match.address) setCustomerAddress(match.address);
+    toast.success(`ลูกค้าเดิม: ${match.name}`, { description: 'เติมชื่อ/ที่อยู่ให้แล้ว', duration: 2500 });
+  };
+
   // Load Data from Supabase
   useEffect(() => {
     fetchData();
@@ -113,6 +128,10 @@ export default function HomePage() {
       
       const { data: customersData } = await supabase.from('customers').select('*').order('name');
       setCustomers(customersData || []);
+
+      // ปลาขายบ่อยล่าสุด ไว้ปักบนสุดให้กดเพิ่มเร็ว ไม่ต้องเสิร์ช
+      const { data: topBreeds } = await supabase.rpc('top_recent_breeds', { p_days: 14, p_limit: 8 });
+      setQuickBreedIds((topBreeds || []).map((r: any) => r.breed_id));
     } catch (err) {
       console.error('Fetch error:', err);
     } finally {
@@ -332,6 +351,30 @@ export default function HomePage() {
 
       if (error) throw error;
 
+      // จำลูกค้าไว้ถ้ามีเบอร์แต่ยังไม่ได้ผูกกับลูกค้าเดิม
+      // ครั้งหน้าเบอร์นี้สั่ง ชื่อ/ที่อยู่จะขึ้นเอง — ไม่บล็อกการบันทึกออเดอร์ถ้าพลาด
+      if (!selectedCustomerId && customerPhone.replace(/\D/g, '').length >= 9) {
+        try {
+          const digits = customerPhone.replace(/\D/g, '');
+          const { data: existing } = await supabase.rpc('find_customer_by_phone', { p_phone: digits });
+          const match = Array.isArray(existing) ? existing[0] : existing;
+          if (match?.id) {
+            await supabase.from('customers').update({
+              name: customerName || match.name,
+              address: customerAddress || match.address,
+            }).eq('id', match.id);
+          } else {
+            await supabase.from('customers').insert({
+              name: customerName || 'ไม่ระบุชื่อ',
+              phone: customerPhone,
+              address: customerAddress || null,
+            });
+          }
+        } catch (custErr) {
+          console.error('Save customer error:', custErr);
+        }
+      }
+
       if (saved?.public_token) {
         const url = getLiffOrderUrl(saved.public_token);
         setLastOrderLink({
@@ -414,6 +457,29 @@ export default function HomePage() {
                   </p>
                 )}
               </div>
+
+              {!searchTerm.trim() && quickBreedIds.length > 0 && (() => {
+                const byId = new Map(breeds.map(b => [b.id, b]));
+                const quick = quickBreedIds.map(id => byId.get(id)).filter(Boolean) as Breed[];
+                if (quick.length === 0) return null;
+                return (
+                  <div className="mb-5">
+                    <p className="px-2 mb-2 text-[10px] font-black uppercase tracking-widest text-orange-500">⚡ ขายบ่อยล่าสุด</p>
+                    <div className="flex gap-2 overflow-x-auto pb-2 px-2 -mx-0">
+                      {quick.map(breed => (
+                        <button
+                          key={breed.id}
+                          onClick={() => setSearchTerm(breed.name)}
+                          className="shrink-0 min-w-[130px] bg-white border-2 border-orange-100 hover:border-orange-300 rounded-2xl px-3 py-2.5 text-left active:scale-95 transition-all shadow-sm"
+                        >
+                          <p className="font-bold text-sm text-slate-800 line-clamp-1">{breed.name}</p>
+                          <p className="text-[11px] text-orange-500 font-black mt-0.5">แตะเพื่อเลือก · ฿{breed.premium_price_pair}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex items-center justify-between px-2 mb-4">
                 <h2 className="font-black uppercase tracking-tight text-base lg:text-xl text-slate-800">Select Species</h2>
@@ -653,6 +719,7 @@ export default function HomePage() {
                             type="tel"
                             value={customerPhone}
                             onChange={(e) => setCustomerPhone(e.target.value)}
+                            onBlur={(e) => lookupCustomerByPhone(e.target.value)}
                             placeholder="📱 เบอร์โทร"
                             className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
                           />

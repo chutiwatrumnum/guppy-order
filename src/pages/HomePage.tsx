@@ -667,76 +667,92 @@ export default function HomePage() {
                     {orderItems.length > 0 && (
                       <div className="mt-4 sm:mt-6 p-4 bg-blue-50 rounded-2xl border border-blue-100">
                         <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-3">ข้อมูลลูกค้า (ไม่บังคับ)</p>
-                        <div className="space-y-3">
-                          <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            <select
-                              value={selectedCustomerId}
-                              onChange={(e) => handleCustomerChange(e.target.value)}
-                              className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl pl-10 pr-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 appearance-none cursor-pointer"
-                            >
-                              <option value="">เลือกลูกค้า (ถ้ามี)</option>
-                              {customers.map(customer => (
-                                <option key={customer.id} value={customer.id}>
-                                  {customer.name} {customer.phone ? `(${customer.phone})` : ''}
-                                </option>
-                              ))}
-                            </select>
+                        <div className="space-y-4">
+
+                          {/* ── ชื่อลูกค้า ── ตอนออกบิลมักมีแค่ชื่อ TikTok/ไลน์ */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ชื่อลูกค้า</label>
+                            <div className="relative">
+                              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                              <input
+                                type="text"
+                                value={customerName}
+                                onChange={(e) => { setCustomerName(e.target.value); setSelectedCustomerId(''); }}
+                                placeholder="ชื่อ TikTok / ชื่อไลน์ / ชื่อลูกค้า"
+                                className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl pl-10 pr-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+                              />
+                            </div>
+                            {customers.length > 0 && (
+                              <select
+                                value={selectedCustomerId}
+                                onChange={(e) => handleCustomerChange(e.target.value)}
+                                className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg px-3 text-xs font-bold text-slate-500 outline-none focus:border-blue-400 appearance-none cursor-pointer"
+                              >
+                                <option value="">↩︎ หรือเลือกจากลูกค้าเดิม</option>
+                                {customers.map(customer => (
+                                  <option key={customer.id} value={customer.id}>
+                                    {customer.name} {customer.phone ? `(${customer.phone})` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                           </div>
-                          <input
-                            type="text"
-                            value={customerName}
-                            onChange={(e) => { setCustomerName(e.target.value); setSelectedCustomerId(''); }}
-                            placeholder="หรือพิมพ์ชื่อเอง"
-                            className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                          />
-                          {/* วางที่อยู่ที่ลูกค้าพิมพ์มาในไลน์ทั้งก้อน แล้วแยกใส่ช่องให้อัตโนมัติ */}
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest">
-                                📋 วางที่อยู่จากไลน์
-                              </label>
+
+                          {/* ── ที่อยู่จัดส่ง ── ปกติลูกค้ากรอกเองในลิงก์ กรอกที่นี่ได้ถ้ามีข้อมูลแล้ว */}
+                          <div className="space-y-2 pt-2 border-t border-blue-100">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ที่อยู่จัดส่ง</label>
+                              <span className="text-[9px] text-slate-400">ลูกค้ากรอกเองในลิงก์ได้</span>
+                            </div>
+
+                            {/* วางข้อความจากไลน์ทั้งก้อน แล้วแยก ชื่อ/เบอร์/ที่อยู่ ให้อัตโนมัติ */}
+                            <div className="relative">
+                              <textarea
+                                value={addressPaste}
+                                onChange={(e) => applyPastedAddress(e.target.value)}
+                                placeholder={'📋 วางข้อความที่ลูกค้าส่งมาในไลน์ตรงนี้\nระบบจะแยก ชื่อ / เบอร์ / ที่อยู่ ให้เอง'}
+                                rows={2}
+                                className="w-full bg-white border border-dashed border-blue-300 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-500 resize-y"
+                              />
                               {addressPaste && (
                                 <button
                                   type="button"
                                   onClick={() => setAddressPaste('')}
-                                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600"
+                                  className="absolute right-2 top-2 text-[10px] font-bold text-slate-400 hover:text-slate-600 bg-white px-1.5 rounded"
                                 >
                                   ล้าง
                                 </button>
                               )}
                             </div>
+
+                            <input
+                              type="tel"
+                              value={customerPhone}
+                              onChange={(e) => setCustomerPhone(e.target.value)}
+                              onBlur={(e) => lookupCustomerByPhone(e.target.value)}
+                              placeholder="📱 เบอร์โทร"
+                              className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+                            />
                             <textarea
-                              value={addressPaste}
-                              onChange={(e) => applyPastedAddress(e.target.value)}
-                              placeholder={'copy ข้อความที่ลูกค้าส่งมาแล้ววางตรงนี้\nระบบจะแยก ชื่อ / เบอร์ / ที่อยู่ ให้เอง'}
-                              rows={3}
-                              className="w-full bg-white border border-dashed border-blue-300 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-500 resize-y"
+                              value={customerAddress}
+                              onChange={(e) => setCustomerAddress(e.target.value)}
+                              placeholder="📍 บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
+                              rows={2}
+                              className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 resize-y"
                             />
                           </div>
 
-                          <input
-                            type="tel"
-                            value={customerPhone}
-                            onChange={(e) => setCustomerPhone(e.target.value)}
-                            onBlur={(e) => lookupCustomerByPhone(e.target.value)}
-                            placeholder="📱 เบอร์โทร"
-                            className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                          />
-                          <textarea
-                            value={customerAddress}
-                            onChange={(e) => setCustomerAddress(e.target.value)}
-                            placeholder="📍 ที่อยู่จัดส่ง"
-                            rows={2}
-                            className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 resize-y"
-                          />
-                          <input
-                            type="text"
-                            value={orderNote}
-                            onChange={(e) => setOrderNote(e.target.value)}
-                            placeholder="หมายเหตุ"
-                            className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                          />
+                          {/* ── หมายเหตุ ── */}
+                          <div className="space-y-1.5 pt-2 border-t border-blue-100">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">หมายเหตุ</label>
+                            <input
+                              type="text"
+                              value={orderNote}
+                              onChange={(e) => setOrderNote(e.target.value)}
+                              placeholder="เช่น ห่อพิเศษ, นัดส่งวันไหน"
+                              className="w-full h-11 sm:h-10 bg-white border border-blue-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+                            />
+                          </div>
                           <div className="relative">
                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-orange-600">💸 ส่วนลดท้ายบิล</span>
                             <input

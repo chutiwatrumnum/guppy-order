@@ -46,6 +46,7 @@ export default function AdminPage() {
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
   // สลิปที่ยืนยันแล้ว แมปด้วย order_id เพื่อโชว์ปุ่มดูสลิปในบิล
   const [orderSlips, setOrderSlips] = useState<Record<string, { image_path: string; reviewed_by: string | null; reviewed_at: string | null }>>({});
+  const [slipModalUrl, setSlipModalUrl] = useState<string | null>(null);
   
   // Edit state
   const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
@@ -143,16 +144,19 @@ export default function AdminPage() {
     }
   };
 
-  // เปิดรูปสลิป — บัคเก็ต private ต้องขอ signed URL ตอนกด
+  // เปิดรูปสลิปเป็น modal ในหน้าเดียว ไม่เด้งแท็บใหม่
+  // บัคเก็ต private ต้องขอ signed URL ตอนกด
   const viewSlip = async (orderId: string) => {
     const slip = orderSlips[orderId];
     if (!slip) return;
+    setSlipModalUrl('loading');
     const { data, error } = await supabase.storage.from('slips').createSignedUrl(slip.image_path, 300);
     if (error || !data?.signedUrl) {
+      setSlipModalUrl(null);
       toast.error('เปิดสลิปไม่สำเร็จ');
       return;
     }
-    window.open(data.signedUrl, '_blank');
+    setSlipModalUrl(data.signedUrl);
   };
 
   // Function สำหรับดึงค่าต้นทุนจาก breed โดยตรง (ไม่ดึงจาก item.cost)
@@ -1143,6 +1147,32 @@ export default function AdminPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Modal ดูสลิป */}
+      {slipModalUrl && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setSlipModalUrl(null)}
+        >
+          <button
+            onClick={() => setSlipModalUrl(null)}
+            className="absolute top-4 right-4 h-10 w-10 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center text-xl"
+            aria-label="ปิด"
+          >
+            ✕
+          </button>
+          {slipModalUrl === 'loading' ? (
+            <Loader2 className="h-8 w-8 animate-spin text-white" />
+          ) : (
+            // กดที่รูปไม่ปิด (หยุด propagation) ให้ซูมดูได้ กดพื้นหลังถึงปิด
+            <img
+              src={slipModalUrl}
+              alt="สลิปโอนเงิน"
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl"
+            />
+          )}
         </div>
       )}
     </Layout>

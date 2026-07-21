@@ -12,7 +12,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { toast, Toaster } from 'sonner';
 import { cn } from '../lib/utils';
-import { generateOrderMessage } from '../utils/message';
+import { generateOrderMessage, buildOrderLinkMessage } from '../utils/message';
 import { getLiffOrderUrl } from '../utils/liff';
 import { getPublicOrderUrl } from '../utils/publicUrl';
 import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '../types';
@@ -717,8 +717,9 @@ export default function AdminPage() {
                               <button
                                 onClick={async () => {
                                   const url = getLiffOrderUrl(order.publicToken!);
+                                  const msg = buildOrderLinkMessage(order.orderNumber || '', order.items || [], order.totalAmount || 0, url);
                                   try {
-                                    await navigator.clipboard.writeText(`🐠 ใบสรุปออเดอร์ ${order.orderNumber || ''}\n${url}`);
+                                    await navigator.clipboard.writeText(msg);
                                     toast.success('คัดลอกลิงก์ใบสรุปแล้ว');
                                   } catch {
                                     toast.error('คัดลอกไม่สำเร็จ');

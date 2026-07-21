@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
-import { calculateItemTotal, getGenderLabel } from '../utils/message';
+import { calculateItemTotal, getGenderLabel, buildOrderLinkMessage } from '../utils/message';
 import { parseThaiAddress } from '../utils/address';
 import { getLiffOrderUrl } from '../utils/liff';
 import type { Breed, Gender, OrderItem, GroupedOrderItem, Customer } from '../types';
@@ -48,7 +48,7 @@ export default function HomePage() {
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [addressPaste, setAddressPaste] = useState('');
   // ลิงก์ใบสรุปของบิลที่เพิ่งบันทึก เอาไว้ส่งให้ลูกค้าในไลน์
-  const [lastOrderLink, setLastOrderLink] = useState<{ url: string; orderNumber: string } | null>(null);
+  const [lastOrderLink, setLastOrderLink] = useState<{ url: string; orderNumber: string; message: string } | null>(null);
 
   // Handle customer selection
   const handleCustomerChange = (customerId: string) => {
@@ -275,9 +275,8 @@ export default function HomePage() {
 
   const copyOrderLink = async () => {
     if (!lastOrderLink) return;
-    const message = `🐠 ใบสรุปออเดอร์ ${lastOrderLink.orderNumber}\nดูรายการ ยอดเงิน และแจ้งที่อยู่ได้ที่ลิงก์นี้ครับ\n${lastOrderLink.url}`;
     try {
-      await navigator.clipboard.writeText(message);
+      await navigator.clipboard.writeText(lastOrderLink.message);
       toast.success('คัดลอกลิงก์แล้ว', { description: 'วางในไลน์ส่งให้ลูกค้าได้เลย' });
     } catch {
       toast.error('คัดลอกไม่สำเร็จ');
@@ -286,8 +285,7 @@ export default function HomePage() {
 
   const shareLinkToLine = () => {
     if (!lastOrderLink) return;
-    const message = `🐠 ใบสรุปออเดอร์ ${lastOrderLink.orderNumber}\nดูรายการ ยอดเงิน และแจ้งที่อยู่ได้ที่ลิงก์นี้ครับ\n${lastOrderLink.url}`;
-    window.open(`https://line.me/R/msg/text/?${encodeURIComponent(message)}`, '_blank');
+    window.open(`https://line.me/R/msg/text/?${encodeURIComponent(lastOrderLink.message)}`, '_blank');
   };
 
   const shareToLine = () => {
@@ -335,9 +333,12 @@ export default function HomePage() {
       if (error) throw error;
 
       if (saved?.public_token) {
+        const url = getLiffOrderUrl(saved.public_token);
         setLastOrderLink({
-          url: getLiffOrderUrl(saved.public_token),
+          url,
           orderNumber: saved.order_number,
+          // สร้างข้อความตอน orderItems ยังอยู่ (ก่อนถูกล้าง) — มีรายการปลาครบ
+          message: buildOrderLinkMessage(saved.order_number, orderItems, Math.round(grandTotal), url),
         });
       } else {
         // ออเดอร์บันทึกแล้วแต่ไม่ได้ token กลับมา ลิงก์จะเสีย

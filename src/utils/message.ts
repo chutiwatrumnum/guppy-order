@@ -168,3 +168,28 @@ export const formatDate = (dateString: string): string => {
     timeStyle: 'short' 
   });
 };
+// ข้อความสั้นที่แนบไปกับลิงก์ใบสรุปในไลน์
+// ให้ลูกค้าเห็นรายการปลาในแชทเลย ไม่ต้องเปิดลิงก์ก็รู้ว่าสั่งอะไร
+export const buildOrderLinkMessage = (
+  orderNumber: string,
+  items: OrderItem[],
+  total: number,
+  url: string
+): string => {
+  const lines = [`🐠 ใบสรุปออเดอร์ ${orderNumber}`, ''];
+
+  items.forEach((item) => {
+    const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด';
+    const genderLabel = item.gender === 'male' ? '♂' : item.gender === 'female' ? '♀' : '';
+    const free = item.freeQty ? ` (แถม ${item.freeQty})` : '';
+    lines.push(`• ${item.breedName}${genderLabel ? ' ' + genderLabel : ''} ${item.quantity} ${typeLabel}${free}`);
+  });
+
+  lines.push('');
+  lines.push(`💰 ยอดรวม ฿${total.toLocaleString()}`);
+  lines.push('');
+  lines.push('ดูรายการ ชำระเงิน และแจ้งที่อยู่ได้ที่ลิงก์นี้ครับ 👇');
+  lines.push(url);
+
+  return lines.join('\n');
+};

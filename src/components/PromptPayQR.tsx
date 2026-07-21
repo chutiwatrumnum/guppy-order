@@ -93,7 +93,7 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
         download={fileName}
         className="mt-3 h-10 px-4 bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white rounded-xl font-black text-[11px] uppercase tracking-widest flex items-center gap-2"
       >
-        <Download className="h-3.5 w-3.5" /> บันทึกรูปไปส่งไลน์
+        <Download className="h-3.5 w-3.5" /> บันทึกรูป QR
       </a>
     </div>
   );

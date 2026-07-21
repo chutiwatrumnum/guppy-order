@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Fish, Loader2, Check, Send } from 'lucide-react';
+import { Fish, Loader2, Check, Send, Copy } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { supabase } from '../lib/supabase';
 import PromptPayQR from '../components/PromptPayQR';
@@ -63,6 +63,7 @@ export default function PublicOrderPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [linkedToLine, setLinkedToLine] = useState(false);
+  const [copiedAccount, setCopiedAccount] = useState(false);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -131,6 +132,19 @@ export default function PublicOrderPage() {
 
     setSaved(true);
     toast.success('บันทึกที่อยู่เรียบร้อยแล้ว ขอบคุณครับ');
+  };
+
+  const copyAccountNumber = async () => {
+    const acc = order?.payment.account_number;
+    if (!acc) return;
+    try {
+      await navigator.clipboard.writeText(acc.replace(/[-\s]/g, ''));
+      setCopiedAccount(true);
+      toast.success('คัดลอกเลขบัญชีแล้ว');
+      setTimeout(() => setCopiedAccount(false), 2000);
+    } catch {
+      toast.error('คัดลอกไม่สำเร็จ');
+    }
   };
 
   if (loading) {
@@ -235,8 +249,14 @@ export default function PublicOrderPage() {
               <div className="mt-4 pt-4 border-t border-slate-100 text-sm text-center">
                 <p className="text-[11px] text-slate-400 mb-1">หรือโอนเข้าบัญชี</p>
                 <p className="font-bold text-slate-700">{order.payment.bank_name}</p>
-                <p className="font-black text-lg text-slate-900 tracking-wide">{order.payment.account_number}</p>
-                <p className="text-xs text-slate-500">{order.payment.account_name}</p>
+                <button
+                  onClick={copyAccountNumber}
+                  className="inline-flex items-center gap-2 mt-1 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 active:scale-95 transition-all"
+                >
+                  <span className="font-black text-lg text-slate-900 tracking-wide">{order.payment.account_number}</span>
+                  {copiedAccount ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4 text-slate-400" />}
+                </button>
+                <p className="text-xs text-slate-500 mt-1">{order.payment.account_name}</p>
               </div>
             )}
 

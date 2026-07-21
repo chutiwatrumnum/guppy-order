@@ -16,7 +16,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
 import { calculateItemTotal, getGenderLabel } from '../utils/message';
 import { parseThaiAddress } from '../utils/address';
-import PromptPayQR from '../components/PromptPayQR';
 import { getLiffOrderUrl } from '../utils/liff';
 import type { Breed, Gender, OrderItem, GroupedOrderItem, Customer } from '../types';
 import { User } from 'lucide-react';
@@ -705,14 +704,7 @@ export default function HomePage() {
                         <div className="flex justify-between items-center text-xs font-black text-orange-400"><span className="uppercase tracking-[0.2em]">Discount</span><span className="font-black">-฿{billDiscount.toLocaleString()}</span></div>
                       )}
                       <div className="flex justify-between items-center pt-2"><span className="font-black text-lg sm:text-xl tracking-tight uppercase">Total Amount</span><span className="font-black text-2xl sm:text-3xl text-blue-400 tracking-tighter">฿{grandTotal.toLocaleString()}</span></div>
-                      {/* QR พร้อมเพย์ฝังยอด ลูกค้าสแกนแล้วยอดขึ้นเอง ไม่ต้องพิมพ์ */}
-                      <div className="pt-4">
-                        <PromptPayQR
-                          promptPayId={bankInfo.promptpay_id}
-                          amount={grandTotal}
-                          reference={customerName || undefined}
-                        />
-                      </div>
+                      {/* QR พร้อมเพย์ย้ายไปอยู่ในหน้าใบสรุปฝั่งลูกค้าแล้ว ที่นี่ไม่ต้องมีซ้ำ */}
 
                       <div className="pt-4 grid grid-cols-1 gap-3">
                         <button onClick={shareToLine} className="h-14 sm:h-14 bg-[#06C755] text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 active:scale-[0.98] min-h-[56px]"><MessageCircle className="h-5 w-5" /> Send to LINE</button>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Check, X, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 // สลิปที่ลูกค้าส่งเข้าไลน์ รอร้านยืนยัน
 //
@@ -28,6 +29,7 @@ interface PendingOrder {
 }
 
 export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void }) {
+  const { user } = useAuth();
   const [slips, setSlips] = useState<Slip[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [options, setOptions] = useState<Record<string, PendingOrder[]>>({});
@@ -112,6 +114,7 @@ export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void
         status: 'confirmed',
         order_id: orderId,
         reviewed_at: new Date().toISOString(),
+        reviewed_by: user?.username || null,
       })
       .eq('id', slip.id);
 
@@ -150,7 +153,7 @@ export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void
     setBusy(slip.id);
     await supabase
       .from('payment_slips')
-      .update({ status: 'rejected', reviewed_at: new Date().toISOString() })
+      .update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: user?.username || null })
       .eq('id', slip.id);
     setBusy(null);
     setSlips(prev => prev.filter(s => s.id !== slip.id));

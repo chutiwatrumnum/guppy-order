@@ -44,6 +44,8 @@ export default function AdminPage() {
   const [endDate, setEndDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
+  // สลิปที่ยืนยันแล้ว แมปด้วย order_id เพื่อโชว์ปุ่มดูสลิปในบิล
+  const [orderSlips, setOrderSlips] = useState<Record<string, { image_path: string; reviewed_by: string | null; reviewed_at: string | null }>>({});
   
   // Edit state
   const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
@@ -123,9 +125,34 @@ export default function AdminPage() {
       }));
       
       setAllOrders(transformedData);
+
+      // แมปสลิปที่ยืนยันแล้วเข้ากับบิล ไว้โชว์ปุ่ม "ดูสลิป"
+      const orderIds = transformedData.map((o: any) => o.id);
+      if (orderIds.length > 0) {
+        const { data: slipRows } = await supabase
+          .from('payment_slips')
+          .select('order_id, image_path, reviewed_by, reviewed_at')
+          .eq('status', 'confirmed')
+          .in('order_id', orderIds);
+        const map: Record<string, any> = {};
+        (slipRows || []).forEach((r: any) => { if (r.order_id) map[r.order_id] = r; });
+        setOrderSlips(map);
+      }
     } catch (err) {
       console.error('Load all orders error:', err);
     }
+  };
+
+  // เปิดรูปสลิป — บัคเก็ต private ต้องขอ signed URL ตอนกด
+  const viewSlip = async (orderId: string) => {
+    const slip = orderSlips[orderId];
+    if (!slip) return;
+    const { data, error } = await supabase.storage.from('slips').createSignedUrl(slip.image_path, 300);
+    if (error || !data?.signedUrl) {
+      toast.error('เปิดสลิปไม่สำเร็จ');
+      return;
+    }
+    window.open(data.signedUrl, '_blank');
   };
 
   // Function สำหรับดึงค่าต้นทุนจาก breed โดยตรง (ไม่ดึงจาก item.cost)
@@ -648,6 +675,15 @@ export default function AdminPage() {
                               <span className={cn('text-[10px] font-black px-2 py-1 rounded-md', STATUS_LABEL[(order.status || 'pending') as OrderStatus].cls)}>
                                 {STATUS_LABEL[(order.status || 'pending') as OrderStatus].text}
                               </span>
+                              {orderSlips[order.id] && (
+                                <button
+                                  onClick={() => viewSlip(order.id)}
+                                  className="text-[10px] font-black px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 active:scale-95 transition-all"
+                                  title={`อนุมัติโดย ${orderSlips[order.id].reviewed_by || '-'}${orderSlips[order.id].reviewed_at ? ' · ' + new Date(orderSlips[order.id].reviewed_at as string).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : ''}`}
+                                >
+                                  🧾 ดูสลิป
+                                </button>
+                              )}
                             </div>
 
                             <div className="flex flex-wrap gap-1.5 mb-2">

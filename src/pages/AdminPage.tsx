@@ -18,6 +18,7 @@ import { getPublicOrderUrl } from '../utils/publicUrl';
 import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '../types';
 import Layout from './Layout';
 import PendingSlips from '../components/PendingSlips';
+import FailedNotifications from '../components/FailedNotifications';
 
 const STATUS_LABEL: Record<OrderStatus, { text: string; cls: string }> = {
   pending:   { text: '📦 รอส่ง',   cls: 'bg-amber-100 text-amber-700' },
@@ -540,6 +541,7 @@ export default function AdminPage() {
           
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
+            <FailedNotifications />
             {adminView === 'slips' ? (
               <PendingSlips onConfirmed={() => loadAllOrders(reportPeriod)} />
             ) : adminView === 'orders' ? (

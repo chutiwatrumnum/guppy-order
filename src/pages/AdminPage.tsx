@@ -176,7 +176,7 @@ export default function AdminPage() {
   const copyAllAddresses = async (orders: SavedOrder[]) => {
     const blocks = orders
       .filter(o => o.customerAddress?.trim() || o.customerPhone?.trim())
-      .map(o => `${o.orderNumber || ''}\n${formatAddress(o)}`);
+      .map(o => formatAddress(o));
     if (blocks.length === 0) {
       toast.error('ไม่มีบิลที่มีที่อยู่ให้คัดลอก');
       return;

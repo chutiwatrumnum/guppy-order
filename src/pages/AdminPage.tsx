@@ -153,16 +153,37 @@ export default function AdminPage() {
   };
 
   // คัดลอกที่อยู่จัดส่ง เรียง เบอร์ / ชื่อ / ที่อยู่ ไว้แปะฟอร์มส่งพัสดุได้เลย
-  const copyAddress = async (order: SavedOrder) => {
-    const text = [order.customerPhone, order.customerName, order.customerAddress]
+  const formatAddress = (order: SavedOrder) =>
+    [order.customerPhone, order.customerName, order.customerAddress]
       .map(v => (v || '').trim())
       .filter(Boolean)
       .join('\n');
+
+  const copyAddress = async (order: SavedOrder) => {
+    const text = formatAddress(order);
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
       setCopiedAddressId(order.id);
       setTimeout(() => setCopiedAddressId(null), 2000);
+    } catch {
+      toast.error('คัดลอกไม่สำเร็จ');
+    }
+  };
+
+  // คัดลอกที่อยู่ทุกบิลที่แสดงอยู่ (ตามช่วงเวลา/ฟิลเตอร์ที่เลือก) ทีเดียว
+  // แต่ละบิลคั่นด้วยเลขบิล + เส้นแบ่ง ไว้ไล่พิมพ์ที่อยู่ส่งพัสดุเป็นชุด
+  const copyAllAddresses = async (orders: SavedOrder[]) => {
+    const blocks = orders
+      .filter(o => o.customerAddress?.trim() || o.customerPhone?.trim())
+      .map(o => `${o.orderNumber || ''}\n${formatAddress(o)}`);
+    if (blocks.length === 0) {
+      toast.error('ไม่มีบิลที่มีที่อยู่ให้คัดลอก');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(blocks.join('\n──────────\n'));
+      toast.success(`คัดลอกที่อยู่ ${blocks.length} บิลแล้ว`);
     } catch {
       toast.error('คัดลอกไม่สำเร็จ');
     }
@@ -685,7 +706,18 @@ export default function AdminPage() {
                         )}
                       </div>
 
-                      <div className="mb-4 text-sm text-slate-500">พบ {filteredOrders.length} รายการ {searchTerm && `(จาก ${allOrders.length} รายการ)`}</div>
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <span className="text-sm text-slate-500">พบ {filteredOrders.length} รายการ {searchTerm && `(จาก ${allOrders.length} รายการ)`}</span>
+                        {filteredOrders.some((o: SavedOrder) => o.customerAddress?.trim() || o.customerPhone?.trim()) && (
+                          <button
+                            onClick={() => copyAllAddresses(filteredOrders)}
+                            className="shrink-0 h-9 px-3 bg-blue-100 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg text-xs font-black flex items-center gap-1.5 active:scale-95 transition-all"
+                            title="คัดลอกที่อยู่ทุกบิลที่แสดงอยู่"
+                          >
+                            <Copy className="h-3.5 w-3.5" /> คัดลอกที่อยู่ทั้งหมด
+                          </button>
+                        )}
+                      </div>
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         {filteredOrders.map((order, index) => {
                           // Calculate cost using getItemCost (breed-based)

@@ -54,6 +54,13 @@ export default function AdminPage() {
   const [isEditingOrder, setIsEditingOrder] = useState(false);
   const [editCopySuccess, setEditCopySuccess] = useState(false);
   const [editItems, setEditItems] = useState<OrderItem[]>([]);
+  // ฟอร์มแก้ไขแบบ controlled — เลิกอ่านค่าด้วย getElementById ที่เปราะและพลาดง่าย
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [editActualShipping, setEditActualShipping] = useState('');
+  const [editDiscount, setEditDiscount] = useState('');
 
   // Load data
   useEffect(() => {
@@ -108,7 +115,7 @@ export default function AdminPage() {
         items: order.items,
         totalAmount: order.total_amount || 0,
         totalFish: order.total_fish || 0,
-        shippingFee: order.shipping_fee || 60,
+        shippingFee: order.shipping_fee ?? 60,
         actualShippingFee: order.actual_shipping_fee,
         totalCost: order.total_cost || 0,
         discount: order.discount || 0,
@@ -350,21 +357,27 @@ export default function AdminPage() {
   }, [allOrders]);
 
   // Order actions
-  const updateOrder = async (orderId: string, updatedItems: OrderItem[], updatedCustomerName?: string, updatedNote?: string, updatedActualShippingFee?: number, updatedDiscount?: number) => {
+  const updateOrder = async () => {
+    if (!editingOrder) return;
+    const orderId = editingOrder.id;
     try {
+      const updatedItems = editItems;
+      const updatedDiscount = Number(editDiscount) || 0;
+      // ?? ไม่ใช่ || — บิลที่ค่าส่งเป็น 0 (ส่งฟรี) ต้องคงเป็น 0 ไม่ใช่เด้งเป็น 60
+      const shippingFee = editingOrder.shippingFee ?? 60;
+
       const newTotalAmount = updatedItems.reduce((sum, item) => {
         const paidQty = item.quantity - (item.freeQty || 0);
         return sum + (item.price * paidQty) - (item.discount || 0);
-      }, 0) - (updatedDiscount || 0) + (editingOrder?.shippingFee || 60);
-      
+      }, 0) - updatedDiscount + shippingFee;
+
       const newTotalFish = updatedItems.reduce((sum, item) => sum + (item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3), 0);
       const newTotalCost = updatedItems.reduce((sum, item) => {
-        // Use getItemCost for breed-based cost
         const itemCost = item.breedId ? getItemCost(item.breedId, item.type) : 0;
         return sum + (itemCost * item.quantity);
       }, 0);
-      const newActualShippingFee = updatedActualShippingFee !== undefined ? updatedActualShippingFee : editingOrder?.actualShippingFee;
-      
+      const newActualShippingFee = editActualShipping.trim() !== '' ? Number(editActualShipping) : editingOrder.actualShippingFee;
+
       const { error } = await supabase
         .from('orders')
         .update({
@@ -373,20 +386,22 @@ export default function AdminPage() {
           total_fish: newTotalFish,
           total_cost: newTotalCost,
           actual_shipping_fee: newActualShippingFee,
-          discount: updatedDiscount || 0,
-          customer_name: updatedCustomerName || null,
-          note: updatedNote || null
+          discount: updatedDiscount,
+          customer_name: editName.trim() || null,
+          customer_phone: editPhone.trim() || null,
+          customer_address: editAddress.trim() || null,
+          note: editNote.trim() || null
         })
         .eq('id', orderId);
-      
+
       if (error) throw error;
-      
-      setAllOrders(prev => prev.map(order => 
-        order.id === orderId 
-          ? { ...order, items: updatedItems, totalAmount: newTotalAmount, totalFish: newTotalFish, totalCost: newTotalCost, actualShippingFee: newActualShippingFee, discount: updatedDiscount || 0, customerName: updatedCustomerName, note: updatedNote }
+
+      setAllOrders(prev => prev.map(order =>
+        order.id === orderId
+          ? { ...order, items: updatedItems, totalAmount: newTotalAmount, totalFish: newTotalFish, totalCost: newTotalCost, actualShippingFee: newActualShippingFee, discount: updatedDiscount, customerName: editName.trim(), customerPhone: editPhone.trim(), customerAddress: editAddress.trim(), note: editNote.trim() }
           : order
       ));
-      
+
       toast.success('แก้ไขออเดอร์เรียบร้อย!');
       setIsEditingOrder(false);
       setEditingOrder(null);
@@ -418,6 +433,12 @@ export default function AdminPage() {
   // Edit items helpers
   const openEditModal = (order: SavedOrder) => {
     setEditingOrder(order);
+    setEditName(order.customerName || '');
+    setEditPhone(order.customerPhone || '');
+    setEditAddress(order.customerAddress || '');
+    setEditNote(order.note || '');
+    setEditActualShipping(order.actualShippingFee != null ? String(order.actualShippingFee) : '');
+    setEditDiscount(order.discount ? String(order.discount) : '');
     // Recalculate prices from breed settings
     const itemsWithUpdatedPrices = (order.items || []).map((item: OrderItem) => {
       const breed = breeds.find((b: Breed) => b.id === item.breedId);
@@ -1011,24 +1032,25 @@ export default function AdminPage() {
             </div>
             
             <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">ชื่อลูกค้า</label>
-                  <input type="text" defaultValue={editingOrder.customerName} id="edit-customer-name" className="w-full h-10 sm:h-12 bg-slate-50 border border-slate-200 rounded-xl px-3 sm:px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm sm:text-base" placeholder="ชื่อลูกค้า" />
+              {/* ── ข้อมูลลูกค้า / ที่อยู่จัดส่ง ── */}
+              <div className="bg-slate-50 rounded-2xl p-3 sm:p-4 space-y-3">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ข้อมูลลูกค้า / ที่อยู่จัดส่ง</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm" placeholder="👤 ชื่อลูกค้า" />
+                  <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm" placeholder="📱 เบอร์โทร" />
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">หมายเหตุ</label>
-                  <input type="text" defaultValue={editingOrder.note} id="edit-order-note" className="w-full h-10 sm:h-12 bg-slate-50 border border-slate-200 rounded-xl px-3 sm:px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm sm:text-base" placeholder="หมายเหตุ" />
-                </div>
+                <textarea value={editAddress} onChange={(e) => setEditAddress(e.target.value)} rows={2} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm resize-y" placeholder="📍 ที่อยู่จัดส่ง" />
+                <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)} className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm" placeholder="📝 หมายเหตุ" />
               </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block mb-2">🚚 ค่าจัดส่งจริง (ต้นทุนที่เสียไป)</label>
-                  <input type="number" defaultValue={editingOrder.actualShippingFee !== undefined && editingOrder.actualShippingFee !== null ? editingOrder.actualShippingFee : ''} id="edit-actual-shipping-fee" placeholder="ยังไม่ระบุ" className="w-full h-10 sm:h-12 bg-orange-50 border border-orange-200 rounded-xl px-3 sm:px-4 font-bold text-orange-700 outline-none focus:border-orange-400 text-sm sm:text-base" />
+                  <input type="number" value={editActualShipping} onChange={(e) => setEditActualShipping(e.target.value)} placeholder="ยังไม่ระบุ" className="w-full h-10 sm:h-12 bg-orange-50 border border-orange-200 rounded-xl px-3 sm:px-4 font-bold text-orange-700 outline-none focus:border-orange-400 text-sm sm:text-base" />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-orange-600 uppercase tracking-wider block mb-2">💸 ส่วนลดท้ายบิลบัญชีนี้</label>
-                  <input type="number" defaultValue={editingOrder.discount || ''} id="edit-bill-discount" placeholder="0" className="w-full h-10 sm:h-12 bg-orange-100 border border-orange-300 rounded-xl px-3 sm:px-4 font-black text-orange-700 outline-none focus:border-orange-500 text-sm sm:text-base" />
+                  <input type="number" value={editDiscount} onChange={(e) => setEditDiscount(e.target.value)} placeholder="0" className="w-full h-10 sm:h-12 bg-orange-100 border border-orange-300 rounded-xl px-3 sm:px-4 font-black text-orange-700 outline-none focus:border-orange-500 text-sm sm:text-base" />
                 </div>
               </div>
               
@@ -1140,14 +1162,25 @@ export default function AdminPage() {
             </div>
             
             <div className="p-3 sm:p-6 border-t border-slate-100 bg-slate-50 space-y-2 sm:space-y-3">
+              {/* ยอดรวมสด — เห็นผลก่อนบันทึก */}
+              {(() => {
+                const itemsTotal = editItems.reduce((s, it) => s + (it.price * Math.max(0, it.quantity - (it.freeQty || 0))) - (it.discount || 0), 0);
+                const grand = itemsTotal - (Number(editDiscount) || 0) + (editingOrder.shippingFee ?? 60);
+                return (
+                  <div className="flex items-center justify-between px-1 pb-1">
+                    <span className="text-xs font-bold text-slate-500">ยอดรวมใหม่ (รวมค่าส่ง ฿{editingOrder.shippingFee ?? 60})</span>
+                    <span className="font-black text-xl text-orange-600">฿{grand.toLocaleString()}</span>
+                  </div>
+                );
+              })()}
               <button
                 onClick={() => {
                   const message = generateOrderMessage(
-                    editingOrder.items || [],
-                    editingOrder.totalFish || 0,
-                    editingOrder.totalAmount || 0,
-                    (document.getElementById('edit-customer-name') as HTMLInputElement)?.value,
-                    (document.getElementById('edit-order-note') as HTMLInputElement)?.value,
+                    editItems,
+                    editItems.reduce((s, it) => s + (it.type === 'piece' ? it.quantity : it.type === 'pair' ? it.quantity * 2 : it.quantity * 3), 0),
+                    editItems.reduce((s, it) => s + (it.price * Math.max(0, it.quantity - (it.freeQty || 0))) - (it.discount || 0), 0) - (Number(editDiscount) || 0) + (editingOrder.shippingFee ?? 60),
+                    editName,
+                    editNote,
                     editingOrder.shippingFee
                   );
                   if (message) {
@@ -1158,20 +1191,13 @@ export default function AdminPage() {
                     });
                   }
                 }}
-                className={cn("h-12 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2", editCopySuccess ? "bg-blue-600 border-blue-600 text-white" : "bg-white text-slate-600 border-slate-200")}
+                className={cn("w-full h-12 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2", editCopySuccess ? "bg-blue-600 border-blue-600 text-white" : "bg-white text-slate-600 border-slate-200")}
               >
                 {editCopySuccess ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 {editCopySuccess ? 'Copied!' : 'Copy Message'}
               </button>
               <button
-                onClick={() => {
-                  const updatedItems = editItems;
-                  const updatedCustomerName = (document.getElementById('edit-customer-name') as HTMLInputElement)?.value;
-                  const updatedNote = (document.getElementById('edit-order-note') as HTMLInputElement)?.value;
-                  const updatedActualShippingFee = (document.getElementById('edit-actual-shipping-fee') as HTMLInputElement)?.value ? Number((document.getElementById('edit-actual-shipping-fee') as HTMLInputElement)?.value) : undefined;
-                  const updatedDiscount = (document.getElementById('edit-bill-discount') as HTMLInputElement)?.value ? Number((document.getElementById('edit-bill-discount') as HTMLInputElement)?.value) : 0;
-                  updateOrder(editingOrder.id, updatedItems, updatedCustomerName, updatedNote, updatedActualShippingFee, updatedDiscount);
-                }}
+                onClick={updateOrder}
                 className="w-full h-14 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black uppercase text-sm tracking-widest transition-all flex items-center justify-center gap-2"
               >
                 <Save className="h-5 w-5" />

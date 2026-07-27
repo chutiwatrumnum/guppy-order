@@ -47,6 +47,7 @@ export default function AdminPage() {
   // สลิปที่ยืนยันแล้ว แมปด้วย order_id เพื่อโชว์ปุ่มดูสลิปในบิล
   const [orderSlips, setOrderSlips] = useState<Record<string, { image_path: string; reviewed_by: string | null; reviewed_at: string | null }>>({});
   const [slipModalUrl, setSlipModalUrl] = useState<string | null>(null);
+  const [copiedAddressId, setCopiedAddressId] = useState<string | null>(null);
   
   // Edit state
   const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
@@ -141,6 +142,22 @@ export default function AdminPage() {
       }
     } catch (err) {
       console.error('Load all orders error:', err);
+    }
+  };
+
+  // คัดลอกที่อยู่จัดส่ง เรียง เบอร์ / ชื่อ / ที่อยู่ ไว้แปะฟอร์มส่งพัสดุได้เลย
+  const copyAddress = async (order: SavedOrder) => {
+    const text = [order.customerPhone, order.customerName, order.customerAddress]
+      .map(v => (v || '').trim())
+      .filter(Boolean)
+      .join('\n');
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedAddressId(order.id);
+      setTimeout(() => setCopiedAddressId(null), 2000);
+    } catch {
+      toast.error('คัดลอกไม่สำเร็จ');
     }
   };
 
@@ -775,9 +792,23 @@ export default function AdminPage() {
                               )}
                             </div>
 
-                            {order.customerName && <p className="text-xs sm:text-sm text-slate-600 mb-1">👤 {order.customerName}</p>}
-                            {order.customerPhone && <p className="text-xs text-slate-500 mb-1">📱 {order.customerPhone}</p>}
-                            {order.customerAddress && <p className="text-xs text-slate-500 mb-1">📍 {order.customerAddress}</p>}
+                            {(order.customerName || order.customerPhone || order.customerAddress) && (
+                              <div className="mb-2 bg-slate-50 rounded-xl p-2.5 relative group/addr">
+                                {order.customerPhone && <p className="text-xs text-slate-500">📱 {order.customerPhone}</p>}
+                                {order.customerName && <p className="text-xs sm:text-sm text-slate-700 font-bold">👤 {order.customerName}</p>}
+                                {order.customerAddress && <p className="text-xs text-slate-500 mt-0.5">📍 {order.customerAddress}</p>}
+                                {(order.customerPhone || order.customerAddress) && (
+                                  <button
+                                    onClick={() => copyAddress(order)}
+                                    className="absolute top-2 right-2 h-7 px-2.5 bg-white border border-slate-200 hover:border-blue-400 hover:text-blue-600 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 active:scale-95 transition-all shadow-sm"
+                                    title="คัดลอก เบอร์ / ชื่อ / ที่อยู่"
+                                  >
+                                    {copiedAddressId === order.id ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                                    {copiedAddressId === order.id ? 'คัดลอกแล้ว' : 'คัดลอกที่อยู่'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
                             <p className="text-xs text-slate-400">🐟 {(order.totalFish || 0)} ตัว • 📋 {(order.items?.length || 0)} รายการ</p>
                             
                             {order.note && <p className="text-xs text-slate-400 mt-1 italic">💬 {order.note}</p>}

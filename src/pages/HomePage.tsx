@@ -466,6 +466,25 @@ export default function HomePage() {
                 );
               })()}
 
+              {/* อาหาร / สินค้าอื่น — กดเพิ่มลงออเดอร์ได้เลยจากหน้าขาย */}
+              {!searchTerm.trim() && products.length > 0 && (
+                <div className="mb-5">
+                  <p className="px-2 mb-2 text-[10px] font-black uppercase tracking-widest text-amber-500">🍤 อาหาร / สินค้าอื่น</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 lg:gap-3">
+                    {products.map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => addFoodToOrder(p)}
+                        className="bg-white border-2 border-amber-100 hover:border-amber-300 rounded-xl px-3 py-2.5 text-left active:scale-95 transition-all shadow-sm"
+                      >
+                        <p className="font-bold text-sm text-slate-800 line-clamp-1">{p.name}</p>
+                        <p className="text-[11px] text-amber-500 font-black mt-0.5">แตะเพิ่ม · ฿{p.price}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between px-2 mb-4">
                 <h2 className="font-black uppercase tracking-tight text-base lg:text-xl text-slate-800">Select Species</h2>
               </div>

@@ -12,7 +12,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { toast, Toaster } from 'sonner';
 import { cn } from '../lib/utils';
-import { generateOrderMessage, buildOrderLinkMessage } from '../utils/message';
+import { buildOrderMessage, buildOrderLinkMessage } from '../utils/message';
 import { getLiffOrderUrl } from '../utils/liff';
 import { getPublicOrderUrl } from '../utils/publicUrl';
 import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '../types';
@@ -37,6 +37,7 @@ export default function AdminPage() {
   // State
   const [allOrders, setAllOrders] = useState<SavedOrder[]>([]);
   const [breeds, setBreeds] = useState<Breed[]>([]);
+  const [bankInfo, setBankInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [adminView, setAdminView] = useState<'orders' | 'dashboard' | 'slips'>('orders');
   const [reportPeriod, setReportPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>('today');
@@ -75,10 +76,20 @@ export default function AdminPage() {
         .select('*')
         .order('name');
       setBreeds(breedsData || []);
-      
+
+      // โหลดข้อมูลบัญชี/ค่าส่ง สำหรับใส่ในข้อความ Copy
+      const { data: settingsData } = await supabase
+        .from('settings')
+        .select('*')
+        .limit(1);
+      if (settingsData && settingsData.length > 0) {
+        setBankInfo(settingsData[0]);
+      }
+
       await loadAllOrders(reportPeriod);
     } catch (err) {
       console.error('Fetch error:', err);
+      toast.error('โหลดข้อมูลไม่สำเร็จ — ข้อมูลที่เห็นอาจไม่ครบ ลองรีเฟรชอีกครั้ง');
     } finally {
       setLoading(false);
     }
@@ -214,6 +225,10 @@ export default function AdminPage() {
       : (breed.premium_cost_set || 0);
   };
 
+  // ต้นทุนต่อหน่วย: ปลาดึงจาก breed, อาหารใช้ต้นทุนที่บันทึกไว้ในรายการ (ไม่มี breed)
+  const resolveItemCost = (item: OrderItem): number =>
+    item.kind === 'food' ? (item.cost || 0) : (item.breedId ? getItemCost(item.breedId, item.type) : 0);
+
   // อัปเดตสถานะแบบ optimistic แล้ว rollback ถ้าเซิร์ฟเวอร์ปฏิเสธ
   const setOrderStatus = async (order: SavedOrder, status: OrderStatus) => {
     const previous = allOrders;
@@ -301,9 +316,18 @@ export default function AdminPage() {
   const dashboardStats = useMemo(() => {
     const totalSales = allOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
     let totalFish = 0;
+    let totalFreeQty = 0;    // จำนวนตัวที่แถมฟรี (แปลงคู่/ชุดเป็นตัวแล้ว)
+    let totalFreeValue = 0;  // มูลค่าของแถมฟรีรวม
     allOrders.forEach(order => {
       order.items?.forEach((item: OrderItem) => {
-        totalFish += item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3;
+        if (item.kind === 'food') return; // อาหารไม่นับเป็นจำนวนปลา/ของแถม
+        const mult = item.type === 'piece' ? 1 : item.type === 'pair' ? 2 : 3;
+        totalFish += item.quantity * mult;
+        const free = item.freeQty || 0;
+        if (free > 0) {
+          totalFreeQty += free * mult;
+          totalFreeValue += free * item.price;
+        }
       });
     });
 
@@ -315,7 +339,7 @@ export default function AdminPage() {
     allOrders.forEach(order => {
       const orderFishCost = order.items?.reduce((itemSum, item) => {
         // ใช้ getItemCost เพื่อดึงค่าต้นทุนจาก breed โดยตรง
-        const itemCost = item.breedId ? getItemCost(item.breedId, item.type) : 0;
+        const itemCost = resolveItemCost(item);
         return itemSum + (itemCost * item.quantity);
       }, 0) || 0;
       
@@ -329,17 +353,19 @@ export default function AdminPage() {
     const avgOrderValue = allOrders.length > 0 ? totalSales / allOrders.length : 0;
     
     // Breed stats
-    const breedStats: { [key: string]: { name: string; qty: number; sales: number } } = {};
+    const breedStats: { [key: string]: { name: string; qty: number; sales: number; cost: number } } = {};
     allOrders.forEach(order => {
       order.items.forEach((item: OrderItem) => {
         const statKey = item.breedId;
 
         if (!breedStats[statKey]) {
-          breedStats[statKey] = { name: item.breedName, qty: 0, sales: 0 };
+          breedStats[statKey] = { name: item.breedName, qty: 0, sales: 0, cost: 0 };
         }
         const paidQty = item.quantity - (item.freeQty || 0);
+        const itemCost = resolveItemCost(item);
         breedStats[statKey].qty += item.quantity;
         breedStats[statKey].sales += (item.price * paidQty) - (item.discount || 0);
+        breedStats[statKey].cost += itemCost * item.quantity;
       });
     });
     
@@ -370,6 +396,8 @@ export default function AdminPage() {
       totalShippingIncome,
       totalShippingCost,
       totalFish,
+      totalFreeQty,
+      totalFreeValue,
       totalProfit,
       avgOrderValue,
       topBreeds,
@@ -394,7 +422,7 @@ export default function AdminPage() {
 
       const newTotalFish = updatedItems.reduce((sum, item) => sum + (item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3), 0);
       const newTotalCost = updatedItems.reduce((sum, item) => {
-        const itemCost = item.breedId ? getItemCost(item.breedId, item.type) : 0;
+        const itemCost = resolveItemCost(item);
         return sum + (itemCost * item.quantity);
       }, 0);
       const newActualShippingFee = editActualShipping.trim() !== '' ? Number(editActualShipping) : editingOrder.actualShippingFee;
@@ -722,7 +750,7 @@ export default function AdminPage() {
                         {filteredOrders.map((order, index) => {
                           // Calculate cost using getItemCost (breed-based)
                           const orderCost = order.items?.reduce((sum: number, item: OrderItem) => {
-                            const cost = item.breedId ? getItemCost(item.breedId, item.type) : 0;
+                            const cost = resolveItemCost(item);
                             return sum + (cost * item.quantity);
                           }, 0) || 0;
                           const shippingFee = order.shippingFee || 60;
@@ -870,13 +898,13 @@ export default function AdminPage() {
                               <div className="space-y-1">
                                 {order.items?.map((item: OrderItem, i: number) => {
                                   // Use getItemCost for breed-based cost
-                                  const itemCost = item.breedId ? getItemCost(item.breedId, item.type) : 0;
+                                  const itemCost = resolveItemCost(item);
                                   return (
                                   <div key={i} className="flex items-center justify-between text-xs sm:text-sm bg-white/50 rounded px-2 py-1">
                                     <div className="flex items-center gap-1 flex-wrap min-w-0">
-                                      <span className="font-medium text-slate-700 truncate">{item.breedName}</span>
-                                      <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">
-                                        {item.quantity} {item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด'}{item.type === 'piece' && item.gender !== 'mixed' ? (item.gender === 'male' ? '(ผู้)' : '(เมีย)') : ''}
+                                      <span className="font-medium text-slate-700 truncate">{item.kind === 'food' ? '🍤 ' : ''}{item.breedName}</span>
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${item.kind === 'food' ? 'text-amber-600 bg-amber-50' : 'text-blue-600 bg-blue-50'}`}>
+                                        {item.quantity} {item.kind === 'food' ? 'ชิ้น' : `${item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด'}${item.type === 'piece' && item.gender !== 'mixed' ? (item.gender === 'male' ? '(ผู้)' : '(เมีย)') : ''}`}
                                       </span>
                                       {(item.freeQty || 0) > 0 && <span className="text-[9px] bg-green-100 text-green-600 px-1 rounded shrink-0">แถม {item.freeQty}</span>}
                                       {(item.discount || 0) > 0 && <span className="text-[9px] bg-orange-100 text-orange-600 px-1 rounded shrink-0">ลด {item.discount}</span>}
@@ -981,6 +1009,11 @@ export default function AdminPage() {
 
                 {/* Cost Breakdown */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                  <div className="p-5 bg-white border-2 border-pink-200 rounded-2xl">
+                    <p className="text-[10px] uppercase tracking-widest text-pink-500 mb-1">🎁 ของแถมฟรี</p>
+                    <p className="font-black text-2xl text-pink-600">{dashboardStats.totalFreeQty} <span className="text-sm font-bold text-pink-400">ตัว</span></p>
+                    <p className="text-xs text-slate-400 mt-1">มูลค่า ฿{dashboardStats.totalFreeValue.toLocaleString()}</p>
+                  </div>
                   <div className="p-5 bg-white border-2 border-slate-200 rounded-2xl">
                     <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-1">ต้นทุนปลา</p>
                     <p className="font-black text-2xl text-slate-700">฿{dashboardStats.totalFishCost.toLocaleString()}</p>
@@ -1013,7 +1046,9 @@ export default function AdminPage() {
                   <div className="mb-8">
                     <h3 className="font-black text-lg text-slate-800 mb-4">🏆 สายพันธุ์ขายดี</h3>
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                      {dashboardStats.topBreeds.map((breed: any, idx: number) => (
+                      {dashboardStats.topBreeds.map((breed: any, idx: number) => {
+                        const profit = breed.sales - breed.cost;
+                        return (
                         <div key={idx} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-lg">🐟</span>
@@ -1021,8 +1056,12 @@ export default function AdminPage() {
                           </div>
                           <p className="font-black text-lg text-slate-800">฿{breed.sales.toLocaleString()}</p>
                           <p className="text-xs text-slate-400">{breed.qty} ตัว</p>
+                          <p className={`text-xs font-black mt-1 ${profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            กำไร {profit >= 0 ? '+' : ''}฿{profit.toLocaleString()}
+                          </p>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1051,7 +1090,7 @@ export default function AdminPage() {
       {/* Edit Order Modal */}
       {isEditingOrder && editingOrder && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-2 sm:p-4">
-          <div className="bg-white w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] rounded-2xl sm:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
+          <div className="bg-white w-full max-w-2xl lg:max-w-4xl max-h-[95vh] sm:max-h-[90vh] rounded-2xl sm:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
             <div className="p-4 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-orange-500 to-orange-600">
               <div className="flex items-center gap-3">
                 <div className="p-2 sm:p-3 bg-white/20 rounded-xl sm:rounded-2xl"><Edit2 className="h-5 w-5 sm:h-6 sm:w-6 text-white" /></div>
@@ -1063,9 +1102,9 @@ export default function AdminPage() {
               <button onClick={() => { setIsEditingOrder(false); setEditingOrder(null); }} className="h-10 w-10 sm:h-12 sm:w-12 bg-white/20 hover:bg-white/30 rounded-xl sm:rounded-2xl flex items-center justify-center text-white transition-all"><X className="h-5 w-5 sm:h-6 sm:w-6" /></button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4">
-              {/* ── ข้อมูลลูกค้า / ที่อยู่จัดส่ง ── */}
-              <div className="bg-slate-50 rounded-2xl p-3 sm:p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:gap-y-4 lg:items-start">
+              {/* ── ข้อมูลลูกค้า / ที่อยู่จัดส่ง ── (ซ้ายบน บนจอคอมพ์) */}
+              <div className="bg-slate-50 rounded-2xl p-3 sm:p-4 space-y-3 lg:col-start-1 lg:row-start-1">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ข้อมูลลูกค้า / ที่อยู่จัดส่ง</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm" placeholder="👤 ชื่อลูกค้า" />
@@ -1075,19 +1114,8 @@ export default function AdminPage() {
                 <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)} className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm" placeholder="📝 หมายเหตุ" />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block mb-2">🚚 ค่าจัดส่งจริง (ต้นทุนที่เสียไป)</label>
-                  <input type="number" value={editActualShipping} onChange={(e) => setEditActualShipping(e.target.value)} placeholder="ยังไม่ระบุ" className="w-full h-10 sm:h-12 bg-orange-50 border border-orange-200 rounded-xl px-3 sm:px-4 font-bold text-orange-700 outline-none focus:border-orange-400 text-sm sm:text-base" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-orange-600 uppercase tracking-wider block mb-2">💸 ส่วนลดท้ายบิลบัญชีนี้</label>
-                  <input type="number" value={editDiscount} onChange={(e) => setEditDiscount(e.target.value)} placeholder="0" className="w-full h-10 sm:h-12 bg-orange-100 border border-orange-300 rounded-xl px-3 sm:px-4 font-black text-orange-700 outline-none focus:border-orange-500 text-sm sm:text-base" />
-                </div>
-              </div>
-              
-              {/* Edit Items Section */}
-              <div>
+              {/* Edit Items Section — ส่วนที่แก้บ่อยสุด: ขวาเต็มความสูงบนจอคอมพ์, บนสุดถัดจากลูกค้าบนมือถือ */}
+              <div className="lg:col-start-2 lg:row-start-1 lg:row-span-2">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-bold text-blue-500 uppercase tracking-wider block">🐟 รายการปลา</label>
                   <select
@@ -1101,14 +1129,35 @@ export default function AdminPage() {
                     ))}
                   </select>
                 </div>
-                <div className="space-y-2 max-h-48 sm:max-h-64 overflow-y-auto">
+                <div className="space-y-2">
                   {editItems.map((item: OrderItem, idx: number) => {
+                    // อาหาร: แก้แค่จำนวน ไม่มีสายพันธุ์/เพศ/ชนิด (กันข้อมูลเพี้ยน)
+                    if (item.kind === 'food') {
+                      return (
+                        <div key={idx} className="bg-amber-50 rounded-xl border-2 border-amber-100 relative pt-4 pb-3 px-3 sm:px-4 mt-3">
+                          <button onClick={() => removeEditItem(idx)} className="absolute -top-2.5 -right-2.5 h-6 w-6 sm:h-7 sm:w-7 bg-red-100 hover:bg-red-500 text-red-500 hover:text-white rounded-full flex items-center justify-center transition-all shadow-sm z-10 border border-white">
+                            <X className="h-3 w-3 sm:h-4 sm:w-4" />
+                          </button>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-sm text-slate-700 min-w-0 truncate">🍤 {item.breedName}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <input
+                                type="number" min="1" value={item.quantity === 0 ? '' : item.quantity}
+                                onChange={(e) => updateEditItem(idx, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
+                                className="w-14 h-9 bg-white border border-amber-200 rounded-lg px-2 text-sm font-black text-amber-700 text-center outline-none focus:border-amber-400"
+                              />
+                              <span className="text-sm font-black text-slate-600 w-16 text-right">฿{(item.price * item.quantity).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <div key={idx} className="bg-white rounded-xl sm:rounded-2xl border-2 border-slate-100 shadow-sm relative pt-4 pb-3 sm:pb-4 px-3 sm:px-4 mt-3">
                         <button onClick={() => removeEditItem(idx)} className="absolute -top-2.5 -right-2.5 h-6 w-6 sm:h-7 sm:w-7 bg-red-100 hover:bg-red-500 text-red-500 hover:text-white rounded-full flex items-center justify-center transition-all shadow-sm z-10 border border-white">
                           <X className="h-3 w-3 sm:h-4 sm:w-4" />
                         </button>
-                        
+
                         <div className="grid grid-cols-12 gap-2 sm:gap-3 mb-3">
                           <div className="col-span-12 sm:col-span-4">
                             <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">🐟 สายพันธุ์</label>
@@ -1191,8 +1240,20 @@ export default function AdminPage() {
                   )}
                 </div>
               </div>
+
+              {/* ── ค่าส่ง / ส่วนลดท้ายบิล ── (ซ้ายล่าง บนจอคอมพ์) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 lg:col-start-1 lg:row-start-2">
+                <div>
+                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block mb-2">🚚 ค่าจัดส่งจริง (ต้นทุนที่เสียไป)</label>
+                  <input type="number" value={editActualShipping} onChange={(e) => setEditActualShipping(e.target.value)} placeholder="ยังไม่ระบุ" className="w-full h-10 sm:h-12 bg-orange-50 border border-orange-200 rounded-xl px-3 sm:px-4 font-bold text-orange-700 outline-none focus:border-orange-400 text-sm sm:text-base" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-orange-600 uppercase tracking-wider block mb-2">💸 ส่วนลดท้ายบิลบัญชีนี้</label>
+                  <input type="number" value={editDiscount} onChange={(e) => setEditDiscount(e.target.value)} placeholder="0" className="w-full h-10 sm:h-12 bg-orange-100 border border-orange-300 rounded-xl px-3 sm:px-4 font-black text-orange-700 outline-none focus:border-orange-500 text-sm sm:text-base" />
+                </div>
+              </div>
             </div>
-            
+
             <div className="p-3 sm:p-6 border-t border-slate-100 bg-slate-50 space-y-2 sm:space-y-3">
               {/* ยอดรวมสด — เห็นผลก่อนบันทึก */}
               {(() => {
@@ -1207,14 +1268,17 @@ export default function AdminPage() {
               })()}
               <button
                 onClick={() => {
-                  const message = generateOrderMessage(
-                    editItems,
-                    editItems.reduce((s, it) => s + (it.type === 'piece' ? it.quantity : it.type === 'pair' ? it.quantity * 2 : it.quantity * 3), 0),
-                    editItems.reduce((s, it) => s + (it.price * Math.max(0, it.quantity - (it.freeQty || 0))) - (it.discount || 0), 0) - (Number(editDiscount) || 0) + (editingOrder.shippingFee ?? 60),
-                    editName,
-                    editNote,
-                    editingOrder.shippingFee
-                  );
+                  const message = buildOrderMessage({
+                    items: editItems,
+                    totalFish: editItems.reduce((s, it) => s + (it.type === 'piece' ? it.quantity : it.type === 'pair' ? it.quantity * 2 : it.quantity * 3), 0),
+                    shippingFee: editingOrder.shippingFee ?? 60,
+                    billDiscount: Number(editDiscount) || 0,
+                    bankInfo,
+                    customerName: editName,
+                    customerPhone: editPhone,
+                    customerAddress: editAddress,
+                    note: editNote,
+                  });
                   if (message) {
                     navigator.clipboard.writeText(message).then(() => {
                       setEditCopySuccess(true);

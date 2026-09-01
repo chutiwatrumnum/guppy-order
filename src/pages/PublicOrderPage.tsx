@@ -20,6 +20,7 @@ interface PublicOrder {
     gender?: string;
     discount?: number;
     freeQty?: number;
+    kind?: 'fish' | 'food';
   }>;
   total_amount: number;
   total_fish: number;
@@ -201,10 +202,10 @@ export default function PublicOrderPage() {
               <div key={i} className="flex items-start justify-between gap-3 text-sm">
                 <div className="min-w-0">
                   <p className="font-bold text-slate-700 leading-snug">
-                    {item.breedName} {item.gender ? GENDER_LABEL[item.gender] : ''}
+                    {item.kind === 'food' ? '🍤 ' : ''}{item.breedName} {item.kind !== 'food' && item.gender ? GENDER_LABEL[item.gender] : ''}
                   </p>
                   <p className="text-[11px] text-slate-400">
-                    {item.quantity} {TYPE_LABEL[item.type] || item.type}
+                    {item.quantity} {item.kind === 'food' ? 'ชิ้น' : (TYPE_LABEL[item.type] || item.type)}
                     {item.freeQty ? ` (แถม ${item.freeQty})` : ''}
                   </p>
                 </div>

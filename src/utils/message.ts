@@ -17,157 +17,96 @@ export const getGenderLabel = (gender: 'male' | 'female' | 'mixed'): string => {
   }
 };
 
-// Generate LINE message for current order
-export const generateLineMessage = (
-  orderItems: OrderItem[],
-  totalFishCount: number,
-  totalFishPrice: number, // Note: this is the paid amount
-  bankInfo: BankInfo,
-  grandTotal: number
-): string => {
-  if (orderItems.length === 0) return '';
-  
-  let text = `🐠 รายการสั่งซื้อปลาหางนกยูง\n`;
-  text += `----------------------------\n`;
-  
-  let totalFreeValue = 0;
-  let rawSubtotal = 0;
+// ── ข้อความออเดอร์แบบเดียวใช้ทั้งแอป ──
+// รวมมาจากเดิมที่หน้า Home เขียนเอง + generateOrderMessage/generateLineMessage
+// ที่ทำงานซ้ำซ้อนและเพี้ยนกัน (เลขบัญชีหาย, ยอดไม่หักส่วนลดท้ายบิล)
+export interface OrderMessageOptions {
+  items: OrderItem[];
+  totalFish: number;          // จำนวนปลาทั้งหมด (นับตัวจริง) — ผู้เรียกส่งมา
+  shippingFee: number;        // ค่าจัดส่งที่คิดกับลูกค้า
+  billDiscount?: number;      // ส่วนลดท้ายบิล
+  bankInfo?: BankInfo | null; // ข้อมูลบัญชี (ถ้าไม่มีจะขึ้น "ไม่ระบุ")
+  customerName?: string;
+  customerPhone?: string;
+  customerAddress?: string;
+  note?: string;
+  shortClosing?: boolean;     // true = ลูกค้ามีข้อมูลอยู่แล้ว ไม่ต้องขอชื่อ/ที่อยู่ซ้ำ
+}
 
-  orderItems.forEach((item, index) => {
-    const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set';
-    const genderLabel = item.gender === 'male' ? '♂️' : item.gender === 'female' ? '♀️' : '⚥';
-    
-    // new logic
-    const paidQty = Math.max(0, item.quantity - (item.freeQty || 0));
-    const itemSubtotal = item.price * item.quantity; // value of all items
-    const freeValue = (item.freeQty || 0) * item.price;
-    const itemPaid = (item.price * paidQty) - (item.discount || 0);
+export const buildOrderMessage = (opts: OrderMessageOptions): string => {
+  const {
+    items, totalFish, shippingFee, billDiscount = 0, bankInfo,
+    customerName, customerPhone, customerAddress, note, shortClosing,
+  } = opts;
 
-    rawSubtotal += itemSubtotal;
-    totalFreeValue += freeValue;
-    
-    if (item.freeQty && item.freeQty >= item.quantity) {
-      text += `${index + 1}. 🎁 ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
-    } else if (item.freeQty && item.freeQty > 0) {
-      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} (แถม ${item.freeQty} มูลค่า -${freeValue})`;
-      if (item.discount && item.discount > 0) {
-        text += ` (ลดเพิ่ม -${item.discount})`;
-      }
-      text += ` = ${itemPaid.toLocaleString()}.-\n`;
-    } else {
-      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel}`;
-      if (item.discount && item.discount > 0) {
-        text += ` (ลด -${item.discount} บาท)`;
-      }
-      text += ` = ${itemPaid.toLocaleString()}.-\n`;
-    }
-  });
-  
-  text += `----------------------------\n`;
-  text += `📊 จำนวนปลาทั้งหมด: ${totalFishCount} ตัว\n`;
-  text += `💰 มูลค่าปลารวม: ${rawSubtotal.toLocaleString()} บาท\n`;
-  if (totalFreeValue > 0) {
-    text += `🎁 ส่วนลดของแถม: -${totalFreeValue.toLocaleString()} บาท\n`;
-  }
-  text += `🚚 ค่าจัดส่ง: ${bankInfo.shipping_fee.toLocaleString()} บาท\n`;
-  text += `----------------------------\n`;
-  text += `🏦 ช่องทางชำระเงิน\n`;
-  text += `${bankInfo.bank_name || 'ไม่ระบุธนาคาร'}\n`;
-  text += `เลขบัญชี: ${bankInfo.account_number || 'ไม่ระบุเลขบัญชี'}\n`;
-  text += `ชื่อบัญชี: ${bankInfo.account_name || 'ไม่ระบุชื่อ'}\n`;
-  text += `----------------------------\n`;
-  text += `ชำระแล้วรบกวนส่งสลิปแจ้งชื่อที่อยู่ได้เลยครับ 🙏✨`;
-  
-  return text;
-};
-
-// Generate order message (for saved orders)
-export const generateOrderMessage = (
-  items: OrderItem[],
-  totalFish: number,
-  totalAmount: number,
-  customer?: string,
-  note?: string,
-  shippingFee?: number,
-  bankInfo?: BankInfo
-): string => {
   if (items.length === 0) return '';
-  
-  let itemsTotalPaid = 0;
-  let totalFreeValue = 0;
-  let rawSubtotal = 0;
 
-  items.forEach((item) => {
-    const paidQty = Math.max(0, item.quantity - (item.freeQty || 0));
-    rawSubtotal += item.price * item.quantity;
-    totalFreeValue += (item.freeQty || 0) * item.price;
-    itemsTotalPaid += (item.price * paidQty) - (item.discount || 0);
-  });
-  
-  const finalShippingFee = shippingFee || bankInfo?.shipping_fee || 60;
-  const grandTotal = itemsTotalPaid + finalShippingFee;
-  
+  const fishPaidTotal = items.reduce((sum, item) => sum + calculateItemTotal(item), 0);
+  const grandTotal = Math.max(0, fishPaidTotal - billDiscount + shippingFee);
+
   let text = `🐠 รายการสั่งซื้อปลาหางนกยูง\n`;
-  text += `----------------------------\n`;
-  
+
+  // ข้อมูลลูกค้า (ถ้ามี)
+  if (customerName) {
+    text += `👤 ลูกค้า: ${customerName}`;
+    if (customerPhone) text += ` (${customerPhone})`;
+    text += `\n`;
+    if (customerAddress) text += `📍 ที่อยู่: ${customerAddress}\n`;
+    text += `----------------------------\n`;
+  }
+
+  // รายการ (ปลา + อาหาร) — อาหารแสดงเป็น "ชิ้น" ไม่มีเพศ
   items.forEach((item, index) => {
-    const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set';
-    const genderLabel = item.gender === 'male' ? '♂️' : item.gender === 'female' ? '♀️' : '⚥';
-    const paidQty = Math.max(0, item.quantity - (item.freeQty || 0));
-    const itemPaid = (item.price * paidQty) - (item.discount || 0);
-    const freeValue = (item.freeQty || 0) * item.price;
-    
+    const isFood = item.kind === 'food';
+    const typeLabel = isFood ? 'ชิ้น' : (item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set');
+    const genderLabel = isFood ? '🍤' : (item.gender === 'male' ? '♂️' : item.gender === 'female' ? '♀️' : '⚥');
+    const itemTotal = calculateItemTotal(item);
+    const paidQty = item.quantity - (item.freeQty || 0);
+
     if (item.freeQty && item.freeQty >= item.quantity) {
       text += `${index + 1}. 🎁 ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
     } else if (item.freeQty && item.freeQty > 0) {
-      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} (แถม ${item.freeQty} มูลค่า -${freeValue})`;
-      if (item.discount && item.discount > 0) {
-        text += ` (ลดเพิ่ม -${item.discount})`;
-      }
-      text += ` = ${itemPaid.toLocaleString()}.-\n`;
+      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} (ซื้อ ${paidQty} + แถม ${item.freeQty}) = ${itemTotal.toLocaleString()}.-\n`;
     } else {
-      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel}`;
-      if (item.discount && item.discount > 0) {
-        text += ` (ลด -${item.discount} บาท)`;
-      }
-      text += ` = ${itemPaid.toLocaleString()}.-\n`;
+      text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} = ${itemTotal.toLocaleString()}.-\n`;
     }
   });
-  
+
+  // สรุปยอด
   text += `----------------------------\n`;
   text += `📊 จำนวนปลาทั้งหมด: ${totalFish} ตัว\n`;
-  text += `💰 มูลค่าปลารวม: ${rawSubtotal.toLocaleString()} บาท\n`;
-  if (totalFreeValue > 0) {
-    text += `🎁 ส่วนลดของแถม: -${totalFreeValue.toLocaleString()} บาท\n`;
+  text += `💰 ค่าปลา: ${fishPaidTotal.toLocaleString()} บาท\n`;
+  if (billDiscount > 0) {
+    text += `🎁 ส่วนลดท้ายบิล: -${billDiscount.toLocaleString()} บาท\n`;
   }
-  text += `🚚 ค่าจัดส่ง: ${finalShippingFee.toLocaleString()} บาท\n`;
+  text += `🚚 ค่าจัดส่ง: ${shippingFee.toLocaleString()} บาท\n`;
   text += `🔥 ยอดรวมทั้งสิ้น: ${grandTotal.toLocaleString()} บาท\n`;
-  
-  if (customer) {
-    text += `👤 ลูกค้า: ${customer}\n`;
-  }
   if (note) {
     text += `💬 หมายเหตุ: ${note}\n`;
   }
-  
+
+  // ช่องทางชำระเงิน
   text += `----------------------------\n`;
   text += `🏦 ช่องทางชำระเงิน\n`;
   text += `${bankInfo?.bank_name || 'ไม่ระบุธนาคาร'}\n`;
   text += `เลขบัญชี: ${bankInfo?.account_number || 'ไม่ระบุเลขบัญชี'}\n`;
   text += `ชื่อบัญชี: ${bankInfo?.account_name || 'ไม่ระบุชื่อ'}\n`;
   text += `----------------------------\n`;
-  text += `ชำระแล้วรบกวนส่งสลิปแจ้งชื่อที่อยู่ได้เลยครับ 🙏✨`;
-  
+  text += shortClosing
+    ? `ชำระแล้วส่งสลิปได้เลยครับ 🙏✨`
+    : `ชำระแล้วรบกวนส่งสลิปแจ้งชื่อที่อยู่ได้เลยครับ 🙏✨`;
+
   return text;
 };
 
 // Format date for display
 export const formatDate = (dateString: string): string => {
-  return new Date(dateString).toLocaleString('th-TH', { 
-    dateStyle: 'medium', 
-    timeStyle: 'short' 
+  return new Date(dateString).toLocaleString('th-TH', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
   });
 };
+
 // ข้อความสั้นที่แนบไปกับลิงก์ใบสรุปในไลน์
 // ให้ลูกค้าเห็นรายการปลาในแชทเลย ไม่ต้องเปิดลิงก์ก็รู้ว่าสั่งอะไร
 export const buildOrderLinkMessage = (
@@ -179,10 +118,11 @@ export const buildOrderLinkMessage = (
   const lines = [`🐠 ใบสรุปออเดอร์ ${orderNumber}`, ''];
 
   items.forEach((item) => {
-    const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด';
-    const genderLabel = item.gender === 'male' ? '♂' : item.gender === 'female' ? '♀' : '';
+    const isFood = item.kind === 'food';
+    const typeLabel = isFood ? 'ชิ้น' : (item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด');
+    const genderLabel = isFood ? '' : (item.gender === 'male' ? '♂' : item.gender === 'female' ? '♀' : '');
     const free = item.freeQty ? ` (แถม ${item.freeQty})` : '';
-    lines.push(`• ${item.breedName}${genderLabel ? ' ' + genderLabel : ''} ${item.quantity} ${typeLabel}${free}`);
+    lines.push(`• ${isFood ? '🍤 ' : ''}${item.breedName}${genderLabel ? ' ' + genderLabel : ''} ${item.quantity} ${typeLabel}${free}`);
   });
 
   lines.push('');

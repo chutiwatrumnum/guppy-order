@@ -11,6 +11,15 @@ export interface Breed {
   premium_cost_set?: number;
 }
 
+// สินค้าอื่นที่ไม่ใช่ปลา เช่น อาหาร (ไม่มีเพศ ไม่มีตัว/คู่/ชุด)
+export interface Product {
+  id: string;
+  name: string;
+  price: number;
+  cost?: number;
+  is_active?: boolean;
+}
+
 export type UserRole = 'admin' | 'user';
 
 export type Gender = 'male' | 'female' | 'mixed';
@@ -31,6 +40,9 @@ export interface OrderItem {
   gender: Gender;
   discount?: number;
   freeQty?: number;
+  // 'food' = สินค้าอื่นที่ไม่ใช่ปลา ไม่ถูกนับใน "จำนวนปลา" และแสดงแยก
+  // ไม่ระบุ = ปลา (ของเดิม)
+  kind?: 'fish' | 'food';
 }
 
 // Grouped Order Item for Summary Display

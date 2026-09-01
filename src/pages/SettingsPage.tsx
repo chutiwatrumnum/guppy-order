@@ -7,12 +7,17 @@ import {
   Save,
   X,
   CreditCard,
-  Loader2
+  Loader2,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast, Toaster } from 'sonner';
 import type { Breed } from '../types';
 import Layout from './Layout';
+import FoodProducts from '../components/FoodProducts';
 
 export default function SettingsPage() {
   // State
@@ -31,6 +36,9 @@ export default function SettingsPage() {
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [editingBreed, setEditingBreed] = useState<Breed | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
+  const [editingCell, setEditingCell] = useState<{ breedId: string; field: keyof Breed } | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   // Load Data
   useEffect(() => {
@@ -56,6 +64,7 @@ export default function SettingsPage() {
       }
     } catch (err) {
       console.error('Fetch error:', err);
+      toast.error('โหลดข้อมูลไม่สำเร็จ — ข้อมูลที่เห็นอาจไม่ครบ ลองรีเฟรชอีกครั้ง');
     } finally {
       setIsLoading(false);
     }
@@ -137,6 +146,34 @@ export default function SettingsPage() {
     }
   };
 
+  // Toggle sort: click same column flips direction, new column starts ascending
+  const handleSort = (key: string) => {
+    setSortConfig(prev =>
+      prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }
+    );
+  };
+
+  // Start editing a single price/cost cell inline
+  const startCellEdit = (breed: Breed, field: keyof Breed) => {
+    setEditingCell({ breedId: breed.id, field });
+    setEditValue(String((breed[field] as number) || ''));
+  };
+
+  // Save one inline cell to Supabase with optimistic UI update
+  const saveCellEdit = async (breed: Breed, field: keyof Breed) => {
+    const num = Number(editValue) || 0;
+    setEditingCell(null);
+    if (num === ((breed[field] as number) || 0)) return; // no change
+    setBreeds(prev => prev.map(b => (b.id === breed.id ? { ...b, [field]: num } : b)));
+    const { error } = await supabase.from('breeds').update({ [field]: num }).eq('id', breed.id);
+    if (error) {
+      toast.error('บันทึกไม่สำเร็จ');
+      fetchData();
+    } else {
+      toast.success('อัปเดตแล้ว');
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout>
@@ -195,38 +232,194 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
-          {breeds
-            .filter(breed => breed.name.toLowerCase().includes(searchTerm.toLowerCase()))
-            .map(breed => (
-            <div key={breed.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col group hover:shadow-md hover:border-blue-100 transition-all">
-              <div className="flex items-center gap-3.5 flex-1 min-w-0 mb-3">
-                <div className="min-w-0 pr-2 w-full">
-                   <h4 className="font-black text-base sm:text-lg text-slate-800 flex flex-wrap items-center gap-2">
-                      <span className="break-words">{breed.name}</span>
-                      {breed.premium_price_piece && <span className="shrink-0 bg-orange-100 text-orange-600 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md uppercase tracking-wider font-bold">👑</span>}
-                   </h4>
-                   <div className="flex flex-col gap-0.5 mt-1 text-[10px] sm:text-[11px]">
-                     {(breed.premium_price_piece || 0) > 0 && (
-                       <div className="flex items-center gap-1">
-                         <span className="text-orange-400">👑</span>
-                         <span className="font-bold text-orange-500">ตัว:{breed.premium_price_piece}</span>
-                         {(breed.premium_price_pair || 0) > 0 && <span className="text-slate-300">|</span>}
-                         {(breed.premium_price_pair || 0) > 0 && <span className="font-bold text-orange-500">คู่:{breed.premium_price_pair}</span>}
-                         {(breed.premium_price_set || 0) > 0 && <span className="text-slate-300">|</span>}
-                         {(breed.premium_price_set || 0) > 0 && <span className="font-bold text-orange-500">ชุด:{breed.premium_price_set}</span>}
-                       </div>
-                     )}
-                   </div>
-                </div>
+        {(() => {
+          const num = (v: unknown) => Number(v) || 0;
+          const types = ['piece', 'pair', 'set'] as const;
+          const priceField = (t: string) => `premium_price_${t}` as keyof Breed;
+          const costField = (t: string) => `premium_cost_${t}` as keyof Breed;
+          const profitOf = (b: Breed, t: string) => num(b[priceField(t)]) - num(b[costField(t)]);
+
+          const filteredBreeds = breeds.filter(breed =>
+            breed.name.toLowerCase().includes(searchTerm.toLowerCase())
+          );
+
+          // Sort by name or by profit of a given item type
+          const sortedBreeds = [...filteredBreeds].sort((a, b) => {
+            let av: number | string;
+            let bv: number | string;
+            if (sortConfig.key === 'name') {
+              av = a.name.toLowerCase();
+              bv = b.name.toLowerCase();
+            } else {
+              av = profitOf(a, sortConfig.key);
+              bv = profitOf(b, sortConfig.key);
+            }
+            if (av < bv) return sortConfig.dir === 'asc' ? -1 : 1;
+            if (av > bv) return sortConfig.dir === 'asc' ? 1 : -1;
+            return 0;
+          });
+
+          // Summary numbers
+          const missingCostCount = filteredBreeds.filter(b =>
+            types.some(t => num(b[priceField(t)]) > 0 && num(b[costField(t)]) === 0)
+          ).length;
+          const pieceMargins = filteredBreeds
+            .filter(b => num(b.premium_price_piece) > 0)
+            .map(b => (profitOf(b, 'piece') / num(b.premium_price_piece)) * 100);
+          const avgPieceMargin = pieceMargins.length
+            ? Math.round(pieceMargins.reduce((s, m) => s + m, 0) / pieceMargins.length)
+            : 0;
+
+          if (filteredBreeds.length === 0) {
+            return (
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-12 text-center text-slate-400 font-bold">
+                {searchTerm ? 'ไม่พบสายพันธุ์ที่ค้นหา' : 'ยังไม่มีสายพันธุ์ กดปุ่ม "เพิ่มสายพันธุ์" เพื่อเริ่มต้น'}
               </div>
-              <div className="flex gap-1.5 shrink-0 relative z-20">
-                <button onClick={() => { setEditingBreed(breed); setIsBreedModalOpen(true); }} className="h-8 w-8 sm:h-9 sm:w-9 bg-slate-50 text-slate-400 hover:bg-white hover:text-blue-600 border border-transparent hover:border-slate-200 rounded-xl flex items-center justify-center active:scale-90 transition-all"><Edit2 className="h-3.5 w-3.5" /></button>
-                <button onClick={() => deleteBreed(breed.id)} className="h-8 w-8 sm:h-9 sm:w-9 bg-slate-50 text-slate-400 hover:bg-white hover:text-red-600 border border-transparent hover:border-slate-200 rounded-xl flex items-center justify-center active:scale-90 transition-all"><Trash2 className="h-3.5 w-3.5" /></button>
+            );
+          }
+
+          // An inline-editable number: click to edit, Enter/blur saves, Esc cancels
+          const EditableNumber = ({ breed, field, children, className }: { breed: Breed; field: keyof Breed; children: React.ReactNode; className: string }) => {
+            const isEditing = editingCell?.breedId === breed.id && editingCell?.field === field;
+            if (isEditing) {
+              return (
+                <input
+                  autoFocus
+                  type="number"
+                  value={editValue}
+                  onChange={e => setEditValue(e.target.value)}
+                  onFocus={e => e.target.select()}
+                  onBlur={() => saveCellEdit(breed, field)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveCellEdit(breed, field);
+                    if (e.key === 'Escape') setEditingCell(null);
+                  }}
+                  className="w-16 h-6 text-right bg-blue-50 border border-blue-400 rounded-md px-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              );
+            }
+            return (
+              <button
+                onClick={() => startCellEdit(breed, field)}
+                title="กดเพื่อแก้ไข"
+                className={`rounded px-1 -mx-1 hover:bg-blue-100/60 transition-colors cursor-text ${className}`}
+              >
+                {children}
+              </button>
+            );
+          };
+
+          // Cell showing ราคาขาย / ต้นทุน / กำไร (+margin%) for one item type, all inline-editable
+          const PriceCell = ({ breed, type }: { breed: Breed; type: string }) => {
+            const p = num(breed[priceField(type)]);
+            const c = num(breed[costField(type)]);
+            const editingHere =
+              editingCell?.breedId === breed.id &&
+              (editingCell?.field === priceField(type) || editingCell?.field === costField(type));
+
+            if (p === 0 && c === 0 && !editingHere) {
+              return (
+                <EditableNumber breed={breed} field={priceField(type)} className="text-slate-300 hover:text-blue-500 font-bold">
+                  —
+                </EditableNumber>
+              );
+            }
+
+            const profit = p - c;
+            const margin = p > 0 ? Math.round((profit / p) * 100) : 0;
+            const missingCost = p > 0 && c === 0;
+
+            return (
+              <div className="flex flex-col items-end gap-0.5 leading-tight tabular-nums">
+                <EditableNumber breed={breed} field={priceField(type)} className="font-black text-slate-800">
+                  {p.toLocaleString()}
+                </EditableNumber>
+                <EditableNumber breed={breed} field={costField(type)} className={`text-[11px] font-bold ${missingCost ? 'text-amber-600' : 'text-slate-400'}`}>
+                  ทุน {c.toLocaleString()}
+                </EditableNumber>
+                {missingCost ? (
+                  <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                    <AlertTriangle className="h-2.5 w-2.5" /> ยังไม่ใส่ทุน
+                  </span>
+                ) : (
+                  <span className={`text-[11px] font-black ${profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                    {profit >= 0 ? '+' : ''}{profit.toLocaleString()}
+                    <span className="text-slate-400 font-bold"> ({margin}%)</span>
+                  </span>
+                )}
+              </div>
+            );
+          };
+
+          // Sortable header with direction caret
+          const SortHeader = ({ label, sortKey, align = 'right' }: { label: string; sortKey: string; align?: 'left' | 'right' }) => {
+            const active = sortConfig.key === sortKey;
+            return (
+              <button
+                onClick={() => handleSort(sortKey)}
+                className={`flex items-center gap-1 w-full ${align === 'right' ? 'justify-end' : 'justify-start'} ${active ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'} transition-colors`}
+              >
+                {label}
+                {active ? (
+                  sortConfig.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                ) : (
+                  <ArrowUpDown className="h-3 w-3 opacity-30" />
+                )}
+              </button>
+            );
+          };
+
+          return (
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest">
+                      <th className="py-3.5 px-4 sticky left-0 bg-slate-50 z-10"><SortHeader label="สายพันธุ์" sortKey="name" align="left" /></th>
+                      <th className="py-3.5 px-4 whitespace-nowrap"><SortHeader label="ตัว" sortKey="piece" /></th>
+                      <th className="py-3.5 px-4 whitespace-nowrap"><SortHeader label="คู่" sortKey="pair" /></th>
+                      <th className="py-3.5 px-4 whitespace-nowrap"><SortHeader label="ชุด" sortKey="set" /></th>
+                      <th className="text-right py-3.5 px-4 whitespace-nowrap text-slate-500">จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {sortedBreeds.map(breed => (
+                      <tr key={breed.id} className="group hover:bg-blue-50/30 transition-colors">
+                        <td className="py-3 px-4 sticky left-0 bg-white group-hover:bg-blue-50/30 transition-colors z-10">
+                          <span className="font-black text-slate-800 whitespace-nowrap flex items-center gap-1.5">
+                            <span className="text-orange-400">👑</span>{breed.name}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4"><PriceCell breed={breed} type="piece" /></td>
+                        <td className="py-3 px-4"><PriceCell breed={breed} type="pair" /></td>
+                        <td className="py-3 px-4"><PriceCell breed={breed} type="set" /></td>
+                        <td className="py-3 px-4">
+                          <div className="flex gap-1.5 justify-end">
+                            <button onClick={() => { setEditingBreed(breed); setIsBreedModalOpen(true); }} className="h-8 w-8 bg-slate-50 text-slate-400 hover:bg-white hover:text-blue-600 border border-transparent hover:border-slate-200 rounded-xl flex items-center justify-center active:scale-90 transition-all"><Edit2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => deleteBreed(breed.id)} className="h-8 w-8 bg-slate-50 text-slate-400 hover:bg-white hover:text-red-600 border border-transparent hover:border-slate-200 rounded-xl flex items-center justify-center active:scale-90 transition-all"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-4 py-3 bg-slate-50/50 border-t border-slate-100 flex items-center gap-x-5 gap-y-1.5 text-[11px] font-bold text-slate-500 flex-wrap">
+                <span className="text-slate-600">ทั้งหมด <span className="text-slate-800 font-black">{filteredBreeds.length}</span> สายพันธุ์</span>
+                <span>กำไรเฉลี่ย/ตัว <span className="text-emerald-600 font-black">{avgPieceMargin}%</span></span>
+                {missingCostCount > 0 && (
+                  <span className="flex items-center gap-1 text-amber-600 font-black">
+                    <AlertTriangle className="h-3 w-3" /> ยังไม่ใส่ต้นทุน {missingCostCount} สายพันธุ์
+                  </span>
+                )}
+                <span className="ml-auto text-slate-400 font-medium">กดหัวตารางเพื่อเรียง · กดตัวเลขเพื่อแก้ไขได้เลย</span>
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })()}
+
+        {/* อาหาร / สินค้าอื่นที่ไม่ใช่ปลา */}
+        <FoodProducts />
 
         {/* Bank Settings Modal */}
         {isBankModalOpen && (

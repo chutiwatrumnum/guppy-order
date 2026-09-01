@@ -27,10 +27,13 @@ interface Customer {
   last_order_at: string | null;
 }
 
+type CustomerSortKey = 'name' | 'total_spent' | 'total_orders' | 'last_order_at';
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortKey, setSortKey] = useState<CustomerSortKey>('total_spent');
   
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -69,6 +72,7 @@ export default function CustomersPage() {
       }));
     } catch (err) {
       console.error('Fetch customers error:', err);
+      toast.error('โหลดข้อมูลลูกค้าไม่สำเร็จ ลองรีเฟรชอีกครั้ง');
     } finally {
       setLoading(false);
     }
@@ -161,12 +165,32 @@ export default function CustomersPage() {
     }
   };
 
-  const filteredCustomers = searchTerm.trim()
-    ? customers.filter(c => 
+  const searched = searchTerm.trim()
+    ? customers.filter(c =>
         c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.phone?.includes(searchTerm)
       )
     : customers;
+
+  // Sort: name ascending (A→Z), everything else descending (most first)
+  const filteredCustomers = [...searched].sort((a, b) => {
+    if (sortKey === 'name') return (a.name || '').localeCompare(b.name || '', 'th');
+    if (sortKey === 'last_order_at') {
+      return new Date(b.last_order_at || 0).getTime() - new Date(a.last_order_at || 0).getTime();
+    }
+    return (b[sortKey] || 0) - (a[sortKey] || 0);
+  });
+
+  // Summary across the searched set
+  const totalRevenue = searched.reduce((sum, c) => sum + (c.total_spent || 0), 0);
+  const activeCount = searched.filter(c => (c.total_orders || 0) > 0).length;
+
+  const sortOptions: { key: CustomerSortKey; label: string }[] = [
+    { key: 'total_spent', label: '💰 ยอดซื้อ' },
+    { key: 'total_orders', label: '📋 จำนวนออเดอร์' },
+    { key: 'last_order_at', label: '🕒 ซื้อล่าสุด' },
+    { key: 'name', label: '🔤 ชื่อ' },
+  ];
 
   if (loading) {
     return (
@@ -217,10 +241,31 @@ export default function CustomersPage() {
 
           {/* Customer List */}
           <div className="p-6">
-            <div className="text-sm text-slate-500 mb-4">
-              พบ {filteredCustomers.length} รายการ
+            {/* Summary + Sort controls */}
+            <div className="flex flex-col gap-3 mb-4">
+              <div className="flex items-center gap-x-4 gap-y-1 text-xs font-bold flex-wrap">
+                <span className="text-slate-500">พบ <span className="text-slate-800 font-black">{filteredCustomers.length}</span> รายการ</span>
+                <span className="text-slate-400">ซื้อแล้ว {activeCount} คน</span>
+                <span className="text-emerald-600">รวมยอดซื้อ ฿{totalRevenue.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">เรียงตาม</span>
+                {sortOptions.map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setSortKey(opt.key)}
+                    className={`h-8 px-3 rounded-lg text-xs font-black transition-all ${
+                      sortKey === opt.key
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            
+
             <div className="space-y-3">
               {filteredCustomers.map((customer) => (
                 <div 

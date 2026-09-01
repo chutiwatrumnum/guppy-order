@@ -14,10 +14,10 @@ import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
-import { calculateItemTotal, getGenderLabel, buildOrderLinkMessage } from '../utils/message';
+import { calculateItemTotal, getGenderLabel, buildOrderLinkMessage, buildOrderMessage } from '../utils/message';
 import { parseThaiAddress } from '../utils/address';
 import { getLiffOrderUrl } from '../utils/liff';
-import type { Breed, Gender, OrderItem, GroupedOrderItem, Customer } from '../types';
+import type { Breed, Gender, OrderItem, GroupedOrderItem, Customer, Product } from '../types';
 import { User } from 'lucide-react';
 import Layout from './Layout';
 
@@ -48,6 +48,7 @@ export default function HomePage() {
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [addressPaste, setAddressPaste] = useState('');
   const [quickBreedIds, setQuickBreedIds] = useState<string[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   // ลิงก์ใบสรุปของบิลที่เพิ่งบันทึก เอาไว้ส่งให้ลูกค้าในไลน์
   const [lastOrderLink, setLastOrderLink] = useState<{ url: string; orderNumber: string; message: string } | null>(null);
 
@@ -126,6 +127,9 @@ export default function HomePage() {
         setBankInfo(settingsData[0]);
       }
       
+      const { data: productsData } = await supabase.from('products').select('*').eq('is_active', true).order('name');
+      setProducts((productsData || []) as Product[]);
+
       const { data: customersData } = await supabase.from('customers').select('*').order('name');
       setCustomers(customersData || []);
 
@@ -134,6 +138,7 @@ export default function HomePage() {
       setQuickBreedIds((topBreeds || []).map((r: any) => r.breed_id));
     } catch (err) {
       console.error('Fetch error:', err);
+      toast.error('โหลดข้อมูลไม่สำเร็จ — ข้อมูลที่เห็นอาจไม่ครบ ลองรีเฟรชอีกครั้ง');
     } finally {
       setLoading(false);
     }
@@ -179,6 +184,25 @@ export default function HomePage() {
     }
   };
 
+  // เพิ่มอาหาร/สินค้าอื่นลงออเดอร์ — kind='food' จะไม่ถูกนับเป็นจำนวนปลา
+  const addFoodToOrder = (product: Product) => {
+    const existing = orderItems.find(item => item.kind === 'food' && item.breedId === product.id);
+    if (existing) {
+      setOrderItems(orderItems.map(item => item === existing ? { ...item, quantity: item.quantity + 1 } : item));
+    } else {
+      setOrderItems([...orderItems, {
+        id: Date.now().toString(), breedId: product.id, breedName: product.name,
+        type: 'piece', quantity: 1, price: product.price, cost: product.cost || 0,
+        gender: 'mixed', kind: 'food',
+      }]);
+    }
+    toast.success(`เพิ่ม ${product.name} ลงออเดอร์`, { description: `฿${product.price.toLocaleString()}`, duration: 2000 });
+  };
+
+  const setItemQty = (itemId: string, qty: number) => {
+    setOrderItems(orderItems.map(item => item.id === itemId ? { ...item, quantity: Math.max(1, qty) } : item));
+  };
+
   const setFreeQty = (itemId: string, freeQty: number) => {
     setOrderItems(orderItems.map(item => 
       item.id === itemId ? { ...item, freeQty: freeQty > 0 ? freeQty : undefined } : item
@@ -192,6 +216,7 @@ export default function HomePage() {
     const groups: { [key: string]: GroupedOrderItem } = {};
     
     orderItems.forEach(item => {
+      if (item.kind === 'food') return; // อาหารแสดงแยก ไม่รวมในกลุ่มปลา
       if (!groups[item.breedId]) {
         groups[item.breedId] = {
           breedId: item.breedId,
@@ -219,70 +244,30 @@ export default function HomePage() {
 
   const totalFishCount = useMemo(() => {
     return orderItems.reduce((sum, item) => {
+      if (item.kind === 'food') return sum; // อาหารไม่นับเป็นตัวปลา
       if (item.type === 'piece') return sum + item.quantity;
       if (item.type === 'pair') return sum + (item.quantity * 2);
       return sum + (item.quantity * 3);
     }, 0);
   }, [orderItems]);
+
+  // แยกอาหารออกจากรายการปลา เพื่อแสดงคนละส่วน
+  const foodItems = useMemo(() => orderItems.filter(item => item.kind === 'food'), [orderItems]);
   
   const totalFishPrice = useMemo(() => orderItems.reduce((sum, item) => sum + calculateItemTotal(item), 0), [orderItems]);
   const grandTotal = Math.max(0, totalFishPrice - billDiscount + (orderItems.length > 0 ? bankInfo.shipping_fee : 0));
 
-  const lineMessage = useMemo(() => {
-    if (orderItems.length === 0) return '';
-    let text = `🐠 รายการสั่งซื้อปลาหางนกยูง\n`;
-    
-    // เพิ่มข้อมูลลูกค้าถ้ามี
-    if (customerName) {
-      text += `👤 ลูกค้า: ${customerName}`;
-      if (customerPhone) text += ` (${customerPhone})`;
-      text += `\n`;
-      if (customerAddress) {
-        text += `📍 ที่อยู่: ${customerAddress}\n`;
-      }
-      text += `----------------------------\n`;
-    }
-    
-    orderItems.forEach((item, index) => {
-      const typeLabel = item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'set';
-      const genderLabel = item.gender === 'male' ? '♂️' : item.gender === 'female' ? '♀️' : '⚥';
-      const itemTotal = calculateItemTotal(item);
-      const paidQty = item.quantity - (item.freeQty || 0);
-      
-      if (item.freeQty && item.freeQty >= item.quantity) {
-        text += `${index + 1}. 🎁 ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} = แถมฟรีทั้งหมด\n`;
-      } else if (item.freeQty && item.freeQty > 0) {
-        text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel} (ซื้อ ${paidQty} + แถม ${item.freeQty})`;
-        text += ` = ${itemTotal.toLocaleString()}.-\n`;
-      } else {
-        text += `${index + 1}. ${item.breedName} ${genderLabel}: ${item.quantity} ${typeLabel}`;
-        text += ` = ${itemTotal.toLocaleString()}.-\n`;
-      }
-    });
-    text += `----------------------------\n`;
-    text += `📊 จำนวนปลาทั้งหมด: ${totalFishCount} ตัว\n`;
-    text += `💰 ค่าปลา: ${totalFishPrice.toLocaleString()} บาท\n`;
-    if (billDiscount > 0) {
-      text += `🎁 ส่วนลดท้ายบิล: -${billDiscount.toLocaleString()} บาท\n`;
-    }
-    text += `🚚 ค่าจัดส่ง: ${bankInfo.shipping_fee.toLocaleString()} บาท\n`;
-    text += `🔥 ยอดรวมทั้งสิ้น: ${grandTotal.toLocaleString()} บาท\n`;
-    text += `----------------------------\n`;
-    text += `🏦 ช่องทางชำระเงิน\n`;
-    text += `${bankInfo.bank_name || 'ไม่ระบุธนาคาร'}\n`;
-    text += `เลขบัญชี: ${bankInfo.account_number || 'ไม่ระบุเลขบัญชี'}\n`;
-    text += `ชื่อบัญชี: ${bankInfo.account_name || 'ไม่ระบุชื่อ'}\n`;
-    text += `----------------------------\n`;
-    
-    // ถ้าเลือกลูกค้าจาก dropdown แสดงข้อความสั้น ไม่ต้องขอชื่อที่อยู่
-    if (selectedCustomerId) {
-      text += `ชำระแล้วส่งสลิปได้เลยครับ 🙏✨`;
-    } else {
-      text += `ชำระแล้วรบกวนส่งสลิปแจ้งชื่อที่อยู่ได้เลยครับ 🙏✨`;
-    }
-    
-    return text;
-  }, [orderItems, totalFishCount, totalFishPrice, bankInfo, grandTotal, customerName, customerPhone, customerAddress, selectedCustomerId]);
+  const lineMessage = useMemo(() => buildOrderMessage({
+    items: orderItems,
+    totalFish: totalFishCount,
+    shippingFee: bankInfo.shipping_fee,
+    billDiscount,
+    bankInfo,
+    customerName,
+    customerPhone,
+    customerAddress,
+    shortClosing: !!selectedCustomerId,
+  }), [orderItems, totalFishCount, bankInfo, billDiscount, customerName, customerPhone, customerAddress, selectedCustomerId]);
 
   const copyToClipboard = () => {
     if (!lineMessage) return;
@@ -663,7 +648,48 @@ export default function HomePage() {
                         </div>
                       </div>
                     ))}
-                    
+
+                    {/* อาหาร / สินค้าอื่น — แยกจากปลา ไม่นับเป็นจำนวนตัว */}
+                    {(products.length > 0 || foodItems.length > 0) && (
+                      <div className="mt-4 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">🍤 อาหาร / สินค้าอื่น</p>
+                          {products.length > 0 && (
+                            <select
+                              value=""
+                              onChange={(e) => { const p = products.find(x => x.id === e.target.value); if (p) addFoodToOrder(p); e.target.value = ''; }}
+                              className="h-9 bg-white border border-amber-200 rounded-lg px-2 text-xs font-bold text-amber-700 outline-none focus:border-amber-400"
+                            >
+                              <option value="">+ เพิ่มอาหาร</option>
+                              {products.map(p => <option key={p.id} value={p.id}>{p.name} · ฿{p.price}</option>)}
+                            </select>
+                          )}
+                        </div>
+                        {foodItems.length === 0 ? (
+                          <p className="text-xs text-amber-400">เลือกอาหารจากเมนู "+ เพิ่มอาหาร"</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {foodItems.map(item => (
+                              <div key={item.id} className="flex items-center justify-between gap-2 bg-white rounded-xl px-3 py-2">
+                                <span className="font-bold text-sm text-slate-700 min-w-0 truncate">{item.breedName}</span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <input
+                                    type="number" min="1" value={item.quantity}
+                                    onChange={(e) => setItemQty(item.id, Number(e.target.value) || 1)}
+                                    className="w-14 h-8 bg-amber-50 border border-amber-200 rounded-lg px-2 text-sm font-black text-amber-700 text-center outline-none focus:border-amber-400"
+                                  />
+                                  <span className="text-sm font-black text-slate-700 w-16 text-right">฿{(item.price * item.quantity).toLocaleString()}</span>
+                                  <button onClick={() => removeFromOrder(item.id)} className="h-7 w-7 bg-red-50 hover:bg-red-500 text-red-500 hover:text-white rounded-lg flex items-center justify-center transition-all">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {orderItems.length > 0 && (
                       <div className="mt-4 sm:mt-6 p-4 bg-blue-50 rounded-2xl border border-blue-100">
                         <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-3">ข้อมูลลูกค้า (ไม่บังคับ)</p>

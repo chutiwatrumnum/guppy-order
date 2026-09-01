@@ -332,22 +332,26 @@ export default function AdminPage() {
     });
 
     let totalFishCost = 0;
+    let totalFoodCost = 0;  // แยกต้นทุนอาหารออก เพราะจ่ายคนละเจ้ากับปลา
     let totalProfit = 0;
     const totalShippingIncome = allOrders.reduce((sum, order) => sum + (order.shippingFee || 60), 0);
     const totalShippingCost = allOrders.reduce((sum, order) => sum + (order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : (order.shippingFee || 60)), 0);
-    
+
     allOrders.forEach(order => {
-      const orderFishCost = order.items?.reduce((itemSum, item) => {
-        // ใช้ getItemCost เพื่อดึงค่าต้นทุนจาก breed โดยตรง
-        const itemCost = resolveItemCost(item);
-        return itemSum + (itemCost * item.quantity);
-      }, 0) || 0;
-      
+      let orderFishCost = 0;
+      let orderFoodCost = 0;
+      order.items?.forEach((item: OrderItem) => {
+        const c = resolveItemCost(item) * item.quantity;
+        if (item.kind === 'food') orderFoodCost += c;
+        else orderFishCost += c;
+      });
+
       totalFishCost += orderFishCost;
-      
+      totalFoodCost += orderFoodCost;
+
       const revenue = order.totalAmount || 0;
       const shipping = order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : (order.shippingFee || 60);
-      totalProfit += (revenue - orderFishCost - shipping);
+      totalProfit += (revenue - orderFishCost - orderFoodCost - shipping);
     });
 
     const avgOrderValue = allOrders.length > 0 ? totalSales / allOrders.length : 0;
@@ -398,6 +402,7 @@ export default function AdminPage() {
       totalFish,
       totalFreeQty,
       totalFreeValue,
+      totalFoodCost,
       totalProfit,
       avgOrderValue,
       topBreeds,
@@ -1014,8 +1019,13 @@ export default function AdminPage() {
                     <p className="font-black text-2xl text-pink-600">{dashboardStats.totalFreeQty} <span className="text-sm font-bold text-pink-400">ตัว</span></p>
                     <p className="text-xs text-slate-400 mt-1">มูลค่า ฿{dashboardStats.totalFreeValue.toLocaleString()}</p>
                   </div>
+                  <div className="p-5 bg-white border-2 border-amber-200 rounded-2xl">
+                    <p className="text-[10px] uppercase tracking-widest text-amber-500 mb-1">🍤 ต้นทุนอาหาร</p>
+                    <p className="font-black text-2xl text-amber-600">฿{dashboardStats.totalFoodCost.toLocaleString()}</p>
+                    <p className="text-xs text-slate-400 mt-1">จ่ายคนละเจ้ากับปลา</p>
+                  </div>
                   <div className="p-5 bg-white border-2 border-slate-200 rounded-2xl">
-                    <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-1">ต้นทุนปลา</p>
+                    <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-1">🐟 ต้นทุนปลา</p>
                     <p className="font-black text-2xl text-slate-700">฿{dashboardStats.totalFishCost.toLocaleString()}</p>
                   </div>
                   <div className="p-5 bg-white border-2 border-slate-200 rounded-2xl">

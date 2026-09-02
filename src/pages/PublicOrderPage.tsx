@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Bell, Check, Copy, Fish, Loader2, Send } from 'lucide-react';
+import { Bell, Check, Copy, Fish, Loader2, Receipt, Send, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
@@ -41,6 +41,8 @@ interface PublicOrder {
   customer_phone?: string | null;
   customer_address?: string | null;
   note?: string | null;
+  // สถานะสลิปใบล่าสุด — null คือยังไม่เคยส่ง
+  slip_status?: 'pending' | 'confirmed' | 'rejected' | null;
   payment: {
     promptpay_id?: string | null;
     bank_name?: string | null;
@@ -80,6 +82,11 @@ export default function PublicOrderPage() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
 
+  const [uploading, setUploading] = useState(false);
+  const [slipStatus, setSlipStatus] = useState<PublicOrder['slip_status']>(null);
+  const lineUserIdRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     let active = true;
 
@@ -98,6 +105,7 @@ export default function PublicOrderPage() {
       setName(o.customer_name || '');
       setPhone(o.customer_phone || '');
       setAddress(o.customer_address || '');
+      setSlipStatus(o.slip_status ?? null);
       setLoading(false);
 
       // ถ้าเปิดในแอป LINE ให้ผูกบัญชีกับออเดอร์เงียบ ๆ
@@ -105,6 +113,7 @@ export default function PublicOrderPage() {
       // เปิดในเบราว์เซอร์ธรรมดาก็ข้ามไป หน้ายังใช้งานได้ครบ
       const lineUserId = await getLineUserId();
       if (!active || !lineUserId) return;
+      lineUserIdRef.current = lineUserId;
 
       const { data: linked } = await supabase.rpc('link_order_line_user', {
         p_token: token,
@@ -147,6 +156,58 @@ export default function PublicOrderPage() {
 
     setSaved(true);
     toast.success('บันทึกที่อยู่เรียบร้อยแล้ว ขอบคุณครับ');
+  };
+
+  // อัปสลิปจากหน้านี้ — ต่างจากส่งเข้าไลน์ตรงที่รู้อยู่แล้วว่าเป็นบิลไหน
+  // ไม่ต้องให้ร้านมานั่งจับคู่ทีหลัง
+  const uploadSlip = async (file: File) => {
+    // บัคเก็ตรับแค่ 3 ชนิดนี้ ดักตั้งแต่ตรงนี้จะได้บอกเหตุผลได้ชัดกว่า error จาก storage
+    // iPhone บางรุ่นส่ง HEIC มา ถ้าเจอก็บอกให้ส่งทางไลน์แทน ไม่ปล่อยให้งง
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      toast.error('รองรับเฉพาะไฟล์ JPG, PNG, WebP\nถ้าส่งไม่ได้ รบกวนส่งสลิปในไลน์แทนครับ');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('ไฟล์ใหญ่เกิน 5MB รบกวนถ่ายใหม่หรือย่อรูปก่อนครับ');
+      return;
+    }
+
+    setUploading(true);
+    const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+    const path = `p/${token}/${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('slips')
+      .upload(path, file, { contentType: file.type, upsert: false });
+
+    if (uploadError) {
+      setUploading(false);
+      toast.error('อัปโหลดไม่สำเร็จ รบกวนลองใหม่ หรือส่งสลิปในไลน์ก็ได้ครับ');
+      return;
+    }
+
+    const { data, error } = await supabase.rpc('submit_order_slip', {
+      p_token: token,
+      p_path: path,
+      p_line_user_id: lineUserIdRef.current,
+    });
+    setUploading(false);
+
+    if (error || !data?.ok) {
+      const reason = data?.reason;
+      toast.error(
+        reason === 'already_shipped'
+          ? 'ออเดอร์นี้จัดส่งแล้ว ไม่ต้องส่งสลิปเพิ่มครับ'
+          : reason === 'too_many'
+            ? 'ส่งสลิปมาหลายใบแล้ว รอทางร้านตรวจสอบสักครู่นะครับ'
+            : 'บันทึกสลิปไม่สำเร็จ รบกวนส่งในไลน์แทนครับ'
+      );
+      return;
+    }
+
+    setSlipStatus('pending');
+    toast.success('ได้รับสลิปแล้วครับ ทางร้านกำลังตรวจสอบ 🙏');
   };
 
   const copyAccountNumber = async () => {
@@ -203,9 +264,13 @@ export default function PublicOrderPage() {
                 timeStyle: 'short',
               })}
             </p>
-            <div className="mt-3 flex items-center justify-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
               <Badge variant={payment.variant}>{payment.text}</Badge>
               <Badge variant={status.variant}>{status.text}</Badge>
+              {/* สถานะกลางระหว่างรอชำระกับชำระแล้ว ลูกค้าจะได้รู้ว่าสลิปถึงร้านแล้ว */}
+              {order.payment_status !== 'paid' && slipStatus === 'pending' && (
+                <Badge variant="soft">ได้รับสลิปแล้ว · รอตรวจสอบ</Badge>
+              )}
             </div>
             {order.tracking_number && (
               <p className="mt-3 text-sm font-medium">📦 เลขพัสดุ {order.tracking_number}</p>
@@ -305,9 +370,60 @@ export default function PublicOrderPage() {
                 </>
               )}
 
-              <p className="text-muted-foreground mt-4 text-center text-xs">
-                ชำระแล้วรบกวนส่งสลิปในไลน์ได้เลยครับ 🙏
-              </p>
+              <Separator className="my-4" />
+
+              {/* แจ้งสลิป — ทำได้ 2 ทาง ตรงนี้กับส่งเข้าไลน์ ลงที่เดียวกัน */}
+              {slipStatus === 'pending' ? (
+                <div className="bg-success/10 flex items-start gap-2 rounded-xl px-4 py-3">
+                  <Receipt className="text-success mt-0.5 size-4 shrink-0" />
+                  <div>
+                    <p className="text-success text-sm font-medium">ได้รับสลิปแล้วครับ</p>
+                    <p className="text-success/80 text-xs">
+                      ทางร้านกำลังตรวจสอบ เมื่อยืนยันแล้วสถานะจะเปลี่ยนเป็น "ชำระเงินแล้ว"
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      // เคลียร์ค่าทิ้งทุกครั้ง ไม่งั้นเลือกไฟล์เดิมซ้ำแล้ว onChange ไม่ยิง
+                      e.target.value = '';
+                      if (file) uploadSlip(file);
+                    }}
+                  />
+                  <Button
+                    size="lg"
+                    className="w-full"
+                    disabled={uploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {uploading ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" /> กำลังส่งสลิป...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="size-4" />
+                        {slipStatus === 'rejected' ? 'ส่งสลิปใหม่อีกครั้ง' : 'แนบสลิปโอนเงิน'}
+                      </>
+                    )}
+                  </Button>
+                  {slipStatus === 'rejected' && (
+                    <p className="text-warning mt-2 text-center text-xs">
+                      สลิปที่ส่งมาก่อนหน้านี้ตรวจสอบไม่ผ่าน รบกวนส่งใหม่ครับ
+                    </p>
+                  )}
+                  <p className="text-muted-foreground mt-3 text-center text-xs">
+                    หรือส่งสลิปในไลน์ก็ได้เหมือนกันครับ 🙏
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
         )}

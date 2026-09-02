@@ -106,7 +106,7 @@ export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void
 
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('total_amount, order_number, public_token')
+      .select('total_amount, order_number, public_token, line_user_id')
       .eq('id', orderId)
       .single();
 
@@ -145,20 +145,36 @@ export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void
 
     // หยอดคิวให้บอทแจ้งลูกค้าว่ายืนยันเงินแล้ว — ไม่ให้ลูกค้าต้องมากดดูเอง
     // ล้มเหลวตรงนี้ไม่ควรทำให้การปิดบิลพัง แค่เตือน
-    const summaryUrl = `https://liff.line.me/2010766267-xz9flUvC/o/${order.public_token}`;
-    const { error: notifyError } = await supabase.from('line_notifications').insert({
-      line_user_id: slip.line_user_id,
-      order_id: orderId,
-      message:
-        `✅ ยืนยันการชำระเงินแล้วครับ\n` +
-        `บิล ${order.order_number} · ฿${Number(order.total_amount).toLocaleString()}\n\n` +
-        `ทางร้านกำลังจัดเตรียมพัสดุ เมื่อจัดส่งจะแจ้งเลขพัสดุให้อีกครั้งครับ 🐟\n` +
-        `ดูใบสรุป: ${summaryUrl}`,
-    });
+    //
+    // สลิปที่อัปจากหน้าใบสรุปในเบราว์เซอร์ธรรมดาจะไม่มี LINE userId จริง
+    // (เก็บเป็น web:<token> ไว้เพราะคอลัมน์เป็น not null) ยิง push ไปก็ล้มเงียบ ๆ
+    // เอาของออเดอร์มาก่อน ถ้าไม่มีทั้งคู่ก็ไม่ต้องหยอดคิว แล้วบอกร้านตรง ๆ
+    const isLineUser = (v: string | null | undefined) => !!v && /^U[0-9a-f]{32}$/.test(v);
+    const notifyUserId = isLineUser(order.line_user_id)
+      ? order.line_user_id
+      : isLineUser(slip.line_user_id)
+        ? slip.line_user_id
+        : null;
+
+    let notifyError = null;
+    if (notifyUserId) {
+      const summaryUrl = `https://liff.line.me/2010766267-xz9flUvC/o/${order.public_token}`;
+      ({ error: notifyError } = await supabase.from('line_notifications').insert({
+        line_user_id: notifyUserId,
+        order_id: orderId,
+        message:
+          `✅ ยืนยันการชำระเงินแล้วครับ\n` +
+          `บิล ${order.order_number} · ฿${Number(order.total_amount).toLocaleString()}\n\n` +
+          `ทางร้านกำลังจัดเตรียมพัสดุ เมื่อจัดส่งจะแจ้งเลขพัสดุให้อีกครั้งครับ 🐟\n` +
+          `ดูใบสรุป: ${summaryUrl}`,
+      }));
+    }
 
     setBusy(null);
 
-    if (notifyError) {
+    if (!notifyUserId) {
+      toast.warning('ยืนยันรับเงินแล้ว — ลูกค้ายังไม่ได้เปิดใบสรุปในไลน์ ต้องแจ้งเอง');
+    } else if (notifyError) {
       toast.warning('ยืนยันรับเงินแล้ว แต่ส่งแจ้งเตือนหาลูกค้าไม่สำเร็จ');
     } else {
       toast.success('ยืนยันรับเงินแล้ว — แจ้งลูกค้าในไลน์ให้อัตโนมัติ');
@@ -197,7 +213,7 @@ export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void
         <EmptyState
           icon={Receipt}
           title="ไม่มีสลิปรอตรวจสอบ"
-          description="สลิปที่ลูกค้าส่งเข้าไลน์จะมาโผล่ที่นี่"
+          description="สลิปที่ลูกค้าส่งเข้าไลน์หรือแนบจากหน้าใบสรุปจะมาโผล่ที่นี่"
           action={
             <Button variant="outline" size="sm" onClick={load}>
               <RefreshCw className="size-3.5" /> โหลดใหม่

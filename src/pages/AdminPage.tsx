@@ -295,10 +295,18 @@ export default function AdminPage() {
 
   // คัดลอกที่อยู่จัดส่ง เรียง เบอร์ / ชื่อ / ที่อยู่ ไว้แปะฟอร์มส่งพัสดุได้เลย
   //
-  // ลูกค้าที่ไม่กรอกชื่อจะไม่เหลืออะไรเขียนหน้ากล่อง ใช้ชื่อ LINE แทนได้
-  // แต่เป็นตัวสำรองเท่านั้น ไม่เอามาต่อท้ายชื่อจริง เพราะบล็อกนี้เอาไปวางในฟอร์มส่งพัสดุตรง ๆ
+  // ชื่อวางรูปแบบเดียวกับที่แสดงในการ์ด: ชื่อจริง (ชื่อ LINE)
+  // ร้านจะได้เห็นว่าบิลนี้คุยกับใครตอนไล่พิมพ์ใบแปะกล่อง ไม่ต้องเปิดสลับหน้าจอ
+  // ถ้าไม่มีชื่อจริง ชื่อ LINE ยืนเดี่ยวแทน
+  const nameLine = (order: SavedOrder) => {
+    const name = order.customerName?.trim();
+    const line = order.lineDisplayName?.trim();
+    if (name && line) return `${name} (${line})`;
+    return name || line || '';
+  };
+
   const formatAddress = (order: SavedOrder) =>
-    [order.customerPhone, order.customerName?.trim() || order.lineDisplayName, order.customerAddress]
+    [order.customerPhone, nameLine(order), order.customerAddress]
       .map((v) => (v || '').trim())
       .filter(Boolean)
       .join('\n');

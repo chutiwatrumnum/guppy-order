@@ -148,6 +148,14 @@ export default function PublicOrderPage() {
     };
   }, [token]);
 
+  // แก้ช่องไหนก็ตาม = ยังไม่ได้บันทึกของใหม่
+  // ถ้าปล่อยให้ปุ่มค้างว่า "บันทึกแล้ว" ลูกค้าที่แก้ที่อยู่จะเชื่อว่าส่งไปแล้ว
+  // ปิดหน้าไปเลย ที่อยู่ใหม่หายโดยไม่มีใครรู้
+  const editField = (setter: (v: string) => void, value: string) => {
+    setter(value);
+    setSaved(false);
+  };
+
   const submitContact = async () => {
     const problem = validateShippingContact({ name, phone, address });
     if (problem) {
@@ -482,7 +490,7 @@ export default function PublicOrderPage() {
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="p-name">ชื่อผู้รับ</Label>
-                  <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} />
+                  <Input id="p-name" value={name} onChange={(e) => editField(setName, e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="p-phone">เบอร์โทรศัพท์</Label>
@@ -491,7 +499,7 @@ export default function PublicOrderPage() {
                     type="tel"
                     inputMode="tel"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => editField(setPhone, e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -500,7 +508,7 @@ export default function PublicOrderPage() {
                     id="p-address"
                     rows={4}
                     value={address}
-                    onChange={(e) => setAddress(e.target.value)}
+                    onChange={(e) => editField(setAddress, e.target.value)}
                     placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
                   />
                   <p className="text-muted-foreground text-xs">
@@ -516,7 +524,9 @@ export default function PublicOrderPage() {
                     </>
                   ) : (
                     <>
-                      <Send className="size-4" /> ส่งที่อยู่ให้ร้าน
+                      <Send className="size-4" />
+                      {/* บิลที่มีที่อยู่อยู่แล้ว = กำลังแก้ ไม่ใช่ส่งครั้งแรก */}
+                      {order.customer_address ? 'บันทึกที่อยู่ใหม่' : 'ส่งที่อยู่ให้ร้าน'}
                     </>
                   )}
                 </Button>

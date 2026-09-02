@@ -45,8 +45,13 @@ export default function PendingSlips({
 }: {
   /** ยืนยันแล้ว — บิลเปลี่ยนสถานะ ต้องโหลดรายการบิลใหม่ */
   onConfirmed?: () => void;
-  /** คิวสลิปเปลี่ยนจำนวน ไม่ว่าจะยืนยันหรือปฏิเสธ — ไว้อัปเดตตัวเลขบนแท็บ */
-  onChanged?: () => void;
+  /**
+   * จำนวนสลิปที่รออยู่เปลี่ยน — ไว้อัปเดตตัวเลขบนแท็บ
+   * ส่งจำนวนไปด้วยเลย ตัวเลขบนแท็บจะได้ตรงกับรายการที่เห็นเสมอ
+   * เดิมแท็บนับเองตอนโหลดหน้าแล้วไม่อัปเดตอีก พอมีสลิปเข้ามาระหว่างนั้น
+   * ตัวเลขกับหัวข้อในหน้าจะไม่ตรงกัน (badge 4 แต่รายการ 5)
+   */
+  onChanged?: (pendingCount: number) => void;
 }) {
   const { user } = useAuth();
   const [slips, setSlips] = useState<Slip[]>([]);
@@ -95,6 +100,7 @@ export default function PendingSlips({
       })
     );
     setOptions(opts);
+    onChanged?.(rows.length);
 
     setLoading(false);
   };
@@ -187,9 +193,10 @@ export default function PendingSlips({
     } else {
       toast.success('ยืนยันรับเงินแล้ว — แจ้งลูกค้าในไลน์ให้อัตโนมัติ');
     }
-    setSlips((prev) => prev.filter((s) => s.id !== slip.id));
+    const remaining = slips.filter((s) => s.id !== slip.id);
+    setSlips(remaining);
     onConfirmed?.();
-    onChanged?.();
+    onChanged?.(remaining.length);
   };
 
   const reject = async (slip: Slip) => {
@@ -204,8 +211,9 @@ export default function PendingSlips({
       })
       .eq('id', slip.id);
     setBusy(null);
-    setSlips((prev) => prev.filter((s) => s.id !== slip.id));
-    onChanged?.();
+    const remaining = slips.filter((s) => s.id !== slip.id);
+    setSlips(remaining);
+    onChanged?.(remaining.length);
     toast.success('ปฏิเสธสลิปแล้ว');
   };
 

@@ -1476,7 +1476,7 @@ export default function AdminPage() {
           <TabsContent value="slips" className="mt-4">
             <PendingSlips
               onConfirmed={() => loadAllOrders(reportPeriod)}
-              onChanged={loadPendingSlipCount}
+              onChanged={setPendingSlipCount}
             />
           </TabsContent>
         </Tabs>

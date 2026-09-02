@@ -69,6 +69,23 @@ interface PublicOrder {
 type BadgeVariant = React.ComponentProps<typeof Badge>['variant'];
 
 /**
+ * ลายนิ้วมือของไฟล์ ไว้ให้ร้านรู้ว่าสลิปใบนี้เคยส่งมาแล้วหรือยัง
+ *
+ * ไม่ได้อ่านอะไรจากรูป แค่ย่อยไฟล์ทั้งก้อนเป็นเลขชุดเดียว
+ * crypto.subtle ต้องการ https ซึ่ง LIFF เป็นอยู่แล้ว แต่ถ้าพลาดก็ไม่ควรทำให้อัปสลิปไม่ได้
+ */
+async function fileHash(file: File): Promise<string | null> {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    return Array.from(new Uint8Array(buf))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  } catch {
+    return null;
+  }
+}
+
+/**
  * ชื่อที่เอาไปตั้งไว้ในช่อง "ชื่อผู้รับ"
  *
  * ชื่อในบิลเชื่อได้ก็ต่อเมื่อลูกค้าเป็นคนกรอกเอง (contact_from_customer)
@@ -264,6 +281,7 @@ export default function PublicOrderPage() {
       p_token: token,
       p_path: path,
       p_line_user_id: lineUserIdRef.current,
+      p_image_hash: await fileHash(file),
     });
     setUploading(false);
 

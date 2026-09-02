@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Loader2, Receipt, RefreshCw, X } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, Receipt, RefreshCw, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
@@ -20,11 +20,21 @@ import {
 // ตั้งใจให้ "คน" เป็นคนตัดสิน — ระบบแค่เอาสลิปมาวางคู่กับบิลที่น่าจะใช่
 // ถ้าให้เครื่องอ่านยอดจากรูปแล้วปิดบิลเอง จะกลายเป็นระบบที่ยืนยันสลิปปลอมให้อัตโนมัติ
 
+/** สลิปใบอื่นที่ไฟล์ตรงกัน */
+interface DupeRow {
+  image_hash: string;
+  slip_id: string;
+  status: string;
+  order_number: string | null;
+  created_at: string;
+}
+
 interface Slip {
   id: string;
   order_id: string | null;
   line_user_id: string;
   image_path: string;
+  image_hash: string | null;
   created_at: string;
   orders?: {
     order_number: string;
@@ -57,6 +67,7 @@ export default function PendingSlips({
   const [slips, setSlips] = useState<Slip[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [options, setOptions] = useState<Record<string, PendingOrder[]>>({});
+  const [dupes, setDupes] = useState<Record<string, DupeRow[]>>({});
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -65,7 +76,7 @@ export default function PendingSlips({
     setLoading(true);
     const { data, error } = await supabase
       .from('payment_slips')
-      .select('id, order_id, line_user_id, image_path, created_at, orders(order_number, total_amount, customer_name)')
+      .select('id, order_id, line_user_id, image_path, image_hash, created_at, orders(order_number, total_amount, customer_name)')
       .eq('status', 'pending')
       .order('created_at', { ascending: false });
 
@@ -100,6 +111,26 @@ export default function PendingSlips({
       })
     );
     setOptions(opts);
+
+    // ไฟล์ซ้ำ — เทียบลายนิ้วมือของไฟล์ ไม่ได้อ่านอะไรจากรูป
+    // ที่ต้องรู้คือใบที่ "เคยยืนยันไปแล้ว" (เอาสลิปเก่ามาใช้ซ้ำ)
+    // กับใบที่ "รอตรวจอยู่ที่บิลอื่น" ส่วนตัวมันเองไม่นับ
+    const hashes = [...new Set(rows.map((s) => s.image_hash).filter(Boolean))] as string[];
+    if (hashes.length > 0) {
+      const { data: dupRows } = await supabase.rpc('slip_duplicates', { p_hashes: hashes });
+      const map: Record<string, DupeRow[]> = {};
+      for (const s of rows) {
+        if (!s.image_hash) continue;
+        const others = (dupRows || []).filter(
+          (d: DupeRow) => d.image_hash === s.image_hash && d.slip_id !== s.id
+        );
+        if (others.length > 0) map[s.id] = others;
+      }
+      setDupes(map);
+    } else {
+      setDupes({});
+    }
+
     onChanged?.(rows.length);
 
     setLoading(false);
@@ -278,12 +309,35 @@ export default function PendingSlips({
                   </div>
                 )}
 
+                {/* ไฟล์นี้เคยเห็นมาก่อน — ไม่ปฏิเสธเอง แค่บอกให้ดูให้ดี
+                    ลูกค้าอาจส่งซ้ำด้วยความบริสุทธิ์ใจ ระบบไม่ควรกล่าวหาใคร */}
+                {dupes[slip.id]?.length > 0 && (
+                  <div className="bg-warning/10 flex items-start gap-2 rounded-lg px-3 py-2">
+                    <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" />
+                    <div className="min-w-0 text-xs">
+                      <p className="text-warning font-medium">สลิปรูปนี้เคยส่งมาแล้ว</p>
+                      {dupes[slip.id].map((d) => (
+                        <p key={d.slip_id} className="text-warning/90">
+                          {d.status === 'confirmed' ? 'ยืนยันไปแล้ว' : 'รอตรวจอยู่'}
+                          {d.order_number ? ` · บิล ${d.order_number}` : ''}
+                          {' · '}
+                          {new Date(d.created_at).toLocaleDateString('th-TH', { dateStyle: 'medium' })}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {slip.order_id && slip.orders ? (
                   <div className="bg-primary/8 rounded-lg px-3 py-2">
-                    <p className="text-primary text-xs font-medium">จับคู่กับบิล</p>
-                    <p className="text-sm font-semibold">
-                      {slip.orders.order_number} · ฿{Number(slip.orders.total_amount).toLocaleString()}
-                    </p>
+                    <p className="text-primary text-xs font-medium">จับคู่กับบิล — ยอดที่ต้องได้รับ</p>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-sm font-semibold">{slip.orders.order_number}</p>
+                      {/* ตัวใหญ่ไว้กวาดตาเทียบกับยอดในรูปได้เร็ว ๆ */}
+                      <p className="text-primary text-xl font-semibold tabular-nums">
+                        ฿{Number(slip.orders.total_amount).toLocaleString()}
+                      </p>
+                    </div>
                     {slip.orders.customer_name && (
                       <p className="text-muted-foreground text-xs">{slip.orders.customer_name}</p>
                     )}

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import PromptPayQR from '@/components/PromptPayQR';
 import { getLineProfile } from '@/utils/liff';
+import { normalizeThaiPhone, validateShippingContact } from '@/utils/address';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -136,29 +137,34 @@ export default function PublicOrderPage() {
   }, [token]);
 
   const submitContact = async () => {
-    if (!name.trim() || !phone.trim() || !address.trim()) {
-      toast.error('กรุณากรอกชื่อ เบอร์โทร และที่อยู่ให้ครบ');
+    const problem = validateShippingContact({ name, phone, address });
+    if (problem) {
+      toast.error(problem);
       return;
     }
+
+    // เก็บเบอร์เป็นเลขล้วนขึ้นต้น 0 เสมอ ร้านจะได้ก็อปไปกรอกฟอร์มส่งพัสดุได้เลย
+    const normalizedPhone = normalizeThaiPhone(phone) || phone;
 
     setSaving(true);
     const { data, error } = await supabase.rpc('submit_order_contact', {
       p_token: token,
       p_name: name,
-      p_phone: phone,
+      p_phone: normalizedPhone,
       p_address: address,
     });
     setSaving(false);
 
     if (error || !data?.ok) {
       const reason = data?.reason;
-      toast.error(
-        reason === 'already_shipped'
-          ? 'ออเดอร์นี้จัดส่งแล้ว ไม่สามารถแก้ที่อยู่ได้'
-          : reason === 'too_long'
-            ? 'ข้อมูลยาวเกินกำหนด'
-            : 'บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง'
-      );
+      const REASONS: Record<string, string> = {
+        already_shipped: 'ออเดอร์นี้จัดส่งแล้ว ไม่สามารถแก้ที่อยู่ได้',
+        too_long: 'ข้อมูลยาวเกินกำหนด',
+        no_postcode: 'ที่อยู่ยังไม่มีรหัสไปรษณีย์ รบกวนใส่เลข 5 หลักด้วยครับ',
+        address_too_short: 'ที่อยู่สั้นเกินไป รบกวนใส่ให้ครบถึงจังหวัดครับ',
+        bad_phone: 'เบอร์โทรไม่ถูกต้อง กรอกเป็นเลข 10 หลัก เช่น 0812345678',
+      };
+      toast.error(REASONS[reason] || 'บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง');
       return;
     }
 
@@ -485,6 +491,9 @@ export default function PublicOrderPage() {
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
                   />
+                  <p className="text-muted-foreground text-xs">
+                    อย่าลืมรหัสไปรษณีย์ 5 หลัก ไม่งั้นทางร้านส่งของไม่ได้ครับ
+                  </p>
                 </div>
                 <Button size="lg" className="w-full" onClick={submitContact} disabled={saving}>
                   {saving ? (

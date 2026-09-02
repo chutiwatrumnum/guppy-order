@@ -9,8 +9,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:address": "node scripts/test-address.mjs",
+    "test:address-validation": "node scripts/test-address-validation.mjs",
     "test:promptpay": "node scripts/test-promptpay.mjs",
-    "test": "node scripts/test-address.mjs && node scripts/test-promptpay.mjs"
+    "test": "node scripts/test-address.mjs && node scripts/test-address-validation.mjs && node scripts/test-promptpay.mjs"
   },
   "keywords": [],
   "author": "",

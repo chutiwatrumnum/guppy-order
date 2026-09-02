@@ -32,24 +32,25 @@ export function PageLoader({
       role="status"
       aria-live="polite"
     >
-      <div className="relative flex h-28 w-32 flex-col items-center justify-end gap-2.5 pb-2">
+      <div className="relative flex h-32 w-36 flex-col items-center justify-end gap-3 pb-2">
         {/* ฟองอากาศลอยขึ้นจากข้างหลัง */}
         {BUBBLES.map((b, i) => (
           <span
             key={i}
             aria-hidden
-            className="bg-primary/40 animate-bubble-rise absolute bottom-10 rounded-full"
+            className="bg-primary/40 animate-bubble-rise absolute bottom-12 rounded-full"
             style={{ left: b.left, width: b.size, height: b.size, animationDelay: b.delay }}
           />
         ))}
 
+        {/* โลโก้เป็นวงกลมบนพื้นขาวทึบ ตัดเป็นวงกลมด้วย ไม่งั้นเห็นขอบสี่เหลี่ยม */}
         <img
           src={LOGO}
           alt=""
           aria-hidden
-          width={80}
-          height={80}
-          className="animate-bear-float relative size-20 rounded-2xl object-contain drop-shadow-sm"
+          width={96}
+          height={96}
+          className="animate-bear-float relative size-24 rounded-full object-contain shadow-sm"
           onError={(e) => {
             // ยังไม่ได้วางโลโก้ร้าน — ใช้ไอคอนแอปแทน
             // เช็ก dataset กัน onError วนซ้ำถ้าไอคอนสำรองก็โหลดไม่ขึ้น
@@ -63,7 +64,7 @@ export function PageLoader({
         {/* เงาอยู่ใต้รูปจริง ๆ ไม่ทับกัน — หดตอนลอยขึ้น ให้รู้สึกว่าลอย ไม่ใช่เลื่อนขึ้นลง */}
         <span
           aria-hidden
-          className="bg-foreground/70 animate-bear-shadow h-1.5 w-14 shrink-0 rounded-full blur-[3px]"
+          className="bg-foreground/70 animate-bear-shadow h-1.5 w-16 shrink-0 rounded-full blur-[3px]"
         />
       </div>
 

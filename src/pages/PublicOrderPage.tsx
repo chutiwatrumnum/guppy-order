@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { PageLoader } from '@/components/ui/page-loader';
 
 // หน้านี้เปิดได้โดยไม่ต้องล็อกอิน — ทุกอย่างผ่าน RPC ที่รับ token เท่านั้น
 // ห้ามเรียกตารางตรง ๆ ในไฟล์นี้ anon ไม่มีสิทธิ์อยู่แล้วและไม่ควรมี
@@ -317,11 +318,8 @@ export default function PublicOrderPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-[100dvh] items-center justify-center">
-        <Loader2 className="text-primary size-8 animate-spin" />
-      </div>
-    );
+    // หน้าแรกที่ลูกค้าเห็นหลังกดลิงก์จากไลน์ — ให้เจอโลโก้ร้าน ไม่ใช่วงกลมหมุน
+    return <PageLoader className="min-h-[100dvh]" label="กำลังเปิดใบสรุป…" />;
   }
 
   if (!order) {

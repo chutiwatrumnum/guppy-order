@@ -142,3 +142,44 @@
 @utility pt-safe {
   padding-top: env(safe-area-inset-top);
 }
+
+/* ── หมีลอยน้ำตอนโหลด ────────────────────────────────────────────────
+   คนขายเจอจอนี้วันละหลายสิบครั้ง จังหวะจึงต้องช้าและนิ่ง
+   ถ้าเด้งแรงหรือหมุนเร็ว อีกสองวันก็เริ่มรำคาญแล้ว */
+
+@keyframes bear-float {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-8px); }
+}
+
+/* เงาหดตอนหมีลอยขึ้น ทำให้รู้สึกว่าลอยจริง ไม่ใช่แค่เลื่อนขึ้นลง */
+@keyframes bear-shadow {
+  from { transform: scaleX(1);    opacity: 0.18; }
+  to   { transform: scaleX(0.72); opacity: 0.08; }
+}
+
+/* ฟองอากาศลอยขึ้นแล้วแตก */
+@keyframes bubble-rise {
+  0%   { transform: translateY(6px) scale(0.6); opacity: 0; }
+  25%  { opacity: 0.7; }
+  100% { transform: translateY(-34px) scale(1); opacity: 0; }
+}
+
+@utility animate-bear-float {
+  animation: bear-float 2.6s ease-in-out infinite alternate;
+}
+@utility animate-bear-shadow {
+  animation: bear-shadow 2.6s ease-in-out infinite alternate;
+}
+@utility animate-bubble-rise {
+  animation: bubble-rise 2.8s ease-in infinite;
+}
+
+/* บางคนเวียนหัวกับภาพเคลื่อนไหว ระบบปฏิบัติการมีสวิตช์ให้ปิดอยู่แล้ว เคารพมันด้วย */
+@media (prefers-reduced-motion: reduce) {
+  .animate-bear-float,
+  .animate-bear-shadow,
+  .animate-bubble-rise {
+    animation: none;
+  }
+}

@@ -4,8 +4,14 @@
 // ลิงก์จะกลายเป็น http://localhost:3000/o/... ซึ่งลูกค้าเปิดไม่ได้
 // และจะไม่มีใครรู้ตัวจนกว่าลูกค้าจะทัก
 
-/** โดเมนจริงที่ deploy อยู่ ใช้เป็นค่าสำรองเมื่อรันบนเครื่องตัวเอง */
-const PRODUCTION_ORIGIN = 'https://ecommerce-guppy.web.app';
+/**
+ * โดเมนจริงที่ deploy อยู่ ใช้เป็นค่าสำรองเมื่อรันบนเครื่องตัวเอง
+ *
+ * ย้ายจาก ecommerce-guppy.web.app (Firebase) มา Vercel เพราะ deploy อัตโนมัติ
+ * ตอน push ไม่ต้องสั่งมือ — ที่ผ่านมาเคยลืม deploy จนฟีเจอร์ไม่ถึงลูกค้ามาแล้ว
+ * โดเมนเดิมตั้ง redirect มาที่นี่ไว้ ลิงก์เก่าที่ส่งไปแล้วยังเปิดได้
+ */
+const PRODUCTION_ORIGIN = 'https://guppy-order.vercel.app';
 
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]'];
 

@@ -1066,10 +1066,22 @@ export default function AdminPage() {
                         </div>
 
                         {/* ลูกค้า / ที่อยู่ */}
-                        {(order.customerName || order.customerPhone || order.customerAddress) && (
+                        {(order.customerName ||
+                          order.customerPhone ||
+                          order.customerAddress ||
+                          order.lineDisplayName) && (
                           <div className="bg-muted/50 relative rounded-lg px-3 py-2.5 text-sm">
-                            {order.customerName && (
-                              <p className="pr-24 font-medium">{order.customerName}</p>
+                            {(order.customerName || order.lineDisplayName) && (
+                              <p className="pr-24 font-medium">
+                                {order.customerName?.trim() || order.lineDisplayName}
+                                {/* ชื่อ LINE ต่อท้ายไว้เทียบว่าคุยอยู่กับบัญชีไหน
+                                    ไม่ใช่ชื่อสำหรับจ่าหน้ากล่อง เลยทำให้จางกว่าชื่อจริง */}
+                                {order.customerName?.trim() && order.lineDisplayName && (
+                                  <span className="text-muted-foreground ml-1 text-xs font-normal">
+                                    ({order.lineDisplayName})
+                                  </span>
+                                )}
+                              </p>
                             )}
                             {order.customerPhone && (
                               <a

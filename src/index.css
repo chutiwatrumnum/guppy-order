@@ -158,6 +158,14 @@
   to   { transform: scaleX(0.72); opacity: 0.08; }
 }
 
+/* โคลงซ้ายขวาเหมือนลอยตามคลื่น
+   ไม่หมุนรอบเต็มเพราะโลโก้มีตัวหนังสือ หมุนครบรอบแล้วชื่อร้านกลับหัว
+   จงใจใช้คาบไม่เท่ากับการลอยขึ้นลง สองจังหวะจะได้ไม่ตรงกันเป๊ะ ดูเป็นธรรมชาติกว่า */
+@keyframes bear-rock {
+  from { rotate: -7deg; }
+  to   { rotate: 7deg; }
+}
+
 /* ฟองอากาศลอยขึ้นแล้วแตก */
 @keyframes bubble-rise {
   0%   { transform: translateY(6px) scale(0.6); opacity: 0; }
@@ -166,7 +174,9 @@
 }
 
 @utility animate-bear-float {
-  animation: bear-float 2.6s ease-in-out infinite alternate;
+  animation:
+    bear-float 2.6s ease-in-out infinite alternate,
+    bear-rock 3.4s ease-in-out infinite alternate;
 }
 @utility animate-bear-shadow {
   animation: bear-shadow 2.6s ease-in-out infinite alternate;

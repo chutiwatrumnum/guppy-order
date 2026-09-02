@@ -38,15 +38,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import {
-  ResponsiveModal,
-  ResponsiveModalBody,
-  ResponsiveModalContent,
-  ResponsiveModalDescription,
-  ResponsiveModalFooter,
-  ResponsiveModalHeader,
-  ResponsiveModalTitle,
-} from '@/components/ui/responsive-modal';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageLoader } from '@/components/ui/page-loader';
@@ -131,7 +122,8 @@ export default function HomePage() {
   const [billDiscount, setBillDiscount] = useState<number>(restoredDraft?.discount ?? 0);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [addressPaste, setAddressPaste] = useState('');
-  const [showCustomerForm, setShowCustomerForm] = useState(false);
+  // ปกติไม่ต้องกรอกที่อยู่ — เปิดเฉพาะตอนลูกค้าส่งมาในแชท
+  const [showAddressFields, setShowAddressFields] = useState(false);
 
   const [quickBreedIds, setQuickBreedIds] = useState<string[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -627,122 +619,6 @@ export default function HomePage() {
   const cartCount = orderItems.reduce((sum, item) => sum + item.quantity, 0);
 
   // เนื้อหาตะกร้า — ใช้ก้อนเดียวกันทั้งแผงข้างบนจอคอมพ์ และหน้าตะกร้าเต็มจอบนมือถือ
-  // นับว่ากรอกครบแค่ไหน ไว้โชว์บนการ์ดสรุปโดยไม่ต้องเปิดแผง
-  const customerFilledCount = [customerName, customerPhone, customerAddress].filter(
-    (v) => v.trim().length > 0
-  ).length;
-
-  // ฟอร์มลูกค้า — เนื้อเดียวกับของเดิม ย้ายมาอยู่ในแผงสไลด์
-  const customerFormBody = (
-    <div className="space-y-5">
-
-            <div className="space-y-2">
-              <Label htmlFor="cust-name">ชื่อลูกค้า</Label>
-              <div className="relative">
-                <User className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                <Input
-                  id="cust-name"
-                  value={customerName}
-                  onChange={(e) => {
-                    setCustomerName(e.target.value);
-                    setSelectedCustomerId('');
-                  }}
-                  placeholder="ชื่อ TikTok / ชื่อไลน์ / ชื่อลูกค้า"
-                  className="pl-9"
-                />
-              </div>
-              {customers.length > 0 && (
-                <Select
-                  value={selectedCustomerId || undefined}
-                  onValueChange={handleCustomerChange}
-                >
-                  <SelectTrigger size="sm" className="w-full">
-                    <SelectValue placeholder="หรือเลือกจากลูกค้าเดิม" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id}>
-                        {customer.name} {customer.phone ? `(${customer.phone})` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            <Separator />
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="cust-paste">ที่อยู่จัดส่ง</Label>
-                <span className="text-muted-foreground text-xs">ลูกค้ากรอกเองในลิงก์ได้</span>
-              </div>
-
-              {/* วางข้อความจากไลน์ทั้งก้อน แล้วแยก ชื่อ/เบอร์/ที่อยู่ ให้อัตโนมัติ */}
-              <div className="relative">
-                <Textarea
-                  id="cust-paste"
-                  value={addressPaste}
-                  onChange={(e) => applyPastedAddress(e.target.value)}
-                  placeholder={'📋 วางข้อความที่ลูกค้าส่งมาในไลน์ตรงนี้\nระบบจะแยก ชื่อ / เบอร์ / ที่อยู่ ให้เอง'}
-                  rows={2}
-                  className="border-dashed pr-14"
-                />
-                {addressPaste && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute top-1.5 right-1.5"
-                    onClick={() => setAddressPaste('')}
-                  >
-                    ล้าง
-                  </Button>
-                )}
-              </div>
-
-              <Input
-                type="tel"
-                inputMode="tel"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                onBlur={(e) => lookupCustomerByPhone(e.target.value)}
-                placeholder="เบอร์โทร"
-              />
-              <Textarea
-                value={customerAddress}
-                onChange={(e) => setCustomerAddress(e.target.value)}
-                placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
-                rows={2}
-              />
-            </div>
-
-            <Separator />
-
-            <div className="space-y-2">
-              <Label htmlFor="order-note">หมายเหตุ</Label>
-              <Input
-                id="order-note"
-                value={orderNote}
-                onChange={(e) => setOrderNote(e.target.value)}
-                placeholder="เช่น ห่อพิเศษ, นัดส่งวันไหน"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="bill-discount">ส่วนลดท้ายบิล (บาท)</Label>
-              <Input
-                id="bill-discount"
-                type="number"
-                min="0"
-                value={billDiscount || ''}
-                onChange={(e) => setBillDiscount(Number(e.target.value) || 0)}
-                placeholder="0"
-              />
-            </div>
-    </div>
-  );
-
   const cartPanel = (
     <div className="space-y-4">
           <Card className="gap-0 py-0">
@@ -928,39 +804,130 @@ export default function HomePage() {
             </CardContent>
           </Card>
 
-          {/* ── ข้อมูลลูกค้า: ย่อเหลือการ์ดสรุป กดแล้วเปิดแผงสไลด์ ── */}
-          {/* ฟอร์มนี้ยาวจนดันยอดรวมกับปุ่มบันทึกตกจอ ทั้งที่ใช้แค่ตอนปิดบิล
-              ตะกร้ากับยอดรวมต้องเห็นตลอดขณะเลือกปลา จึงแยกฟอร์มออกไป */}
+          {/* ── ข้อมูลลูกค้า ── */}
+          {/* เหลือเฉพาะสิ่งที่ร้านต้องใส่เอง: ชื่อไว้เรียกบิล หมายเหตุ ส่วนลด
+              ที่อยู่กับเบอร์ออกจากทางหลักแล้ว ลูกค้ากรอกเองในใบสรุป และชื่อที่
+              ลูกค้ายืนยันก็ทับของร้านอยู่แล้ว กรอกซ้ำตรงนี้จึงเป็นงานเปล่า
+              เหลือไว้เป็นช่องพับ สำหรับเคสที่ลูกค้าส่งที่อยู่มาในแชทแทน */}
           {orderItems.length > 0 && (
             <Card>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-muted-foreground text-sm font-medium">ข้อมูลลูกค้า</p>
-                  {customerFilledCount > 0 && (
-                    <Badge variant="soft">กรอกแล้ว {customerFilledCount}/3</Badge>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cust-name">ชื่อลูกค้า</Label>
+                  <div className="relative">
+                    <User className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                    <Input
+                      id="cust-name"
+                      value={customerName}
+                      onChange={(e) => {
+                        setCustomerName(e.target.value);
+                        setSelectedCustomerId('');
+                      }}
+                      placeholder="ชื่อ TikTok / ชื่อไลน์ / ชื่อลูกค้า"
+                      className="pl-9"
+                    />
+                  </div>
+                  {customers.length > 0 && (
+                    <Select
+                      value={selectedCustomerId || undefined}
+                      onValueChange={handleCustomerChange}
+                    >
+                      <SelectTrigger size="sm" className="w-full">
+                        <SelectValue placeholder="หรือเลือกจากลูกค้าเดิม" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {customers.map((customer) => (
+                          <SelectItem key={customer.id} value={customer.id}>
+                            {customer.name} {customer.phone ? `(${customer.phone})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   )}
                 </div>
 
-                {customerName || customerPhone || customerAddress ? (
-                  <div className="space-y-0.5 text-sm">
-                    <p className="font-medium">{customerName || "ยังไม่ได้ใส่ชื่อ"}</p>
-                    {customerPhone && <p className="text-muted-foreground">{customerPhone}</p>}
-                    {customerAddress && (
-                      <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
-                        {customerAddress}
-                      </p>
-                    )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="order-note">หมายเหตุ</Label>
+                    <Input
+                      id="order-note"
+                      value={orderNote}
+                      onChange={(e) => setOrderNote(e.target.value)}
+                      placeholder="ห่อพิเศษ, นัดส่ง"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bill-discount">ส่วนลด (บาท)</Label>
+                    <Input
+                      id="bill-discount"
+                      type="number"
+                      min="0"
+                      value={billDiscount || ''}
+                      onChange={(e) => setBillDiscount(Number(e.target.value) || 0)}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                {/* ที่อยู่: ปกติปล่อยว่างไว้ ลูกค้ากรอกเองในลิงก์
+                    เปิดเฉพาะตอนลูกค้าส่งที่อยู่มาในแชทแล้วร้านอยากวางไว้เลย */}
+                {showAddressFields || customerPhone || customerAddress ? (
+                  <div className="space-y-2 border-t pt-4">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="cust-paste">ที่อยู่จัดส่ง</Label>
+                      <span className="text-muted-foreground text-xs">ลูกค้ากรอกเองในลิงก์ได้</span>
+                    </div>
+
+                    {/* วางข้อความจากไลน์ทั้งก้อน แล้วแยก ชื่อ/เบอร์/ที่อยู่ ให้อัตโนมัติ */}
+                    <div className="relative">
+                      <Textarea
+                        id="cust-paste"
+                        value={addressPaste}
+                        onChange={(e) => applyPastedAddress(e.target.value)}
+                        placeholder={'📋 วางข้อความที่ลูกค้าส่งมาในไลน์ตรงนี้\nระบบจะแยก ชื่อ / เบอร์ / ที่อยู่ ให้เอง'}
+                        rows={2}
+                        className="border-dashed pr-14"
+                      />
+                      {addressPaste && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute top-1.5 right-1.5"
+                          onClick={() => setAddressPaste('')}
+                        >
+                          ล้าง
+                        </Button>
+                      )}
+                    </div>
+
+                    <Input
+                      type="tel"
+                      inputMode="tel"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      onBlur={(e) => lookupCustomerByPhone(e.target.value)}
+                      placeholder="เบอร์โทร"
+                    />
+                    <Textarea
+                      value={customerAddress}
+                      onChange={(e) => setCustomerAddress(e.target.value)}
+                      placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
+                      rows={2}
+                    />
                   </div>
                 ) : (
-                  <p className="text-muted-foreground text-xs">
-                    ไม่ใส่ก็ได้ ลูกค้ากรอกเองในลิงก์ใบสรุปได้
-                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground w-full justify-start"
+                    onClick={() => setShowAddressFields(true)}
+                  >
+                    <Plus className="size-4" />
+                    ลูกค้าส่งที่อยู่มาในแชท? วางตรงนี้ได้
+                  </Button>
                 )}
-
-                <Button variant="outline" className="w-full" onClick={() => setShowCustomerForm(true)}>
-                  <User className="size-4" />
-                  {customerFilledCount > 0 ? "แก้ไขข้อมูลลูกค้า" : "กรอกข้อมูลลูกค้า"}
-                </Button>
               </CardContent>
             </Card>
           )}
@@ -1329,23 +1296,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* แผงข้อมูลลูกค้า — จอคอมพ์สไลด์จากขวา มือถือเด้งจากล่าง */}
-      <ResponsiveModal open={showCustomerForm} onOpenChange={setShowCustomerForm}>
-        <ResponsiveModalContent className="sm:max-w-lg">
-          <ResponsiveModalHeader>
-            <ResponsiveModalTitle>ข้อมูลลูกค้า</ResponsiveModalTitle>
-            <ResponsiveModalDescription>
-              ไม่ใส่ก็ได้ ลูกค้ากรอกเองในลิงก์ใบสรุปได้
-            </ResponsiveModalDescription>
-          </ResponsiveModalHeader>
-          <ResponsiveModalBody>{customerFormBody}</ResponsiveModalBody>
-          <ResponsiveModalFooter>
-            <Button className="w-full" onClick={() => setShowCustomerForm(false)}>
-              เสร็จแล้ว
-            </Button>
-          </ResponsiveModalFooter>
-        </ResponsiveModalContent>
-      </ResponsiveModal>
     </Layout>
   );
 }

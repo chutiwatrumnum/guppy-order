@@ -149,7 +149,12 @@ export default function PublicOrderPage() {
         const r = refreshed as PublicOrder;
         setOrder(r);
         // เขียนเฉพาะช่องที่ยังว่าง เผื่อลูกค้าเริ่มพิมพ์ไปแล้วระหว่างรอ
-        setName((prev) => prev || r.customer_name || '');
+        //
+        // ชื่อ: เอาของเดิมก่อน ไม่มีค่อยใช้ชื่อ LINE เป็นตัวตั้ง
+        // ร้านมักออกบิลโดยไม่ใส่ชื่อ ลูกค้าจะได้ไม่ต้องพิมพ์เองตั้งแต่ศูนย์
+        // เป็นแค่ค่าตั้งต้นในช่องที่แก้ได้ ไม่ได้เขียนทับอะไร —
+        // ชื่อ LINE มักเป็นชื่อเล่นหรือมีอิโมจิ ลูกค้าควรได้เห็นและแก้ก่อนบันทึก
+        setName((prev) => prev || r.customer_name || profile.displayName || '');
         setPhone((prev) => prev || r.customer_phone || '');
         setAddress((prev) => prev || r.customer_address || '');
       }
@@ -500,7 +505,7 @@ export default function PublicOrderPage() {
 
             {!canEditAddress ? (
               <div className="space-y-1 text-sm">
-                <p className="font-medium">{order.customer_name || '-'}</p>
+                <p className="font-medium">{order.customer_name || lineName || '-'}</p>
                 <p className="text-muted-foreground">{order.customer_phone || '-'}</p>
                 <p className="text-muted-foreground leading-relaxed">{order.customer_address || '-'}</p>
                 <p className="text-muted-foreground pt-2 text-xs">
@@ -513,7 +518,7 @@ export default function PublicOrderPage() {
                  ทั้งที่จริงเหลือแค่แนบสลิป */
               <div className="space-y-3">
                 <div className="space-y-1 text-sm">
-                  <p className="font-medium">{order.customer_name || '-'}</p>
+                  <p className="font-medium">{order.customer_name || lineName || '-'}</p>
                   <p className="text-muted-foreground">{order.customer_phone || '-'}</p>
                   <p className="text-muted-foreground leading-relaxed">{order.customer_address}</p>
                 </div>
@@ -536,7 +541,19 @@ export default function PublicOrderPage() {
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="p-name">ชื่อผู้รับ</Label>
-                  <Input id="p-name" value={name} onChange={(e) => editField(setName, e.target.value)} />
+                  <Input
+                    id="p-name"
+                    value={name}
+                    onChange={(e) => editField(setName, e.target.value)}
+                    placeholder="ชื่อ-นามสกุล สำหรับจ่าหน้ากล่อง"
+                  />
+                  {/* ช่องนี้ตั้งต้นด้วยชื่อ LINE ซึ่งมักเป็นชื่อเล่น
+                      บอกไว้กันลูกค้าปล่อยผ่านแล้วกล่องมาถึงพร้อมชื่อ "🐻หมีน้อย" */}
+                  {name && name === lineName && (
+                    <p className="text-muted-foreground text-xs">
+                      ดึงมาจากชื่อ LINE รบกวนแก้เป็นชื่อจริงถ้าไม่ตรงครับ
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="p-phone">เบอร์โทรศัพท์</Label>

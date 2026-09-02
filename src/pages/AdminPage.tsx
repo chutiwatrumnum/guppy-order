@@ -291,6 +291,26 @@ export default function AdminPage() {
     }
   };
 
+  // ปลดบัญชี LINE ออกจากบิล
+  //
+  // บิลผูกกับบัญชีแรกที่เปิดลิงก์ ซึ่งไม่ใช่ลูกค้าเสมอไป — ร้านเปิดเองเพื่อเช็ค
+  // หรือลูกค้าส่งต่อให้คนอื่นกดก่อน ปลดแล้วคนถัดไปที่เปิดจะผูกใหม่ได้
+  const unlinkLine = async (order: SavedOrder) => {
+    const who = order.lineDisplayName || 'บัญชีนี้';
+    if (!window.confirm(`ปลดการผูก LINE (${who}) ออกจากบิล ${order.orderNumber}?\nลูกค้าคนถัดไปที่เปิดลิงก์จะผูกแทน`)) return;
+
+    const { data, error } = await supabase.rpc('unlink_order_line_user', { p_order_id: order.id });
+    if (error || !data?.ok) {
+      toast.error('ปลดการผูกไม่สำเร็จ');
+      return;
+    }
+
+    setAllOrders((prev) =>
+      prev.map((o) => (o.id === order.id ? { ...o, lineUserId: null, lineDisplayName: null } : o))
+    );
+    toast.success('ปลดการผูกแล้ว', { description: 'คนถัดไปที่เปิดลิงก์จะผูกกับบิลนี้แทน' });
+  };
+
   // นับสลิปที่รอตรวจ — head:true คือขอแค่จำนวน ไม่ดึงแถวจริงมาให้เปลืองเน็ต
   const loadPendingSlipCount = async () => {
     const { count, error } = await supabase
@@ -1112,6 +1132,17 @@ export default function AdminPage() {
                                   </span>
                                 )}
                               </p>
+                            )}
+                            {/* ผูกผิดคนได้ง่าย — แค่ร้านเปิดลิงก์เองเพื่อเช็คก่อนส่ง
+                                บิลก็ผูกกับ LINE ร้านไปแล้ว ต้องมีทางปลด */}
+                            {order.lineUserId && (
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-destructive mt-0.5 text-xs underline underline-offset-2"
+                                onClick={() => unlinkLine(order)}
+                              >
+                                ปลดการผูก LINE
+                              </button>
                             )}
                             {order.customerPhone && (
                               <a

@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Bell, Check, Copy, Fish, Loader2, MessageCircle, Receipt, Send, Upload } from 'lucide-react';
+import {
+  Bell,
+  Check,
+  Copy,
+  Fish,
+  Loader2,
+  MessageCircle,
+  Pencil,
+  Receipt,
+  Send,
+  Upload,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
@@ -87,6 +98,7 @@ export default function PublicOrderPage() {
   const [uploading, setUploading] = useState(false);
   const [slipStatus, setSlipStatus] = useState<PublicOrder['slip_status']>(null);
   const [lineName, setLineName] = useState<string | null>(null);
+  const [editingAddress, setEditingAddress] = useState(false);
   const lineUserIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -189,6 +201,14 @@ export default function PublicOrderPage() {
     }
 
     setSaved(true);
+    // พับกลับไปเป็นแบบอ่านอย่างเดียว พร้อมค่าที่เพิ่งบันทึก
+    // ไม่งั้นฟอร์มค้างเปิดอยู่ ดูเหมือนยังทำไม่เสร็จ
+    setEditingAddress(false);
+    setOrder((prev) =>
+      prev
+        ? { ...prev, customer_name: name, customer_phone: normalizedPhone, customer_address: address }
+        : prev
+    );
     toast.success('บันทึกที่อยู่เรียบร้อยแล้ว ขอบคุณครับ');
   };
 
@@ -278,6 +298,7 @@ export default function PublicOrderPage() {
   }
 
   const canEditAddress = order.status === 'pending';
+  const hasSavedAddress = !!order.customer_address?.trim();
   const payment = PAYMENT_TEXT[order.payment_status] || PAYMENT_TEXT.unpaid;
   const status = STATUS_TEXT[order.status] || STATUS_TEXT.pending;
 
@@ -485,6 +506,31 @@ export default function PublicOrderPage() {
                 <p className="text-muted-foreground pt-2 text-xs">
                   ออเดอร์จัดส่งแล้ว ไม่สามารถแก้ไขที่อยู่ได้
                 </p>
+              </div>
+            ) : !editingAddress && hasSavedAddress ? (
+              /* มีที่อยู่แล้ว — โชว์เฉย ๆ ไม่ต้องให้กรอกซ้ำ
+                 ฟอร์มเปล่าที่มีปุ่ม "ส่งที่อยู่" ค้างอยู่ทำให้เข้าใจว่ายังต้องทำอะไรอีก
+                 ทั้งที่จริงเหลือแค่แนบสลิป */
+              <div className="space-y-3">
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium">{order.customer_name || '-'}</p>
+                  <p className="text-muted-foreground">{order.customer_phone || '-'}</p>
+                  <p className="text-muted-foreground leading-relaxed">{order.customer_address}</p>
+                </div>
+
+                <div className="bg-success/10 flex items-start gap-2 rounded-xl px-3 py-2.5">
+                  <Check className="text-success mt-0.5 size-4 shrink-0" />
+                  <p className="text-success text-xs leading-relaxed">
+                    ร้านได้รับที่อยู่แล้ว ไม่ต้องส่งซ้ำครับ
+                    {order.payment_status !== 'paid' && slipStatus !== 'pending' && (
+                      <> เหลือแค่แนบสลิปโอนเงินด้านบน</>
+                    )}
+                  </p>
+                </div>
+
+                <Button variant="outline" className="w-full" onClick={() => setEditingAddress(true)}>
+                  <Pencil className="size-4" /> แก้ไขที่อยู่
+                </Button>
               </div>
             ) : (
               <div className="space-y-3">

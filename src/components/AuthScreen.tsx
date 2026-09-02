@@ -1,26 +1,12 @@
 import React, { useState } from 'react';
-import { Fish, User as UserIcon, Lock, Loader2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { Fish, Loader2, Lock, User as UserIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
-const Input = ({ className, ...props }: any) => (
-  <input
-    className={cn("w-full h-12 bg-slate-50 border border-slate-100 focus:border-blue-500 focus:bg-white text-slate-900 font-semibold rounded-xl px-4 outline-none transition-all placeholder:text-slate-300", className)}
-    {...props}
-  />
-);
-
-const Label = ({ children, className }: { children: React.ReactNode, className?: string }) => (
-  <label className={cn("text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block", className)}>
-    {children}
-  </label>
-);
+import { supabase } from '@/lib/supabase';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 // Supabase Auth ใช้อีเมลเป็น identifier แต่พนักงานยังพิมพ์ username เหมือนเดิม
 // ถ้ากรอกมาเป็นอีเมลอยู่แล้วก็ใช้ตามนั้น ไม่งั้นเติมโดเมนให้
@@ -58,43 +44,64 @@ export default function AuthScreen() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 font-sans text-slate-900">
-      <div className="w-full max-w-[420px]">
-        <div className="flex flex-col items-center mb-12 text-center">
-          <div className="p-4 bg-blue-600 rounded-[1.5rem] shadow-xl shadow-blue-500/30 mb-5 transform -rotate-6">
-            <Fish className="h-10 w-10 text-white" />
+    <div className="flex min-h-[100dvh] items-center justify-center px-4 py-10">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <div className="bg-primary text-primary-foreground mb-4 flex size-14 items-center justify-center rounded-2xl">
+            <Fish className="size-7" />
           </div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic leading-none">GuppyReal</h1>
-          <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em] mt-2 leading-none ml-1">Cloud Database ERP</p>
+          <h1 className="text-2xl font-semibold tracking-tight">GuppyReal</h1>
+          <p className="text-muted-foreground mt-1 text-sm">ระบบจัดการออเดอร์ปลาหางนกยูง</p>
         </div>
 
-        <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-lg">
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="space-y-2">
-              <Label>ชื่อผู้ใช้งาน (Username)</Label>
-              <div className="relative group">
-                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors group-focus-within:text-blue-500" />
-                <Input placeholder="Username" value={username} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)} required className="pl-12" autoComplete="username" />
+        <Card>
+          <CardContent>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="username">ชื่อผู้ใช้งาน</Label>
+                <div className="relative">
+                  <UserIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                  <Input
+                    id="username"
+                    placeholder="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
+                    className="pl-9"
+                    autoComplete="username"
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label>รหัสผ่าน</Label>
-              <div className="relative group">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors group-focus-within:text-blue-500" />
-                <Input type="password" placeholder="••••••••" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} required className="pl-12" autoComplete="current-password" />
+              <div className="space-y-2">
+                <Label htmlFor="password">รหัสผ่าน</Label>
+                <div className="relative">
+                  <Lock className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="pl-9"
+                    autoComplete="current-password"
+                  />
+                </div>
               </div>
-            </div>
 
-            <button type="submit" className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 active:scale-95 transition-all rounded-2xl font-bold flex items-center justify-center gap-2 h-14 px-6 shadow-md text-xs uppercase tracking-[0.2em]" disabled={loading}>
-              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : 'Login to ERP'}
-            </button>
-          </form>
+              <Button type="submit" size="lg" className="w-full" disabled={loading}>
+                {loading ? <Loader2 className="size-4 animate-spin" /> : 'เข้าสู่ระบบ'}
+              </Button>
+            </form>
 
-          <p className="text-[10px] text-slate-400 text-center mt-8 leading-relaxed">
-            บัญชีผู้ใช้งานสร้างโดยผู้ดูแลระบบเท่านั้น<br />ต้องการเพิ่มผู้ใช้ กรุณาติดต่อแอดมินร้าน
-          </p>
-        </div>
+            <p className="text-muted-foreground mt-6 text-center text-xs leading-relaxed">
+              บัญชีผู้ใช้งานสร้างโดยผู้ดูแลระบบเท่านั้น
+              <br />
+              ต้องการเพิ่มผู้ใช้ กรุณาติดต่อแอดมินร้าน
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

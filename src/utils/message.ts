@@ -99,14 +99,6 @@ export const buildOrderMessage = (opts: OrderMessageOptions): string => {
   return text;
 };
 
-// Format date for display
-export const formatDate = (dateString: string): string => {
-  return new Date(dateString).toLocaleString('th-TH', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  });
-};
-
 // ข้อความสั้นที่แนบไปกับลิงก์ใบสรุปในไลน์
 // ให้ลูกค้าเห็นรายการปลาในแชทเลย ไม่ต้องเปิดลิงก์ก็รู้ว่าสั่งอะไร
 export const buildOrderLinkMessage = (

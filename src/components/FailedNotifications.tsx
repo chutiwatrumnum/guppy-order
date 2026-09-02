@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '../lib/supabase';
+
+import { supabase } from '@/lib/supabase';
+import { Button } from '@/components/ui/button';
 
 // แจ้งเตือนที่ push หาลูกค้าไม่สำเร็จ — ส่วนใหญ่คือลูกค้ายังไม่ได้แอด OA
 //
@@ -33,10 +35,12 @@ export default function FailedNotifications() {
     setRows((data || []) as unknown as FailedNotification[]);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const acknowledge = async (id: string) => {
-    setRows(prev => prev.filter(r => r.id !== id));
+    setRows((prev) => prev.filter((r) => r.id !== id));
     const { error } = await supabase
       .from('line_notifications')
       .update({ acknowledged_at: new Date().toISOString() })
@@ -50,37 +54,44 @@ export default function FailedNotifications() {
   if (rows.length === 0) return null;
 
   return (
-    <div className="mb-4 bg-red-50 border-2 border-red-200 rounded-2xl p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <AlertTriangle className="h-4 w-4 text-red-600" />
-        <p className="text-sm font-black text-red-700">
+    <div className="border-destructive/30 bg-destructive/5 rounded-xl border p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <AlertTriangle className="text-destructive size-4 shrink-0" />
+        <p className="text-destructive text-sm font-medium">
           ลูกค้า {rows.length} รายไม่ได้รับข้อความแจ้งเตือน
         </p>
       </div>
-      <p className="text-[11px] text-red-500 mb-3">
+      <p className="text-muted-foreground mb-3 text-xs">
         ส่วนใหญ่เกิดจากลูกค้ายังไม่ได้แอดไลน์ร้าน — รบกวนทักไปแจ้งเองครับ
       </p>
 
       <div className="space-y-2">
-        {rows.map(r => (
-          <div key={r.id} className="bg-white border border-red-100 rounded-xl px-3 py-2 flex items-start justify-between gap-3">
+        {rows.map((r) => (
+          <div
+            key={r.id}
+            className="bg-card flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5"
+          >
             <div className="min-w-0 text-sm">
-              <p className="font-black text-slate-800">
+              <p className="truncate font-medium">
                 {r.orders?.order_number || 'ไม่ทราบบิล'}
-                {r.orders?.customer_name && <span className="font-bold text-slate-600"> · {r.orders.customer_name}</span>}
+                {r.orders?.customer_name && (
+                  <span className="text-muted-foreground font-normal"> · {r.orders.customer_name}</span>
+                )}
               </p>
               {r.orders?.customer_phone && (
-                <p className="text-[12px] text-slate-500">📱 {r.orders.customer_phone}</p>
+                <p className="text-muted-foreground text-xs">📱 {r.orders.customer_phone}</p>
               )}
-              <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{r.message}</p>
+              <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">{r.message}</p>
             </div>
-            <button
-              onClick={() => acknowledge(r.id)}
-              className="shrink-0 h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 active:scale-95 transition-all"
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
               title="ติดต่อลูกค้าแล้ว ซ่อนรายการนี้"
+              onClick={() => acknowledge(r.id)}
             >
-              <X className="h-3 w-3" /> รับทราบ
-            </button>
+              <X className="size-3.5" /> รับทราบ
+            </Button>
           </div>
         ))}
       </div>

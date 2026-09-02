@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Loader2, Package } from 'lucide-react';
+import { Loader2, Package, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '../lib/supabase';
-import type { Product } from '../types';
+
+import { supabase } from '@/lib/supabase';
+import type { Product } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 // จัดการรายการอาหาร/สินค้าอื่นที่ไม่ใช่ปลา
 // แยกจากตาราง breeds เพราะไม่มีเพศ/ตัว-คู่-ชุด และไม่นับเป็นจำนวนปลา
@@ -25,10 +30,15 @@ export default function FoodProducts() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const addProduct = async () => {
-    if (!name.trim()) { toast.error('กรอกชื่อสินค้าก่อน'); return; }
+    if (!name.trim()) {
+      toast.error('กรอกชื่อสินค้าก่อน');
+      return;
+    }
     setSaving(true);
     const { error } = await supabase.from('products').insert({
       name: name.trim(),
@@ -36,8 +46,13 @@ export default function FoodProducts() {
       cost: Number(cost) || 0,
     });
     setSaving(false);
-    if (error) { toast.error('เพิ่มไม่สำเร็จ'); return; }
-    setName(''); setPrice(''); setCost('');
+    if (error) {
+      toast.error('เพิ่มไม่สำเร็จ');
+      return;
+    }
+    setName('');
+    setPrice('');
+    setCost('');
     toast.success('เพิ่มสินค้าแล้ว');
     load();
   };
@@ -46,74 +61,112 @@ export default function FoodProducts() {
     if (!confirm('ลบสินค้านี้?')) return;
     // ปิดการใช้งานแทนการลบจริง เพื่อไม่ให้ออเดอร์เก่าที่อ้างถึงเสียหาย
     const { error } = await supabase.from('products').update({ is_active: false }).eq('id', id);
-    if (error) { toast.error('ลบไม่สำเร็จ'); return; }
-    setProducts(prev => prev.filter(p => p.id !== id));
+    if (error) {
+      toast.error('ลบไม่สำเร็จ');
+      return;
+    }
+    setProducts((prev) => prev.filter((p) => p.id !== id));
     toast.success('ลบแล้ว');
   };
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 sm:p-6">
-      <h3 className="font-black text-lg flex items-center gap-2 text-slate-800 mb-4">
-        <Package className="h-5 w-5 text-amber-500" /> อาหาร / สินค้าอื่น
-      </h3>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Package className="text-warning size-4" /> อาหาร / สินค้าอื่น
+        </CardTitle>
+      </CardHeader>
 
-      {/* แถวเพิ่มสินค้า */}
-      <div className="grid grid-cols-12 gap-2 mb-4">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') addProduct(); }}
-          placeholder="ชื่อสินค้า เช่น อาหารปลา ซอง S"
-          className="col-span-12 sm:col-span-6 h-11 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm font-bold text-slate-700 outline-none focus:border-amber-400"
-        />
-        <input
-          type="number"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') addProduct(); }}
-          placeholder="ราคาขาย"
-          className="col-span-5 sm:col-span-2 h-11 bg-amber-50 border border-amber-200 rounded-xl px-3 text-sm font-black text-amber-700 outline-none focus:border-amber-400"
-        />
-        <input
-          type="number"
-          value={cost}
-          onChange={(e) => setCost(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') addProduct(); }}
-          placeholder="ต้นทุน"
-          className="col-span-4 sm:col-span-2 h-11 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm font-bold text-slate-500 outline-none focus:border-slate-300"
-        />
-        <button
-          onClick={addProduct}
-          disabled={saving}
-          className="col-span-3 sm:col-span-2 h-11 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white rounded-xl font-black text-xs flex items-center justify-center gap-1 active:scale-95 transition-all"
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Plus className="h-4 w-4" /> เพิ่ม</>}
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-300" /></div>
-      ) : products.length === 0 ? (
-        <p className="text-center text-slate-400 text-sm py-6">ยังไม่มีสินค้า — เพิ่มด้านบนได้เลย</p>
-      ) : (
-        <div className="space-y-2">
-          {products.map(p => (
-            <div key={p.id} className="flex items-center justify-between gap-3 bg-slate-50 rounded-xl px-3 py-2.5">
-              <span className="font-bold text-sm text-slate-700 min-w-0 truncate">{p.name}</span>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-sm font-black text-amber-600">฿{p.price}</span>
-                {(p.cost || 0) > 0 && <span className="text-[11px] text-slate-400">ทุน ฿{p.cost}</span>}
-                <button
-                  onClick={() => removeProduct(p.id)}
-                  className="h-8 w-8 bg-white hover:bg-red-500 text-red-500 hover:text-white rounded-lg flex items-center justify-center transition-all"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
+      <CardContent className="space-y-4">
+        {/* แถวเพิ่มสินค้า — บนมือถือเรียงลงมาทีละบรรทัดจะกดง่ายกว่าบีบให้อยู่แถวเดียว */}
+        <div className="grid gap-2 sm:grid-cols-[1fr_7rem_7rem_auto]">
+          <div className="space-y-1.5 sm:space-y-0">
+            <Label htmlFor="food-name" className="text-muted-foreground text-xs sm:sr-only">
+              ชื่อสินค้า
+            </Label>
+            <Input
+              id="food-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addProduct();
+              }}
+              placeholder="ชื่อสินค้า เช่น อาหารปลา ซอง S"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:contents">
+            <div className="space-y-1.5 sm:space-y-0">
+              <Label htmlFor="food-price" className="text-muted-foreground text-xs sm:sr-only">
+                ราคาขาย
+              </Label>
+              <Input
+                id="food-price"
+                type="number"
+                inputMode="numeric"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addProduct();
+                }}
+                placeholder="ราคาขาย"
+              />
             </div>
-          ))}
+            <div className="space-y-1.5 sm:space-y-0">
+              <Label htmlFor="food-cost" className="text-muted-foreground text-xs sm:sr-only">
+                ต้นทุน
+              </Label>
+              <Input
+                id="food-cost"
+                type="number"
+                inputMode="numeric"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addProduct();
+                }}
+                placeholder="ต้นทุน"
+              />
+            </div>
+          </div>
+          <Button onClick={addProduct} disabled={saving} className="sm:w-auto">
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            เพิ่ม
+          </Button>
         </div>
-      )}
-    </div>
+
+        {loading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="text-muted-foreground size-5 animate-spin" />
+          </div>
+        ) : products.length === 0 ? (
+          <p className="text-muted-foreground py-4 text-center text-sm">
+            ยังไม่มีสินค้า — เพิ่มด้านบนได้เลย
+          </p>
+        ) : (
+          <div className="divide-y rounded-lg border">
+            {products.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                <span className="min-w-0 truncate text-sm font-medium">{p.name}</span>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="text-sm font-semibold">฿{p.price.toLocaleString()}</span>
+                  {(p.cost || 0) > 0 && (
+                    <span className="text-muted-foreground text-xs">ทุน ฿{p.cost}</span>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="ลบสินค้า"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => removeProduct(p.id)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

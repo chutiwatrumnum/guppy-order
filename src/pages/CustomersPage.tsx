@@ -1,19 +1,27 @@
 import { useState, useEffect } from 'react';
-import { 
-  Users, 
-  Plus, 
-  Edit2, 
-  Trash2, 
-  X, 
-  Loader2, 
-  Search,
-  Phone,
-  MapPin,
-  Save
-} from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { toast, Toaster } from 'sonner';
+import { Users, Plus, Edit2, Trash2, MapPin, Phone, Save } from 'lucide-react';
+import { toast } from 'sonner';
+
+import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 import Layout from './Layout';
+import { PageHeader } from '@/components/PageHeader';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { SearchInput } from '@/components/ui/search-input';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageLoader } from '@/components/ui/page-loader';
+import {
+  ResponsiveModal,
+  ResponsiveModalBody,
+  ResponsiveModalContent,
+  ResponsiveModalFooter,
+  ResponsiveModalHeader,
+  ResponsiveModalTitle,
+} from '@/components/ui/responsive-modal';
 
 interface Customer {
   id: string;
@@ -29,20 +37,24 @@ interface Customer {
 
 type CustomerSortKey = 'name' | 'total_spent' | 'total_orders' | 'last_order_at';
 
+const SORT_OPTIONS: { key: CustomerSortKey; label: string }[] = [
+  { key: 'total_spent', label: 'ยอดซื้อ' },
+  { key: 'total_orders', label: 'จำนวนออเดอร์' },
+  { key: 'last_order_at', label: 'ซื้อล่าสุด' },
+  { key: 'name', label: 'ชื่อ' },
+];
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortKey, setSortKey] = useState<CustomerSortKey>('total_spent');
-  
+
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    address: ''
-  });
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState({ name: '', phone: '', address: '' });
 
   useEffect(() => {
     fetchCustomers();
@@ -61,15 +73,17 @@ export default function CustomersPage() {
 
       const byCustomer = new Map((stats || []).map((s: any) => [s.customer_id, s]));
 
-      setCustomers((data || []).map((c: any) => {
-        const s = byCustomer.get(c.id);
-        return {
-          ...c,
-          total_orders: Number(s?.total_orders ?? 0),
-          total_spent: Number(s?.total_spent ?? 0),
-          last_order_at: s?.last_order_at ?? null,
-        };
-      }));
+      setCustomers(
+        (data || []).map((c: any) => {
+          const s = byCustomer.get(c.id);
+          return {
+            ...c,
+            total_orders: Number(s?.total_orders ?? 0),
+            total_spent: Number(s?.total_spent ?? 0),
+            last_order_at: s?.last_order_at ?? null,
+          };
+        })
+      );
     } catch (err) {
       console.error('Fetch customers error:', err);
       toast.error('โหลดข้อมูลลูกค้าไม่สำเร็จ ลองรีเฟรชอีกครั้ง');
@@ -84,7 +98,7 @@ export default function CustomersPage() {
       setFormData({
         name: customer.name || '',
         phone: customer.phone || '',
-        address: customer.address || ''
+        address: customer.address || '',
       });
     } else {
       setEditingCustomer(null);
@@ -110,6 +124,7 @@ export default function CustomersPage() {
       return;
     }
 
+    setSaving(true);
     try {
       if (editingCustomer) {
         // Update existing
@@ -119,43 +134,40 @@ export default function CustomersPage() {
             name: formData.name,
             phone: formData.phone || null,
             address: formData.address || null,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
           })
           .eq('id', editingCustomer.id);
-        
+
         if (error) throw error;
         toast.success('แก้ไขลูกค้าสำเร็จ');
       } else {
         // Create new
-        const { error } = await supabase
-          .from('customers')
-          .insert({
-            name: formData.name,
-            phone: formData.phone || null,
-            address: formData.address || null
-          });
-        
+        const { error } = await supabase.from('customers').insert({
+          name: formData.name,
+          phone: formData.phone || null,
+          address: formData.address || null,
+        });
+
         if (error) throw error;
         toast.success('เพิ่มลูกค้าสำเร็จ');
       }
-      
+
       closeModal();
       fetchCustomers();
     } catch (err) {
       console.error('Save customer error:', err);
       toast.error('ไม่สำเร็จ กรุณาลองอีกครั้ง');
+    } finally {
+      setSaving(false);
     }
   };
 
   const deleteCustomer = async (id: string) => {
     if (!confirm('ต้องการลบลูกค้านี้ใช่หรือไม่?')) return;
-    
+
     try {
-      const { error } = await supabase
-        .from('customers')
-        .delete()
-        .eq('id', id);
-      
+      const { error } = await supabase.from('customers').delete().eq('id', id);
+
       if (error) throw error;
       toast.success('ลบลูกค้าสำเร็จ');
       fetchCustomers();
@@ -166,9 +178,9 @@ export default function CustomersPage() {
   };
 
   const searched = searchTerm.trim()
-    ? customers.filter(c =>
-        c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone?.includes(searchTerm)
+    ? customers.filter(
+        (c) =>
+          c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || c.phone?.includes(searchTerm)
       )
     : customers;
 
@@ -183,224 +195,192 @@ export default function CustomersPage() {
 
   // Summary across the searched set
   const totalRevenue = searched.reduce((sum, c) => sum + (c.total_spent || 0), 0);
-  const activeCount = searched.filter(c => (c.total_orders || 0) > 0).length;
-
-  const sortOptions: { key: CustomerSortKey; label: string }[] = [
-    { key: 'total_spent', label: '💰 ยอดซื้อ' },
-    { key: 'total_orders', label: '📋 จำนวนออเดอร์' },
-    { key: 'last_order_at', label: '🕒 ซื้อล่าสุด' },
-    { key: 'name', label: '🔤 ชื่อ' },
-  ];
+  const activeCount = searched.filter((c) => (c.total_orders || 0) > 0).length;
 
   if (loading) {
     return (
       <Layout>
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-blue-600 font-bold uppercase tracking-widest text-xs">
-          <Loader2 className="h-10 w-10 animate-spin mb-4" /> Loading...
-        </div>
+        <PageLoader />
       </Layout>
     );
   }
 
   return (
     <Layout>
-      <Toaster position="top-center" richColors />
-      <main className="max-w-4xl mx-auto p-4 space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <div className="bg-white rounded-[2.5rem] shadow-xl shadow-blue-900/5 border border-slate-100 overflow-hidden">
-          {/* Header */}
-          <div className="p-6 sm:p-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h2 className="font-black text-2xl text-slate-800 tracking-tight flex items-center gap-3">
-                <Users className="h-6 w-6 text-blue-600" />
-                ลูกค้าประจำ
-              </h2>
-              <p className="text-slate-500 text-sm mt-1">จัดการข้อมูลลูกค้า</p>
-            </div>
-            <button
-              onClick={() => openModal()}
-              className="h-12 px-6 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase text-sm tracking-widest transition-all flex items-center justify-center gap-2"
-            >
-              <Plus className="h-5 w-5" />
-              เพิ่มลูกค้า
-            </button>
+      <div className="mx-auto max-w-4xl space-y-4 px-4 py-4">
+        <PageHeader
+          title="ลูกค้า"
+          description="จัดการข้อมูลลูกค้าประจำของร้าน"
+          action={
+            <Button className="w-full sm:w-auto" onClick={() => openModal()}>
+              <Plus className="size-4" /> เพิ่มลูกค้า
+            </Button>
+          }
+        />
+
+        <div className="bg-background/95 sticky top-header z-20 -mx-4 space-y-2 px-4 py-3 backdrop-blur-md">
+          <SearchInput
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="ค้นหาชื่อหรือเบอร์โทร…"
+          />
+          <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+            <span className="text-muted-foreground self-center pr-1 text-xs whitespace-nowrap">
+              เรียงตาม
+            </span>
+            {SORT_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setSortKey(opt.key)}
+                className={cn(
+                  'h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors',
+                  sortKey === opt.key
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-card text-muted-foreground hover:bg-accent'
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
+        </div>
 
-          {/* Search */}
-          <div className="p-6 border-b border-slate-100">
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="ค้นหาลูกค้า..."
-                className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 pl-12 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-              />
-            </div>
-          </div>
+        <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span>
+            พบ <span className="text-foreground font-medium">{filteredCustomers.length}</span> รายการ
+          </span>
+          <span>ซื้อแล้ว {activeCount} คน</span>
+          <span className="text-success font-medium">รวมยอดซื้อ ฿{totalRevenue.toLocaleString()}</span>
+        </div>
 
-          {/* Customer List */}
-          <div className="p-6">
-            {/* Summary + Sort controls */}
-            <div className="flex flex-col gap-3 mb-4">
-              <div className="flex items-center gap-x-4 gap-y-1 text-xs font-bold flex-wrap">
-                <span className="text-slate-500">พบ <span className="text-slate-800 font-black">{filteredCustomers.length}</span> รายการ</span>
-                <span className="text-slate-400">ซื้อแล้ว {activeCount} คน</span>
-                <span className="text-emerald-600">รวมยอดซื้อ ฿{totalRevenue.toLocaleString()}</span>
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">เรียงตาม</span>
-                {sortOptions.map(opt => (
-                  <button
-                    key={opt.key}
-                    onClick={() => setSortKey(opt.key)}
-                    className={`h-8 px-3 rounded-lg text-xs font-black transition-all ${
-                      sortKey === opt.key
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {filteredCustomers.map((customer) => (
-                <div 
-                  key={customer.id} 
-                  className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:shadow-md transition-all"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-black text-lg text-slate-800 truncate">
-                        {customer.name}
-                      </h3>
-                      <div className="flex items-center gap-4 mt-2 text-sm text-slate-500">
-                        {customer.phone && (
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-4 h-4" />
-                            {customer.phone}
-                          </span>
-                        )}
-                        {customer.address && (
-                          <span className="flex items-center gap-1 truncate">
-                            <MapPin className="w-4 h-4" />
-                            {customer.address}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
-                        <span>📋 {customer.total_orders || 0} ออเดอร์</span>
-                        <span>💰 ฿{(customer.total_spent || 0).toLocaleString()}</span>
-                        {customer.last_order_at && (
-                          <span>🕒 ล่าสุด {new Date(customer.last_order_at).toLocaleDateString('th-TH')}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-2 ml-4">
-                      <button
+        {filteredCustomers.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={Users}
+              title={searchTerm ? 'ไม่พบลูกค้าที่ค้นหา' : 'ยังไม่มีลูกค้า'}
+              description={searchTerm ? 'ลองค้นด้วยเบอร์โทรแทน' : 'กดปุ่มเพิ่มลูกค้าเพื่อเริ่มต้น'}
+            />
+          </Card>
+        ) : (
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {filteredCustomers.map((customer) => (
+              <Card key={customer.id} className="gap-0 py-0">
+                <CardContent className="px-4 py-3.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="min-w-0 truncate font-medium">{customer.name}</h3>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="แก้ไข"
                         onClick={() => openModal(customer)}
-                        className="h-9 px-3 bg-blue-100 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all text-sm font-bold"
                       >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button
+                        <Edit2 className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="ลบ"
+                        className="text-muted-foreground hover:text-destructive"
                         onClick={() => deleteCustomer(customer.id)}
-                        className="h-9 px-3 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all text-sm font-bold"
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                        <Trash2 className="size-4" />
+                      </Button>
                     </div>
                   </div>
-                </div>
-              ))}
-              
-              {filteredCustomers.length === 0 && (
-                <div className="text-center py-12 text-slate-400">
-                  <Users className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                  <p>ยังไม่มีลูกค้า</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </main>
 
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600">
-              <h2 className="font-black text-xl text-white">
-                {editingCustomer ? 'แก้ไขลูกค้า' : 'เพิ่มลูกค้าใหม่'}
-              </h2>
-              <button 
-                onClick={closeModal}
-                className="h-10 w-10 bg-white/20 hover:bg-white/30 rounded-xl flex items-center justify-center text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                  ชื่อลูกค้า *
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="กรอกชื่อลูกค้า"
-                  className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400"
-                />
-              </div>
-              
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                  เบอร์โทร *
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={formData.phone}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/[^\d]/g, '');
-                    setFormData({ ...formData, phone: value });
-                  }}
-                  placeholder="กรอกเบอร์โทร"
-                  className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400"
-                />
-              </div>
-              
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                  ที่อยู่
-                </label>
-                <textarea
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  placeholder="กรอกที่อยู่"
-                  rows={3}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-700 outline-none focus:border-blue-400 resize-none"
-                />
-              </div>
-            </div>
-            
-            <div className="p-6 border-t border-slate-100 bg-slate-50">
-              <button
-                onClick={saveCustomer}
-                className="w-full h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
-              >
-                <Save className="h-5 w-5" />
-                {editingCustomer ? 'บันทึกการแก้ไข' : 'เพิ่มลูกค้า'}
-              </button>
-            </div>
+                  <div className="text-muted-foreground mt-1.5 space-y-1 text-sm">
+                    {customer.phone && (
+                      <a
+                        href={`tel:${customer.phone.replace(/[^\d+]/g, '')}`}
+                        className="hover:text-primary flex w-fit items-center gap-1.5 hover:underline"
+                      >
+                        <Phone className="size-3.5 shrink-0" />
+                        {customer.phone}
+                      </a>
+                    )}
+                    {customer.address && (
+                      <p className="flex items-start gap-1.5">
+                        <MapPin className="mt-0.5 size-3.5 shrink-0" />
+                        <span className="line-clamp-2">{customer.address}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="text-muted-foreground mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2.5 text-xs">
+                    <span>{customer.total_orders || 0} ออเดอร์</span>
+                    <span className="text-foreground font-medium">
+                      ฿{(customer.total_spent || 0).toLocaleString()}
+                    </span>
+                    {customer.last_order_at && (
+                      <span>
+                        ล่าสุด {new Date(customer.last_order_at).toLocaleDateString('th-TH')}
+                      </span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      <ResponsiveModal open={isModalOpen} onOpenChange={(open) => (open ? null : closeModal())}>
+        <ResponsiveModalContent className="sm:max-w-md">
+          <ResponsiveModalHeader>
+            <ResponsiveModalTitle>
+              {editingCustomer ? 'แก้ไขลูกค้า' : 'เพิ่มลูกค้าใหม่'}
+            </ResponsiveModalTitle>
+          </ResponsiveModalHeader>
+
+          <ResponsiveModalBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="c-name">ชื่อลูกค้า *</Label>
+              <Input
+                id="c-name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="กรอกชื่อลูกค้า"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="c-phone">เบอร์โทร *</Label>
+              <Input
+                id="c-phone"
+                type="tel"
+                inputMode="numeric"
+                value={formData.phone}
+                onChange={(e) =>
+                  setFormData({ ...formData, phone: e.target.value.replace(/[^\d]/g, '') })
+                }
+                placeholder="กรอกเบอร์โทร"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="c-address">ที่อยู่</Label>
+              <Textarea
+                id="c-address"
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="กรอกที่อยู่"
+                rows={3}
+              />
+            </div>
+          </ResponsiveModalBody>
+
+          <ResponsiveModalFooter className="flex gap-2">
+            <Button variant="outline" size="lg" className="flex-1" onClick={closeModal}>
+              ยกเลิก
+            </Button>
+            <Button size="lg" className="flex-1" onClick={saveCustomer} disabled={saving}>
+              <Save className="size-4" />
+              {editingCustomer ? 'บันทึก' : 'เพิ่มลูกค้า'}
+            </Button>
+          </ResponsiveModalFooter>
+        </ResponsiveModalContent>
+      </ResponsiveModal>
     </Layout>
   );
 }

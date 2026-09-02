@@ -20,8 +20,6 @@ export interface Product {
   is_active?: boolean;
 }
 
-export type UserRole = 'admin' | 'user';
-
 export type Gender = 'male' | 'female' | 'mixed';
 
 export type OrderItemType = 'piece' | 'pair' | 'set';
@@ -91,45 +89,12 @@ export interface BankInfo {
   shipping_fee: number;
 }
 
-// Dashboard Statistics
-export interface DashboardStats {
-  totalOrders: number;
-  totalSales: number;
-  totalFishCost: number;
-  totalShippingIncome: number;
-  totalShippingCost: number;
-  totalFish: number;
-  totalProfit: number;
-  avgOrderValue: number;
-  topBreeds: BreedStat[];
-  topCustomers: CustomerStat[];
-}
-
-export interface BreedStat {
-  name: string;
-  qty: number;
-  sales: number;
-}
-
-export interface CustomerStat {
-  name: string;
-  orders: number;
-  totalSpent: number;
-  totalFish: number;
-}
-
-// Admin View Type
-export type AdminView = 'orders' | 'dashboard' | 'reports';
-
-// Report Period Type
-export type ReportPeriod = 'today' | 'week' | 'month' | 'year' | 'custom';
-
 // User type from Auth
 export interface User {
   id: string;
   username: string;
   shop_name: string;
-  role: UserRole;
+  role: 'admin' | 'user';
   email?: string;
 }
 

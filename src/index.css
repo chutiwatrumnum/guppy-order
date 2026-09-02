@@ -1,24 +1,144 @@
 @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
+@import "tw-animate-css";
 
-@theme {
-  --font-sans: 'Prompt', ui-sans-serif, system-ui, sans-serif;
-}
+/* ตรึง `dark:` ไว้กับคลาส .dark เท่านั้น (ซึ่งเราไม่ได้ใช้)
+   ไม่งั้นคลาส dark: ที่ติดมากับคอมโพเนนต์ shadcn จะเด้งเองบนมือถือที่ตั้งโหมดมืดไว้ */
+@custom-variant dark (&:is(.dark *));
 
 :root {
-  font-family: 'Prompt', sans-serif;
+  --radius: 0.75rem;
+
+  /* พื้นหน้าเทาอ่อน + การ์ดสีขาว อ่านง่ายกว่าขาวล้วนเมื่อมีการ์ดเยอะ */
+  --background: oklch(0.985 0.002 247.839);
+  --foreground: oklch(0.208 0.042 265.755);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.208 0.042 265.755);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.208 0.042 265.755);
+
+  --primary: oklch(0.546 0.245 262.881);
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.279 0.041 260.031);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.279 0.041 260.031);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.984 0.003 247.858);
+
+  /* สีบอกสถานะที่ใช้ซ้ำทั้งแอป — จ่ายแล้ว / รอ / ข้อมูลเสริม */
+  --success: oklch(0.596 0.145 163.225);
+  --success-foreground: oklch(0.984 0.003 247.858);
+  --warning: oklch(0.681 0.162 75.834);
+  --warning-foreground: oklch(0.279 0.041 260.031);
+
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.546 0.245 262.881);
+
+  --chart-1: oklch(0.546 0.245 262.881);
+  --chart-2: oklch(0.596 0.145 163.225);
+  --chart-3: oklch(0.681 0.162 75.834);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
 }
 
-body {
-  @apply bg-slate-50 text-slate-900;
+@theme inline {
+  --font-sans: 'Prompt', ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* Hide number input spinners globally */
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    /* กันหน้าเด้งซ้ายขวาตอนมีตารางกว้างบนมือถือ */
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ต่ำกว่า 16px ทำให้ iOS ซูมเข้าเองตอนแตะช่องกรอก */
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+
+  /* Safari ยังวาดสามเหลี่ยมหน้า <summary> ถึงจะใส่ list-none แล้ว */
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
 }
-input[type="number"] {
-  -moz-appearance: textfield;
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ปักใต้แถบบนพอดี — บวก safe area ด้วย ไม่งั้นบนเครื่องที่มีรอยบากจะเหลื่อม */
+@utility top-header {
+  top: calc(3.5rem + env(safe-area-inset-top));
+}
+
+/* เผื่อขอบจอโค้ง/แถบ home ของ iPhone */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
 }

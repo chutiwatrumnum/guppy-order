@@ -1,37 +1,142 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  ClipboardList,
-  Trash2,
-  Edit2,
-  X,
-  Loader2,
-  Copy,
+  Bell,
+  BellOff,
   Check,
-  Save
+  ChevronDown,
+  ClipboardList,
+  Copy,
+  Edit2,
+  Loader2,
+  MapPinOff,
+  Plus,
+  Receipt,
+  RefreshCw,
+  Save,
+  Trash2,
+  X,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { toast, Toaster } from 'sonner';
-import { cn } from '../lib/utils';
-import { buildOrderMessage, buildOrderLinkMessage } from '../utils/message';
-import { getLiffOrderUrl } from '../utils/liff';
-import { getPublicOrderUrl } from '../utils/publicUrl';
-import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '../types';
+import { toast } from 'sonner';
+
+import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
+import { buildOrderMessage, buildOrderLinkMessage, calculateItemTotal } from '@/utils/message';
+import { getLiffOrderUrl } from '@/utils/liff';
+import { getPublicOrderUrl } from '@/utils/publicUrl';
+import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '@/types';
 import Layout from './Layout';
-import PendingSlips from '../components/PendingSlips';
-import FailedNotifications from '../components/FailedNotifications';
+import PendingSlips from '@/components/PendingSlips';
+import FailedNotifications from '@/components/FailedNotifications';
+import { PageHeader } from '@/components/PageHeader';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+import { SearchInput } from '@/components/ui/search-input';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageLoader } from '@/components/ui/page-loader';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  ResponsiveModal,
+  ResponsiveModalBody,
+  ResponsiveModalContent,
+  ResponsiveModalFooter,
+  ResponsiveModalHeader,
+  ResponsiveModalTitle,
+} from '@/components/ui/responsive-modal';
 
-const STATUS_LABEL: Record<OrderStatus, { text: string; cls: string }> = {
-  pending:   { text: '📦 รอส่ง',   cls: 'bg-amber-100 text-amber-700' },
-  shipped:   { text: '🚚 ส่งแล้ว', cls: 'bg-blue-100 text-blue-700' },
-  delivered: { text: '✅ ถึงแล้ว', cls: 'bg-green-100 text-green-700' },
-  cancelled: { text: '✖ ยกเลิก',  cls: 'bg-slate-200 text-slate-500' },
+type BadgeVariant = React.ComponentProps<typeof Badge>['variant'];
+
+/**
+ * จำนวนปลาจริงในบิล — คู่นับ 2 ชุดนับ 3 และ "ไม่นับอาหาร"
+ *
+ * คำนวณสดจากรายการแทนการอ่านคอลัมน์ total_fish เพราะบิลที่เคยผ่านหน้าแก้ไข
+ * ก่อนแก้บั๊กนี้ ถูกบันทึกจำนวนปลารวมอาหารไปด้วย ตัวเลขในฐานข้อมูลจึงเชื่อไม่ได้
+ */
+const fishCountOf = (items: OrderItem[] = []) =>
+  items.reduce((sum, item) => {
+    if (item.kind === 'food') return sum;
+    return sum + item.quantity * (item.type === 'piece' ? 1 : item.type === 'pair' ? 2 : 3);
+  }, 0);
+
+const STATUS_META: Record<OrderStatus, { label: string; variant: BadgeVariant }> = {
+  pending: { label: '📦 รอส่ง', variant: 'warning' },
+  shipped: { label: '🚚 ส่งแล้ว', variant: 'soft' },
+  delivered: { label: '✅ ถึงแล้ว', variant: 'success' },
+  cancelled: { label: '✖ ยกเลิก', variant: 'muted' },
 };
 
-const PAYMENT_LABEL: Record<PaymentStatus, { text: string; cls: string }> = {
-  unpaid:  { text: '⏳ ยังไม่จ่าย', cls: 'bg-red-100 text-red-600' },
-  deposit: { text: '💵 มัดจำ',      cls: 'bg-amber-100 text-amber-700' },
-  paid:    { text: '💰 จ่ายแล้ว',   cls: 'bg-green-100 text-green-700' },
+const PAYMENT_META: Record<PaymentStatus, { label: string; variant: BadgeVariant }> = {
+  unpaid: { label: '⏳ ยังไม่จ่าย', variant: 'danger' },
+  deposit: { label: '💵 มัดจำ', variant: 'warning' },
+  paid: { label: '💰 จ่ายแล้ว', variant: 'success' },
 };
+
+const PERIODS = [
+  { key: 'today', label: 'วันนี้' },
+  { key: 'week', label: '7 วัน' },
+  { key: 'month', label: 'เดือนนี้' },
+  { key: 'year', label: 'ปีนี้' },
+  { key: 'custom', label: 'เลือกวัน' },
+] as const;
+
+const PAYMENT_FILTERS = [
+  { key: 'all', label: 'ทั้งหมด' },
+  { key: 'unpaid', label: '⏳ ยังไม่จ่าย' },
+  { key: 'deposit', label: '💵 มัดจำ' },
+  { key: 'paid', label: '💰 จ่ายแล้ว' },
+] as const;
+
+/** ตัวเลขสรุปหนึ่งช่องบนหน้าแดชบอร์ด */
+function Stat({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+  accent?: 'primary' | 'success' | 'warning' | 'destructive';
+}) {
+  return (
+    <Card className="gap-0 py-0">
+      <CardContent className="px-3.5 py-3">
+        <p className="text-muted-foreground text-xs">{label}</p>
+        <p
+          className={cn(
+            'mt-1 text-xl font-semibold tabular-nums sm:text-2xl',
+            accent === 'primary' && 'text-primary',
+            accent === 'success' && 'text-success',
+            accent === 'warning' && 'text-warning',
+            accent === 'destructive' && 'text-destructive'
+          )}
+        >
+          {value}
+        </p>
+        {hint && <p className="text-muted-foreground mt-0.5 text-xs">{hint}</p>}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function AdminPage() {
   // State
@@ -40,16 +145,24 @@ export default function AdminPage() {
   const [bankInfo, setBankInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [adminView, setAdminView] = useState<'orders' | 'dashboard' | 'slips'>('orders');
-  const [reportPeriod, setReportPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>('today');
+  const [reportPeriod, setReportPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>(
+    'today'
+  );
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
   // สลิปที่ยืนยันแล้ว แมปด้วย order_id เพื่อโชว์ปุ่มดูสลิปในบิล
-  const [orderSlips, setOrderSlips] = useState<Record<string, { image_path: string; reviewed_by: string | null; reviewed_at: string | null }>>({});
+  const [orderSlips, setOrderSlips] = useState<
+    Record<string, { image_path: string; reviewed_by: string | null; reviewed_at: string | null }>
+  >({});
   const [slipModalUrl, setSlipModalUrl] = useState<string | null>(null);
   const [copiedAddressId, setCopiedAddressId] = useState<string | null>(null);
-  
+  const [refreshing, setRefreshing] = useState(false);
+  const [missingAddressOnly, setMissingAddressOnly] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<SavedOrder | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Edit state
   const [editingOrder, setEditingOrder] = useState<SavedOrder | null>(null);
   const [isEditingOrder, setIsEditingOrder] = useState(false);
@@ -71,17 +184,11 @@ export default function AdminPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const { data: breedsData } = await supabase
-        .from('breeds')
-        .select('*')
-        .order('name');
+      const { data: breedsData } = await supabase.from('breeds').select('*').order('name');
       setBreeds(breedsData || []);
 
       // โหลดข้อมูลบัญชี/ค่าส่ง สำหรับใส่ในข้อความ Copy
-      const { data: settingsData } = await supabase
-        .from('settings')
-        .select('*')
-        .limit(1);
+      const { data: settingsData } = await supabase.from('settings').select('*').limit(1);
       if (settingsData && settingsData.length > 0) {
         setBankInfo(settingsData[0]);
       }
@@ -95,14 +202,22 @@ export default function AdminPage() {
     }
   };
 
-  const loadAllOrders = async (period: 'today' | 'week' | 'month' | 'year' | 'custom' = 'today', customStart?: string, customEnd?: string) => {
+  const loadAllOrders = async (
+    period: 'today' | 'week' | 'month' | 'year' | 'custom' = 'today',
+    customStart?: string,
+    customEnd?: string
+  ) => {
     try {
       let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
-      
+
       const now = new Date();
       if (period === 'today') {
-        const today = now.toISOString().split('T')[0];
-        query = query.gte('created_at', today);
+        // ห้ามใช้ toISOString().split('T')[0] — มันให้ "วันที่ตาม UTC"
+        // ไทยเร็วกว่า UTC 7 ชม. ตอนตี 2 ของวันที่ 2 มันจะได้วันที่ 1 กลับมา
+        // ทำให้ยอด "วันนี้" ลากยอดเมื่อวานตั้งแต่ 7 โมงเช้ามารวมด้วย
+        // และช่วงเที่ยงวันถึงเที่ยงคืน ยอดที่ขายหลังเที่ยงคืนก็จะหายไปจากรายงาน
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        query = query.gte('created_at', todayStart.toISOString());
       } else if (period === 'week') {
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
         query = query.gte('created_at', weekAgo);
@@ -113,13 +228,17 @@ export default function AdminPage() {
         const yearStart = new Date(now.getFullYear(), 0, 1).toISOString();
         query = query.gte('created_at', yearStart);
       } else if (period === 'custom' && customStart && customEnd) {
-        query = query.gte('created_at', customStart).lte('created_at', customEnd + 'T23:59:59');
+        // ค่าจาก <input type="date"> เป็นวันที่เปล่า ๆ ถ้าส่งดิบ ๆ ฐานข้อมูลจะอ่านเป็น UTC
+        // แปลงเป็นเที่ยงคืน–เที่ยงคืนตามเวลาเครื่องก่อน ช่วงที่ได้จะตรงกับวันจริงของร้าน
+        query = query
+          .gte('created_at', new Date(`${customStart}T00:00:00`).toISOString())
+          .lte('created_at', new Date(`${customEnd}T23:59:59.999`).toISOString());
       }
-      
+
       const { data, error } = await query;
-      
+
       if (error) throw error;
-      
+
       const transformedData = (data || []).map((order: any) => ({
         id: order.id,
         created_at: order.created_at,
@@ -141,9 +260,9 @@ export default function AdminPage() {
         customerName: order.customer_name,
         customerPhone: order.customer_phone,
         customerAddress: order.customer_address,
-        note: order.note
+        note: order.note,
       }));
-      
+
       setAllOrders(transformedData);
 
       // แมปสลิปที่ยืนยันแล้วเข้ากับบิล ไว้โชว์ปุ่ม "ดูสลิป"
@@ -155,7 +274,9 @@ export default function AdminPage() {
           .eq('status', 'confirmed')
           .in('order_id', orderIds);
         const map: Record<string, any> = {};
-        (slipRows || []).forEach((r: any) => { if (r.order_id) map[r.order_id] = r; });
+        (slipRows || []).forEach((r: any) => {
+          if (r.order_id) map[r.order_id] = r;
+        });
         setOrderSlips(map);
       }
     } catch (err) {
@@ -163,10 +284,18 @@ export default function AdminPage() {
     }
   };
 
+  // ดึงบิลใหม่ตามช่วงเวลาที่เลือกอยู่ — เดิมต้องรีโหลดทั้งหน้าถึงจะเห็นบิลที่เพิ่งออก
+  const refresh = async () => {
+    setRefreshing(true);
+    await loadAllOrders(reportPeriod, startDate, endDate);
+    setRefreshing(false);
+    toast.success('อัปเดตข้อมูลแล้ว');
+  };
+
   // คัดลอกที่อยู่จัดส่ง เรียง เบอร์ / ชื่อ / ที่อยู่ ไว้แปะฟอร์มส่งพัสดุได้เลย
   const formatAddress = (order: SavedOrder) =>
     [order.customerPhone, order.customerName, order.customerAddress]
-      .map(v => (v || '').trim())
+      .map((v) => (v || '').trim())
       .filter(Boolean)
       .join('\n');
 
@@ -186,8 +315,8 @@ export default function AdminPage() {
   // แต่ละบิลคั่นด้วยเลขบิล + เส้นแบ่ง ไว้ไล่พิมพ์ที่อยู่ส่งพัสดุเป็นชุด
   const copyAllAddresses = async (orders: SavedOrder[]) => {
     const blocks = orders
-      .filter(o => o.customerAddress?.trim() || o.customerPhone?.trim())
-      .map(o => formatAddress(o));
+      .filter((o) => o.customerAddress?.trim() || o.customerPhone?.trim())
+      .map((o) => formatAddress(o));
     if (blocks.length === 0) {
       toast.error('ไม่มีบิลที่มีที่อยู่ให้คัดลอก');
       return;
@@ -220,19 +349,21 @@ export default function AdminPage() {
     if (!breedId) return 0;
     const breed = breeds.find((b: Breed) => b.id === breedId);
     if (!breed) return 0;
-    return type === 'piece' ? (breed.premium_cost_piece || 0)
-      : type === 'pair' ? (breed.premium_cost_pair || 0)
-      : (breed.premium_cost_set || 0);
+    return type === 'piece'
+      ? breed.premium_cost_piece || 0
+      : type === 'pair'
+        ? breed.premium_cost_pair || 0
+        : breed.premium_cost_set || 0;
   };
 
   // ต้นทุนต่อหน่วย: ปลาดึงจาก breed, อาหารใช้ต้นทุนที่บันทึกไว้ในรายการ (ไม่มี breed)
   const resolveItemCost = (item: OrderItem): number =>
-    item.kind === 'food' ? (item.cost || 0) : (item.breedId ? getItemCost(item.breedId, item.type) : 0);
+    item.kind === 'food' ? item.cost || 0 : item.breedId ? getItemCost(item.breedId, item.type) : 0;
 
   // อัปเดตสถานะแบบ optimistic แล้ว rollback ถ้าเซิร์ฟเวอร์ปฏิเสธ
   const setOrderStatus = async (order: SavedOrder, status: OrderStatus) => {
     const previous = allOrders;
-    setAllOrders(orders => orders.map(o => o.id === order.id ? { ...o, status } : o));
+    setAllOrders((orders) => orders.map((o) => (o.id === order.id ? { ...o, status } : o)));
 
     const { error } = await supabase.from('orders').update({ status }).eq('id', order.id);
     if (error) {
@@ -244,12 +375,16 @@ export default function AdminPage() {
   const setPaymentStatus = async (order: SavedOrder, paymentStatus: PaymentStatus) => {
     // จ่ายครบ = ยอดที่จ่ายเท่ายอดบิล, ยังไม่จ่าย = 0, มัดจำปล่อยให้กรอกเอง
     const paidAmount =
-      paymentStatus === 'paid' ? (order.totalAmount || 0)
-      : paymentStatus === 'unpaid' ? 0
-      : (order.paidAmount || 0);
+      paymentStatus === 'paid'
+        ? order.totalAmount || 0
+        : paymentStatus === 'unpaid'
+          ? 0
+          : order.paidAmount || 0;
 
     const previous = allOrders;
-    setAllOrders(orders => orders.map(o => o.id === order.id ? { ...o, paymentStatus, paidAmount } : o));
+    setAllOrders((orders) =>
+      orders.map((o) => (o.id === order.id ? { ...o, paymentStatus, paidAmount } : o))
+    );
 
     const { error } = await supabase
       .from('orders')
@@ -283,9 +418,11 @@ export default function AdminPage() {
       return;
     }
 
-    setAllOrders(orders => orders.map(o =>
-      o.id === order.id ? { ...o, trackingNumber: tracking, status: 'shipped' as OrderStatus } : o
-    ));
+    setAllOrders((orders) =>
+      orders.map((o) =>
+        o.id === order.id ? { ...o, trackingNumber: tracking, status: 'shipped' as OrderStatus } : o
+      )
+    );
 
     if (!order.lineUserId) {
       toast.warning('บันทึกเลขพัสดุแล้ว แต่ยังแจ้งเตือนอัตโนมัติไม่ได้', {
@@ -295,14 +432,15 @@ export default function AdminPage() {
       return;
     }
 
-    const { error: subError } = await supabase
-      .from('parcel_subscriptions')
-      .upsert({
+    const { error: subError } = await supabase.from('parcel_subscriptions').upsert(
+      {
         tracking_number: tracking,
         line_user_id: order.lineUserId,
         order_id: order.id,
         last_status: null,
-      }, { onConflict: 'tracking_number' });
+      },
+      { onConflict: 'tracking_number' }
+    );
 
     if (subError) {
       toast.error('บันทึกเลขพัสดุแล้ว แต่สมัครติดตามไม่สำเร็จ', { description: subError.message });
@@ -316,9 +454,9 @@ export default function AdminPage() {
   const dashboardStats = useMemo(() => {
     const totalSales = allOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
     let totalFish = 0;
-    let totalFreeQty = 0;    // จำนวนตัวที่แถมฟรี (แปลงคู่/ชุดเป็นตัวแล้ว)
-    let totalFreeValue = 0;  // มูลค่าของแถมฟรีรวม
-    allOrders.forEach(order => {
+    let totalFreeQty = 0; // จำนวนตัวที่แถมฟรี (แปลงคู่/ชุดเป็นตัวแล้ว)
+    let totalFreeValue = 0; // มูลค่าของแถมฟรีรวม
+    allOrders.forEach((order) => {
       order.items?.forEach((item: OrderItem) => {
         if (item.kind === 'food') return; // อาหารไม่นับเป็นจำนวนปลา/ของแถม
         const mult = item.type === 'piece' ? 1 : item.type === 'pair' ? 2 : 3;
@@ -332,34 +470,52 @@ export default function AdminPage() {
     });
 
     let totalFishCost = 0;
-    let totalFoodCost = 0;  // แยกต้นทุนอาหารออก เพราะจ่ายคนละเจ้ากับปลา
+    let totalFoodCost = 0; // แยกต้นทุนอาหารออก เพราะจ่ายคนละเจ้ากับปลา
+    let totalFoodSales = 0;
     let totalProfit = 0;
     const totalShippingIncome = allOrders.reduce((sum, order) => sum + (order.shippingFee || 60), 0);
-    const totalShippingCost = allOrders.reduce((sum, order) => sum + (order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : (order.shippingFee || 60)), 0);
+    const totalShippingCost = allOrders.reduce(
+      (sum, order) =>
+        sum +
+        (order.actualShippingFee !== undefined && order.actualShippingFee !== null
+          ? order.actualShippingFee
+          : order.shippingFee || 60),
+      0
+    );
 
-    allOrders.forEach(order => {
+    allOrders.forEach((order) => {
       let orderFishCost = 0;
       let orderFoodCost = 0;
       order.items?.forEach((item: OrderItem) => {
         const c = resolveItemCost(item) * item.quantity;
-        if (item.kind === 'food') orderFoodCost += c;
-        else orderFishCost += c;
+        if (item.kind === 'food') {
+          orderFoodCost += c;
+          totalFoodSales += calculateItemTotal(item);
+        } else {
+          orderFishCost += c;
+        }
       });
 
       totalFishCost += orderFishCost;
       totalFoodCost += orderFoodCost;
 
       const revenue = order.totalAmount || 0;
-      const shipping = order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : (order.shippingFee || 60);
-      totalProfit += (revenue - orderFishCost - orderFoodCost - shipping);
+      const shipping =
+        order.actualShippingFee !== undefined && order.actualShippingFee !== null
+          ? order.actualShippingFee
+          : order.shippingFee || 60;
+      totalProfit += revenue - orderFishCost - orderFoodCost - shipping;
     });
 
     const avgOrderValue = allOrders.length > 0 ? totalSales / allOrders.length : 0;
-    
+
     // Breed stats
     const breedStats: { [key: string]: { name: string; qty: number; sales: number; cost: number } } = {};
-    allOrders.forEach(order => {
+    allOrders.forEach((order) => {
       order.items.forEach((item: OrderItem) => {
+        // อาหารไม่ใช่สายพันธุ์ปลา ไม่ควรไปแย่งอันดับใน "สายพันธุ์ขายดี"
+        // (มียอดขาย/ต้นทุนอาหารแยกเป็นช่องของตัวเองอยู่แล้ว)
+        if (item.kind === 'food') return;
         const statKey = item.breedId;
 
         if (!breedStats[statKey]) {
@@ -368,31 +524,33 @@ export default function AdminPage() {
         const paidQty = item.quantity - (item.freeQty || 0);
         const itemCost = resolveItemCost(item);
         breedStats[statKey].qty += item.quantity;
-        breedStats[statKey].sales += (item.price * paidQty) - (item.discount || 0);
+        breedStats[statKey].sales += item.price * paidQty - (item.discount || 0);
         breedStats[statKey].cost += itemCost * item.quantity;
       });
     });
-    
+
     const topBreeds = Object.values(breedStats)
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 10);
-    
+
     // Customer stats
-    const customerStats: { [key: string]: { name: string; orders: number; totalSpent: number; totalFish: number } } = {};
-    allOrders.forEach(order => {
+    const customerStats: {
+      [key: string]: { name: string; orders: number; totalSpent: number; totalFish: number };
+    } = {};
+    allOrders.forEach((order) => {
       const customerName = order.customerName || 'ไม่ระบุชื่อ';
       if (!customerStats[customerName]) {
         customerStats[customerName] = { name: customerName, orders: 0, totalSpent: 0, totalFish: 0 };
       }
       customerStats[customerName].orders += 1;
       customerStats[customerName].totalSpent += order.totalAmount || 0;
-      customerStats[customerName].totalFish += order.totalFish || 0;
+      customerStats[customerName].totalFish += fishCountOf(order.items);
     });
-    
+
     const topCustomers = Object.values(customerStats)
       .sort((a, b) => b.totalSpent - a.totalSpent)
       .slice(0, 10);
-    
+
     return {
       totalOrders: allOrders.length,
       totalSales,
@@ -403,10 +561,11 @@ export default function AdminPage() {
       totalFreeQty,
       totalFreeValue,
       totalFoodCost,
+      totalFoodSales,
       totalProfit,
       avgOrderValue,
       topBreeds,
-      topCustomers
+      topCustomers,
     };
   }, [allOrders]);
 
@@ -420,17 +579,20 @@ export default function AdminPage() {
       // ?? ไม่ใช่ || — บิลที่ค่าส่งเป็น 0 (ส่งฟรี) ต้องคงเป็น 0 ไม่ใช่เด้งเป็น 60
       const shippingFee = editingOrder.shippingFee ?? 60;
 
-      const newTotalAmount = updatedItems.reduce((sum, item) => {
-        const paidQty = item.quantity - (item.freeQty || 0);
-        return sum + (item.price * paidQty) - (item.discount || 0);
-      }, 0) - updatedDiscount + shippingFee;
+      // ใช้ calculateItemTotal ตัวเดียวกับตอนออกบิล ไม่งั้นรายการที่ส่วนลดเกินราคา
+      // จะกลายเป็นยอดติดลบตอนแก้ไข ทั้งที่ตอนสร้างบิลถูกปัดเป็น 0
+      const newTotalAmount =
+        updatedItems.reduce((sum, item) => sum + calculateItemTotal(item), 0) -
+        updatedDiscount +
+        shippingFee;
 
-      const newTotalFish = updatedItems.reduce((sum, item) => sum + (item.type === 'piece' ? item.quantity : item.type === 'pair' ? item.quantity * 2 : item.quantity * 3), 0);
+      const newTotalFish = fishCountOf(updatedItems);
       const newTotalCost = updatedItems.reduce((sum, item) => {
         const itemCost = resolveItemCost(item);
-        return sum + (itemCost * item.quantity);
+        return sum + itemCost * item.quantity;
       }, 0);
-      const newActualShippingFee = editActualShipping.trim() !== '' ? Number(editActualShipping) : editingOrder.actualShippingFee;
+      const newActualShippingFee =
+        editActualShipping.trim() !== '' ? Number(editActualShipping) : editingOrder.actualShippingFee;
 
       const { error } = await supabase
         .from('orders')
@@ -444,17 +606,31 @@ export default function AdminPage() {
           customer_name: editName.trim() || null,
           customer_phone: editPhone.trim() || null,
           customer_address: editAddress.trim() || null,
-          note: editNote.trim() || null
+          note: editNote.trim() || null,
         })
         .eq('id', orderId);
 
       if (error) throw error;
 
-      setAllOrders(prev => prev.map(order =>
-        order.id === orderId
-          ? { ...order, items: updatedItems, totalAmount: newTotalAmount, totalFish: newTotalFish, totalCost: newTotalCost, actualShippingFee: newActualShippingFee, discount: updatedDiscount, customerName: editName.trim(), customerPhone: editPhone.trim(), customerAddress: editAddress.trim(), note: editNote.trim() }
-          : order
-      ));
+      setAllOrders((prev) =>
+        prev.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                items: updatedItems,
+                totalAmount: newTotalAmount,
+                totalFish: newTotalFish,
+                totalCost: newTotalCost,
+                actualShippingFee: newActualShippingFee,
+                discount: updatedDiscount,
+                customerName: editName.trim(),
+                customerPhone: editPhone.trim(),
+                customerAddress: editAddress.trim(),
+                note: editNote.trim(),
+              }
+            : order
+        )
+      );
 
       toast.success('แก้ไขออเดอร์เรียบร้อย!');
       setIsEditingOrder(false);
@@ -465,23 +641,26 @@ export default function AdminPage() {
     }
   };
 
-  const deleteOrder = async (orderId: string) => {
-    if (!confirm('ต้องการลบออเดอร์นี้ใช่หรือไม่?')) return;
-    
-    try {
-      const { error } = await supabase
-        .from('orders')
-        .delete()
-        .eq('id', orderId);
-      
-      if (error) throw error;
-      
-      setAllOrders(allOrders.filter(order => order.id !== orderId));
-      toast.success('ลบออเดอร์เรียบร้อย!');
-    } catch (err) {
-      console.error('Delete order error:', err);
+  // ลบบิลคือลบจริงจากฐานข้อมูล กู้คืนไม่ได้
+  // confirm() ของเบราว์เซอร์ไม่บอกว่ากำลังลบใบไหน — บนมือถือกดพลาดแล้วจบเลย
+  // จึงถามด้วยกล่องที่โชว์เลขบิล ชื่อลูกค้า และยอด ให้ตรวจก่อน
+  const deleteOrder = async () => {
+    const order = orderToDelete;
+    if (!order) return;
+
+    setDeleting(true);
+    const { error } = await supabase.from('orders').delete().eq('id', order.id);
+    setDeleting(false);
+
+    if (error) {
+      console.error('Delete order error:', error);
       toast.error('ลบไม่สำเร็จ');
+      return;
     }
+
+    setAllOrders((prev) => prev.filter((o) => o.id !== order.id));
+    setOrderToDelete(null);
+    toast.success(`ลบบิล ${order.orderNumber || ''} แล้ว`);
   };
 
   // Edit items helpers
@@ -497,9 +676,12 @@ export default function AdminPage() {
     const itemsWithUpdatedPrices = (order.items || []).map((item: OrderItem) => {
       const breed = breeds.find((b: Breed) => b.id === item.breedId);
       if (breed) {
-        const newPrice = item.type === 'piece' ? (breed.premium_price_piece || 0)
-          : item.type === 'pair' ? (breed.premium_price_pair || 0)
-          : (breed.premium_price_set || 0);
+        const newPrice =
+          item.type === 'piece'
+            ? breed.premium_price_piece || 0
+            : item.type === 'pair'
+              ? breed.premium_price_pair || 0
+              : breed.premium_price_set || 0;
         return { ...item, price: newPrice };
       }
       return item;
@@ -512,9 +694,11 @@ export default function AdminPage() {
     if (!breedId) return 0;
     const breed = breeds.find((b: Breed) => b.id === breedId);
     if (!breed) return 0;
-    return type === 'piece' ? (breed.premium_price_piece || 0)
-      : type === 'pair' ? (breed.premium_price_pair || 0)
-      : (breed.premium_price_set || 0);
+    return type === 'piece'
+      ? breed.premium_price_piece || 0
+      : type === 'pair'
+        ? breed.premium_price_pair || 0
+        : breed.premium_price_set || 0;
   };
 
   const addEditItem = (breedId: string) => {
@@ -529,7 +713,7 @@ export default function AdminPage() {
       type: 'piece',
       gender: 'male',
       freeQty: 0,
-      discount: 0
+      discount: 0,
     };
     setEditItems([...editItems, newItem]);
   };
@@ -541,286 +725,506 @@ export default function AdminPage() {
   const updateEditItem = (index: number, field: keyof OrderItem, value: any) => {
     const updated = [...editItems];
     updated[index] = { ...updated[index], [field]: value };
-    
+
     // Auto-update price when breed/type changes
     if (field === 'breedId' || field === 'type') {
       const item = updated[index];
       if (item.breedId) {
         updated[index].price = getItemPrice(item.breedId, item.type);
-        
+
         if (field === 'breedId') {
           const breed = breeds.find((b: Breed) => b.id === item.breedId);
           if (breed) updated[index].breedName = breed.name;
         }
       }
     }
-    
+
     setEditItems(updated);
   };
 
   if (loading) {
     return (
       <Layout>
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-blue-600 font-bold uppercase tracking-widest text-xs">
-          <Loader2 className="h-10 w-10 animate-spin mb-4" /> Loading...
-        </div>
+        <PageLoader />
       </Layout>
     );
   }
 
+  const byPayment =
+    paymentFilter === 'all'
+      ? allOrders
+      : allOrders.filter((o) => (o.paymentStatus || 'unpaid') === paymentFilter);
+
+  const searched = searchTerm.trim()
+    ? byPayment.filter((order) => {
+        const term = searchTerm.toLowerCase();
+        // เบอร์โทรเทียบเฉพาะตัวเลข จะได้ค้น "081-234" กับ "081234" เจอเหมือนกัน
+        // แต่เทียบต่อเมื่อคำค้นไม่มีตัวอักษรปนเลย ไม่งั้นค้น "EX9876" จะไปโดนเบอร์
+        // ที่บังเอิญมีเลขเรียงกันแบบนั้นอยู่ข้างใน
+        const digits = term.replace(/\D/g, '');
+        const phoneLike = digits.length >= 3 && !/[a-z\u0E00-\u0E7F]/i.test(term);
+
+        return (
+          order.orderNumber?.toLowerCase().includes(term) ||
+          order.customerName?.toLowerCase().includes(term) ||
+          (phoneLike && !!order.customerPhone?.replace(/\D/g, '').includes(digits)) ||
+          order.trackingNumber?.toLowerCase().includes(term) ||
+          order.items?.some((item: OrderItem) => item.breedName?.toLowerCase().includes(term)) ||
+          order.note?.toLowerCase().includes(term) ||
+          order.customerAddress?.toLowerCase().includes(term) ||
+          order.id?.toLowerCase().includes(term)
+        );
+      })
+    : byPayment;
+
+  // ── 3. บิลที่ลูกค้ายังไม่ส่งที่อยู่มา — ตัวที่ค้างแพ็คของอยู่จริง ๆ
+  const filteredOrders = missingAddressOnly
+    ? searched.filter((o) => !o.customerAddress?.trim())
+    : searched;
+
+  const missingAddressCount = allOrders.filter(
+    (o) => !o.customerAddress?.trim() && o.status !== 'cancelled'
+  ).length;
+
+  const outstanding = allOrders
+    .filter((o) => (o.paymentStatus || 'unpaid') !== 'paid' && o.status !== 'cancelled')
+    .reduce((sum, o) => sum + Math.max(0, (o.totalAmount || 0) - (o.paidAmount || 0)), 0);
+
   return (
     <Layout>
-      <Toaster position="top-center" richColors />
-      <main className="max-w-6xl mx-auto p-4 space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <div className="bg-white rounded-[2.5rem] shadow-xl shadow-blue-900/5 border border-slate-100 overflow-hidden flex flex-col min-h-[75vh]">
-          {/* Header */}
-          <div className="p-6 sm:p-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h2 className="font-black text-2xl text-slate-800 tracking-tight flex items-center gap-3">
-                 <ClipboardList className="h-6 w-6 text-blue-600" />
-                 Admin Dashboard
-              </h2>
-              <p className="text-slate-500 text-sm mt-1">จัดการออเดอร์ & ดูรายงานสรุปผล</p>
-            </div>
-            {/* Period Selector - moved to header */}
-            <div className="flex flex-wrap gap-2">
-              {(['today', 'week', 'month', 'year', 'custom'] as const).map(period => (
+      <div className="mx-auto max-w-6xl space-y-4 px-4 py-4">
+        <PageHeader
+          title="บิล & ยอดขาย"
+          description="จัดการออเดอร์และดูสรุปผลของร้าน"
+          action={
+            <Button variant="outline" onClick={refresh} disabled={refreshing} className="w-full sm:w-auto">
+              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+              รีเฟรช
+            </Button>
+          }
+        />
+
+        {/* ช่วงเวลา — เลื่อนแนวนอนได้บนมือถือ */}
+        <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => {
+                setReportPeriod(p.key);
+                if (p.key !== 'custom') loadAllOrders(p.key);
+              }}
+              className={cn(
+                'h-9 shrink-0 rounded-full border px-3.5 text-sm font-medium transition-colors',
+                reportPeriod === p.key
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-card text-muted-foreground hover:bg-accent'
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {reportPeriod === 'custom' && (
+          <Card className="gap-0 py-0">
+            <CardContent className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <div className="space-y-1.5">
+                <Label htmlFor="start-date">จากวันที่</Label>
+                <Input
+                  id="start-date"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="end-date">ถึงวันที่</Label>
+                <Input
+                  id="end-date"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+              <Button
+                onClick={() => loadAllOrders('custom', startDate, endDate)}
+                disabled={!startDate || !endDate}
+              >
+                ดูรายงาน
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        <FailedNotifications />
+
+        <Tabs value={adminView} onValueChange={(v) => setAdminView(v as typeof adminView)}>
+          <TabsList className="grid w-full grid-cols-3 sm:w-auto sm:inline-flex">
+            <TabsTrigger value="orders" onClick={() => loadAllOrders(reportPeriod)}>
+              <ClipboardList className="size-4" /> รายการบิล
+            </TabsTrigger>
+            <TabsTrigger value="dashboard" onClick={() => loadAllOrders(reportPeriod)}>
+              สรุปยอด
+            </TabsTrigger>
+            <TabsTrigger value="slips">
+              <Receipt className="size-4" /> สลิป
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ───────── รายการบิล ───────── */}
+          <TabsContent value="orders" className="mt-4 space-y-3">
+            <SearchInput
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="ค้นหาเลขบิล / ชื่อ / เบอร์โทร / สายพันธุ์…"
+            />
+
+            <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+              {PAYMENT_FILTERS.map((f) => (
                 <button
-                  key={period}
-                  onClick={() => { 
-                    setReportPeriod(period); 
-                    if (period !== 'custom') {
-                      loadAllOrders(period); 
-                    }
-                  }}
-                  className={`px-3 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition-all ${
-                    reportPeriod === period 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  key={f.key}
+                  onClick={() => setPaymentFilter(f.key as 'all' | PaymentStatus)}
+                  className={cn(
+                    'h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors',
+                    paymentFilter === f.key
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-card text-muted-foreground hover:bg-accent'
+                  )}
                 >
-                  {period === 'today' && 'วันนี้'}
-                  {period === 'week' && '7 วัน'}
-                  {period === 'month' && 'เดือนนี้'}
-                  {period === 'year' && 'ปีนี้'}
-                  {period === 'custom' && 'เลือกวัน'}
+                  {f.label}
                 </button>
               ))}
+
+              <span className="bg-border mx-1 w-px shrink-0" aria-hidden />
+
+              <button
+                onClick={() => setMissingAddressOnly((v) => !v)}
+                className={cn(
+                  'flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors',
+                  missingAddressOnly
+                    ? 'bg-warning/15 text-warning border-warning/40'
+                    : 'bg-card text-muted-foreground hover:bg-accent'
+                )}
+              >
+                <MapPinOff className="size-3.5" />
+                ยังไม่มีที่อยู่
+                {missingAddressCount > 0 && ` (${missingAddressCount})`}
+              </button>
             </div>
-          </div>
-          
-          {/* Custom Date Picker - moved here after header */}
-          {reportPeriod === 'custom' && (
-            <div className="p-4 mx-6 mt-4 bg-blue-50 rounded-2xl border border-blue-100">
-              <div className="flex flex-wrap gap-4 items-end">
-                <div>
-                  <label className="text-xs font-bold text-blue-600 uppercase tracking-wider block mb-2">จากวันที่</label>
-                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-10 px-3 bg-white border border-blue-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-400" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-blue-600 uppercase tracking-wider block mb-2">ถึงวันที่</label>
-                  <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-10 px-3 bg-white border border-blue-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-400" />
-                </div>
-                <button onClick={() => loadAllOrders('custom', startDate, endDate)} disabled={!startDate || !endDate} className="h-10 px-6 bg-blue-600 disabled:bg-slate-300 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all">
-                  ดูรายงาน
-                </button>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-muted-foreground text-sm">
+                พบ {filteredOrders.length} รายการ
+                {searchTerm && ` (จาก ${allOrders.length})`}
+              </span>
+              <div className="flex items-center gap-2">
+                {outstanding > 0 && (
+                  <Badge variant="danger">ค้างชำระ ฿{outstanding.toLocaleString()}</Badge>
+                )}
+                {filteredOrders.some(
+                  (o: SavedOrder) => o.customerAddress?.trim() || o.customerPhone?.trim()
+                ) && (
+                  <Button variant="outline" size="sm" onClick={() => copyAllAddresses(filteredOrders)}>
+                    <Copy className="size-3.5" /> คัดลอกที่อยู่ทั้งหมด
+                  </Button>
+                )}
               </div>
             </div>
-          )}
-          
-          {/* Navigation Tabs */}
-          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex gap-2">
-            <button
-              onClick={() => { setAdminView('orders'); loadAllOrders(reportPeriod); }}
-              className={`px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
-                adminView === 'orders' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-white text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              📋 รายการบิล
-            </button>
-            <button
-              onClick={() => { setAdminView('dashboard'); loadAllOrders(reportPeriod); }}
-              className={`px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
-                adminView === 'dashboard' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-white text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              📊 Dashboard
-            </button>
-            <button
-              onClick={() => setAdminView('slips')}
-              className={`px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
-                adminView === 'slips'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              🧾 สลิป
-            </button>
-          </div>
-          
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
-            <FailedNotifications />
-            {adminView === 'slips' ? (
-              <PendingSlips onConfirmed={() => loadAllOrders(reportPeriod)} />
-            ) : adminView === 'orders' ? (
-              <>
-                {/* Search Bar */}
-                <div className="mb-4">
-                  <div className="relative">
-                    <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <input
-                      type="text"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="ค้นหาออเดอร์..."
-                      className="w-full h-10 bg-white border border-slate-200 rounded-xl px-4 pl-10 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                    />
-                    {searchTerm && (
-                      <button 
-                        onClick={() => setSearchTerm('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-400 text-xs"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Filtered Orders */}
-                {(() => {
-                  const byPayment = paymentFilter === 'all'
-                    ? allOrders
-                    : allOrders.filter(o => (o.paymentStatus || 'unpaid') === paymentFilter);
 
-                  const filteredOrders = searchTerm.trim()
-                    ? byPayment.filter(order => {
-                        const term = searchTerm.toLowerCase();
-                        const matchCustomer = order.customerName?.toLowerCase().includes(term);
-                        const matchItems = order.items?.some((item: OrderItem) => 
-                          item.breedName?.toLowerCase().includes(term)
-                        );
-                        const matchNote = order.note?.toLowerCase().includes(term);
-                        const matchId = order.id?.toLowerCase().includes(term);
-                        return matchCustomer || matchItems || matchNote || matchId;
-                      })
-                    : byPayment;
-
-                  const outstanding = allOrders
-                    .filter(o => (o.paymentStatus || 'unpaid') !== 'paid' && o.status !== 'cancelled')
-                    .reduce((sum, o) => sum + Math.max(0, (o.totalAmount || 0) - (o.paidAmount || 0)), 0);
+            {filteredOrders.length === 0 ? (
+              <Card>
+                <EmptyState
+                  icon={ClipboardList}
+                  title="ไม่พบบิลในช่วงเวลานี้"
+                  description="ลองเปลี่ยนช่วงเวลาหรือตัวกรองด้านบน"
+                />
+              </Card>
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {filteredOrders.map((order, index) => {
+                  // Calculate cost using getItemCost (breed-based)
+                  const orderCost =
+                    order.items?.reduce((sum: number, item: OrderItem) => {
+                      const cost = resolveItemCost(item);
+                      return sum + cost * item.quantity;
+                    }, 0) || 0;
+                  const shippingFee = order.shippingFee || 60;
+                  const actualShipping =
+                    order.actualShippingFee !== undefined && order.actualShippingFee !== null
+                      ? order.actualShippingFee
+                      : 0;
+                  const orderProfit = (order.totalAmount || 0) - orderCost - (actualShipping || 0);
+                  const payMeta = PAYMENT_META[(order.paymentStatus || 'unpaid') as PaymentStatus];
+                  const statusMeta = STATUS_META[(order.status || 'pending') as OrderStatus];
 
                   return (
-                    <div>
-                      {/* ตัวกรองสถานะการชำระเงิน */}
-                      <div className="flex flex-wrap items-center gap-2 mb-4">
-                        {([['all', 'ทั้งหมด'], ['unpaid', '⏳ ยังไม่จ่าย'], ['deposit', '💵 มัดจำ'], ['paid', '💰 จ่ายแล้ว']] as const).map(([key, label]) => (
-                          <button
-                            key={key}
-                            onClick={() => setPaymentFilter(key as 'all' | PaymentStatus)}
-                            className={cn(
-                              'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
-                              paymentFilter === key ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                            )}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                        {outstanding > 0 && (
-                          <span className="ml-auto text-xs font-black text-red-600 bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg">
-                            ค้างชำระรวม ฿{outstanding.toLocaleString()}
-                          </span>
-                        )}
-                      </div>
+                    <Card key={order.id} className="gap-0 py-0">
+                      <CardContent className="space-y-3 px-4 py-3.5">
+                        {/* หัวบิล */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-primary font-semibold">
+                              {order.orderNumber || `#${allOrders.length - index}`}
+                            </p>
+                            <p className="text-muted-foreground text-xs">
+                              {new Date(order.created_at).toLocaleString('th-TH', {
+                                dateStyle: 'medium',
+                                timeStyle: 'short',
+                              })}
+                            </p>
+                          </div>
+                          <p className="shrink-0 text-xl font-semibold tabular-nums">
+                            ฿{(order.totalAmount || 0).toLocaleString()}
+                          </p>
+                        </div>
 
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <span className="text-sm text-slate-500">พบ {filteredOrders.length} รายการ {searchTerm && `(จาก ${allOrders.length} รายการ)`}</span>
-                        {filteredOrders.some((o: SavedOrder) => o.customerAddress?.trim() || o.customerPhone?.trim()) && (
-                          <button
-                            onClick={() => copyAllAddresses(filteredOrders)}
-                            className="shrink-0 h-9 px-3 bg-blue-100 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg text-xs font-black flex items-center gap-1.5 active:scale-95 transition-all"
-                            title="คัดลอกที่อยู่ทุกบิลที่แสดงอยู่"
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Badge variant={payMeta.variant}>
+                            {payMeta.label}
+                            {order.paymentStatus === 'deposit' &&
+                              (order.paidAmount || 0) > 0 &&
+                              ` ฿${(order.paidAmount || 0).toLocaleString()}`}
+                          </Badge>
+                          <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+                          {orderSlips[order.id] && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => viewSlip(order.id)}
+                              title={`อนุมัติโดย ${orderSlips[order.id].reviewed_by || '-'}`}
+                            >
+                              <Receipt className="size-3" /> ดูสลิป
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* สถานะ — แก้ได้ทันที */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <Select
+                            value={order.paymentStatus || 'unpaid'}
+                            onValueChange={(v) => setPaymentStatus(order, v as PaymentStatus)}
                           >
-                            <Copy className="h-3.5 w-3.5" /> คัดลอกที่อยู่ทั้งหมด
-                          </button>
+                            <SelectTrigger size="sm" className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unpaid">⏳ ยังไม่จ่าย</SelectItem>
+                              <SelectItem value="deposit">💵 มัดจำ</SelectItem>
+                              <SelectItem value="paid">💰 จ่ายแล้ว</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={order.status || 'pending'}
+                            onValueChange={(v) => setOrderStatus(order, v as OrderStatus)}
+                          >
+                            <SelectTrigger size="sm" className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">📦 รอส่ง</SelectItem>
+                              <SelectItem value="shipped">🚚 ส่งแล้ว</SelectItem>
+                              <SelectItem value="delivered">✅ ถึงแล้ว</SelectItem>
+                              <SelectItem value="cancelled">✖ ยกเลิก</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* เลขพัสดุ — กรอกแล้วบอท LINE จะเริ่มติดตามให้ลูกค้าทันที */}
+                        <div className="flex items-center gap-2">
+                          <Input
+                            defaultValue={order.trackingNumber || ''}
+                            placeholder="เลขพัสดุ EX123456789TH"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                            }}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim().toUpperCase();
+                              if (v && v !== (order.trackingNumber || '')) saveTrackingNumber(order, v);
+                            }}
+                            className="h-9 flex-1 uppercase"
+                          />
+                          {order.lineUserId ? (
+                            <Badge
+                              variant="success"
+                              title="ลูกค้าเชื่อม LINE แล้ว จะได้รับแจ้งเตือนอัตโนมัติ"
+                            >
+                              <Bell className="size-3" /> LINE
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="muted"
+                              title="ลูกค้ายังไม่เคยเปิดใบสรุปในแอป LINE จึงแจ้งเตือนอัตโนมัติไม่ได้"
+                            >
+                              <BellOff className="size-3" /> ไม่มี
+                            </Badge>
+                          )}
+                        </div>
+
+                        {/* ลูกค้า / ที่อยู่ */}
+                        {(order.customerName || order.customerPhone || order.customerAddress) && (
+                          <div className="bg-muted/50 relative rounded-lg px-3 py-2.5 text-sm">
+                            {order.customerName && (
+                              <p className="pr-24 font-medium">{order.customerName}</p>
+                            )}
+                            {order.customerPhone && (
+                              <a
+                                href={`tel:${order.customerPhone.replace(/[^\d+]/g, '')}`}
+                                className="text-muted-foreground hover:text-primary block w-fit hover:underline"
+                              >
+                                {order.customerPhone}
+                              </a>
+                            )}
+                            {order.customerAddress && (
+                              <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+                                {order.customerAddress}
+                              </p>
+                            )}
+                            {(order.customerPhone || order.customerAddress) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="absolute top-2 right-2 h-7 px-2 text-xs"
+                                onClick={() => copyAddress(order)}
+                              >
+                                {copiedAddressId === order.id ? (
+                                  <Check className="text-success size-3" />
+                                ) : (
+                                  <Copy className="size-3" />
+                                )}
+                                {copiedAddressId === order.id ? 'คัดลอกแล้ว' : 'คัดลอก'}
+                              </Button>
+                            )}
+                          </div>
                         )}
-                      </div>
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {filteredOrders.map((order, index) => {
-                          // Calculate cost using getItemCost (breed-based)
-                          const orderCost = order.items?.reduce((sum: number, item: OrderItem) => {
-                            const cost = resolveItemCost(item);
-                            return sum + (cost * item.quantity);
-                          }, 0) || 0;
-                          const shippingFee = order.shippingFee || 60;
-                          const actualShipping = order.actualShippingFee !== undefined && order.actualShippingFee !== null ? order.actualShippingFee : 0;
-                          const orderProfit = (order.totalAmount || 0) - orderCost - (actualShipping || 0);
-                          
-                          return (
-                          <div key={order.id} className="p-3 sm:p-5 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100 hover:shadow-md transition-all">
-                            <div className="flex items-center justify-between mb-2 sm:mb-3">
-                              <div className="flex items-center gap-2 sm:gap-3">
-                                <span className="text-lg sm:text-xl font-black text-blue-600">{order.orderNumber || `#${allOrders.length - index}`}</span>
-                                <span className="text-xs sm:text-sm text-slate-500">
-                                  {new Date(order.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}
+
+                        <p className="text-muted-foreground text-xs">
+                          🐟 {fishCountOf(order.items)} ตัว · 📋 {order.items?.length || 0} รายการ
+                          {order.note && <span className="italic"> · 💬 {order.note}</span>}
+                        </p>
+
+                        {/* รายละเอียด — พับไว้ให้การ์ดสั้นลงบนมือถือ */}
+                        <details className="group">
+                          <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1 text-xs font-medium">
+                            <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+                            รายการปลา · ต้นทุน · กำไร
+                          </summary>
+
+                          <div className="mt-2 space-y-1">
+                            {order.items?.map((item: OrderItem, i: number) => {
+                              const itemCost = resolveItemCost(item);
+                              return (
+                                <div
+                                  key={i}
+                                  className="flex items-center justify-between gap-2 rounded-md px-2 py-1 text-xs odd:bg-muted/40"
+                                >
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1">
+                                    <span className="truncate">
+                                      {item.kind === 'food' ? '🍤 ' : ''}
+                                      {item.breedName}
+                                    </span>
+                                    <Badge
+                                      variant={item.kind === 'food' ? 'warning' : 'soft'}
+                                      className="shrink-0"
+                                    >
+                                      {item.quantity}{' '}
+                                      {item.kind === 'food'
+                                        ? 'ชิ้น'
+                                        : `${item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด'}${
+                                            item.type === 'piece' && item.gender !== 'mixed'
+                                              ? item.gender === 'male'
+                                                ? '(ผู้)'
+                                                : '(เมีย)'
+                                              : ''
+                                          }`}
+                                    </Badge>
+                                    {(item.freeQty || 0) > 0 && (
+                                      <Badge variant="success" className="shrink-0">
+                                        แถม {item.freeQty}
+                                      </Badge>
+                                    )}
+                                    {(item.discount || 0) > 0 && (
+                                      <Badge variant="warning" className="shrink-0">
+                                        ลด {item.discount}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-muted-foreground flex shrink-0 gap-2 tabular-nums">
+                                    <span>ทุน {itemCost * item.quantity}</span>
+                                    <span className="text-success font-medium">
+                                      ขาย{' '}
+                                      {item.price * Math.max(0, item.quantity - (item.freeQty || 0)) -
+                                        (item.discount || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            <div className="text-muted-foreground flex items-center justify-between px-2 py-1 text-xs">
+                              <span>🚚 ค่าส่งที่เก็บลูกค้า</span>
+                              <span className="tabular-nums">฿{shippingFee.toLocaleString()}</span>
+                            </div>
+                            {(order.discount || 0) > 0 && (
+                              <div className="text-warning flex items-center justify-between px-2 py-1 text-xs">
+                                <span>💸 ส่วนลดท้ายบิล</span>
+                                <span className="tabular-nums">
+                                  -฿{(order.discount || 0).toLocaleString()}
                                 </span>
                               </div>
-                              <span className="font-black text-xl sm:text-2xl text-blue-600">฿{(order.totalAmount || 0).toLocaleString()}</span>
-                            </div>
-                            
-                            <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                              <span className={cn('text-[10px] font-black px-2 py-1 rounded-md', PAYMENT_LABEL[(order.paymentStatus || 'unpaid') as PaymentStatus].cls)}>
-                                {PAYMENT_LABEL[(order.paymentStatus || 'unpaid') as PaymentStatus].text}
-                                {order.paymentStatus === 'deposit' && (order.paidAmount || 0) > 0 && ` ฿${(order.paidAmount || 0).toLocaleString()}`}
-                              </span>
-                              <span className={cn('text-[10px] font-black px-2 py-1 rounded-md', STATUS_LABEL[(order.status || 'pending') as OrderStatus].cls)}>
-                                {STATUS_LABEL[(order.status || 'pending') as OrderStatus].text}
-                              </span>
-                              {orderSlips[order.id] && (
+                            )}
+
+                            <div className="bg-muted/50 mt-2 space-y-1 rounded-lg px-3 py-2 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">ค่าจัดส่งจริง</span>
                                 <button
-                                  onClick={() => viewSlip(order.id)}
-                                  className="text-[10px] font-black px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 active:scale-95 transition-all"
-                                  title={`อนุมัติโดย ${orderSlips[order.id].reviewed_by || '-'}${orderSlips[order.id].reviewed_at ? ' · ' + new Date(orderSlips[order.id].reviewed_at as string).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : ''}`}
+                                  onClick={() => openEditModal(order)}
+                                  className={cn(
+                                    'font-medium tabular-nums underline-offset-2 hover:underline',
+                                    order.actualShippingFee == null && 'text-warning'
+                                  )}
                                 >
-                                  🧾 ดูสลิป
+                                  ฿{actualShipping}
+                                  {order.actualShippingFee == null ? ' (ยังไม่ระบุ)' : ''}
                                 </button>
-                              )}
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">ต้นทุนสินค้า</span>
+                                <span className="tabular-nums">฿{orderCost.toLocaleString()}</span>
+                              </div>
+                              <Separator className="my-1" />
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium">กำไรสุทธิ</span>
+                                <span
+                                  className={cn(
+                                    'text-base font-semibold tabular-nums',
+                                    orderProfit >= 0 ? 'text-success' : 'text-destructive'
+                                  )}
+                                >
+                                  ฿{orderProfit.toLocaleString()}
+                                </span>
+                              </div>
                             </div>
+                          </div>
+                        </details>
 
-                            <div className="flex flex-wrap gap-1.5 mb-2">
-                              <select
-                                value={order.paymentStatus || 'unpaid'}
-                                onChange={(e) => setPaymentStatus(order, e.target.value as PaymentStatus)}
-                                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-[11px] font-bold text-slate-600 outline-none focus:border-blue-400"
-                              >
-                                <option value="unpaid">⏳ ยังไม่จ่าย</option>
-                                <option value="deposit">💵 มัดจำ</option>
-                                <option value="paid">💰 จ่ายแล้ว</option>
-                              </select>
-                              <select
-                                value={order.status || 'pending'}
-                                onChange={(e) => setOrderStatus(order, e.target.value as OrderStatus)}
-                                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-[11px] font-bold text-slate-600 outline-none focus:border-blue-400"
-                              >
-                                <option value="pending">📦 รอส่ง</option>
-                                <option value="shipped">🚚 ส่งแล้ว</option>
-                                <option value="delivered">✅ ถึงแล้ว</option>
-                                <option value="cancelled">✖ ยกเลิก</option>
-                              </select>
-                            </div>
+                        <Separator />
 
-                            <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                            {order.publicToken && (
-                              <button
+                        {/* ปุ่มทำงาน */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {order.publicToken && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={async () => {
                                   const url = getLiffOrderUrl(order.publicToken!);
-                                  const msg = buildOrderLinkMessage(order.orderNumber || '', order.items || [], order.totalAmount || 0, url);
+                                  const msg = buildOrderLinkMessage(
+                                    order.orderNumber || '',
+                                    order.items || [],
+                                    order.totalAmount || 0,
+                                    url
+                                  );
                                   try {
                                     await navigator.clipboard.writeText(msg);
                                     toast.success('คัดลอกลิงก์ใบสรุปแล้ว');
@@ -828,460 +1232,452 @@ export default function AdminPage() {
                                     toast.error('คัดลอกไม่สำเร็จ');
                                   }
                                 }}
-                                className="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95"
                               >
-                                <Copy className="h-3 w-3" /> คัดลอกลิงก์ใบสรุป
-                              </button>
-                            )}
-                            {order.publicToken && (
-                              <button
+                                <Copy className="size-3.5" /> ลิงก์ใบสรุป
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="ลิงก์สำรองสำหรับลูกค้าที่เปิดลิงก์ LINE ไม่ได้"
                                 onClick={async () => {
                                   // สำรองไว้เวลาลูกค้ากดลิงก์ LIFF ไม่ได้ (LINE เก่า / เปิดจากแอปอื่น)
                                   // ลิงก์นี้เปิดในเบราว์เซอร์ไหนก็ได้ แต่จะไม่ผูกบัญชี LINE ให้
                                   try {
-                                    await navigator.clipboard.writeText(getPublicOrderUrl(order.publicToken!));
-                                    toast.success('คัดลอกลิงก์ธรรมดาแล้ว', { description: 'เปิดได้ทุกเบราว์เซอร์ แต่จะไม่แจ้งเตือนพัสดุอัตโนมัติ' });
+                                    await navigator.clipboard.writeText(
+                                      getPublicOrderUrl(order.publicToken!)
+                                    );
+                                    toast.success('คัดลอกลิงก์ธรรมดาแล้ว', {
+                                      description:
+                                        'เปิดได้ทุกเบราว์เซอร์ แต่จะไม่แจ้งเตือนพัสดุอัตโนมัติ',
+                                    });
                                   } catch {
                                     toast.error('คัดลอกไม่สำเร็จ');
                                   }
                                 }}
-                                className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-400 rounded-lg text-[10px] font-bold transition-all active:scale-95"
-                                title="ลิงก์สำรองสำหรับลูกค้าที่เปิดลิงก์ LINE ไม่ได้"
                               >
                                 สำรอง
-                              </button>
-                            )}
-                            </div>
-
-                            {/* เลขพัสดุ — กรอกแล้วบอท LINE จะเริ่มติดตามให้ลูกค้าทันที */}
-                            <div className="flex items-center gap-1.5 mb-2">
-                              <input
-                                defaultValue={order.trackingNumber || ''}
-                                placeholder="เลขพัสดุ EX123456789TH"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') saveTrackingNumber(order, (e.target as HTMLInputElement).value);
-                                }}
-                                onBlur={(e) => {
-                                  const v = e.target.value.trim().toUpperCase();
-                                  if (v && v !== (order.trackingNumber || '')) saveTrackingNumber(order, v);
-                                }}
-                                className="flex-1 h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-[11px] font-bold text-slate-700 outline-none focus:border-blue-400 uppercase"
-                              />
-                              {order.lineUserId ? (
-                                <span title="ลูกค้าเชื่อม LINE แล้ว จะได้รับแจ้งเตือนอัตโนมัติ" className="text-[10px] font-black text-green-600 bg-green-50 px-2 py-1 rounded-md shrink-0">
-                                  🔔 LINE
-                                </span>
-                              ) : (
-                                <span title="ลูกค้ายังไม่เคยเปิดใบสรุปในแอป LINE จึงแจ้งเตือนอัตโนมัติไม่ได้" className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-md shrink-0">
-                                  ไม่มี LINE
-                                </span>
-                              )}
-                            </div>
-
-                            {(order.customerName || order.customerPhone || order.customerAddress) && (
-                              <div className="mb-2 bg-slate-50 rounded-xl p-2.5 relative group/addr">
-                                {order.customerPhone && <p className="text-xs text-slate-500">📱 {order.customerPhone}</p>}
-                                {order.customerName && <p className="text-xs sm:text-sm text-slate-700 font-bold">👤 {order.customerName}</p>}
-                                {order.customerAddress && <p className="text-xs text-slate-500 mt-0.5">📍 {order.customerAddress}</p>}
-                                {(order.customerPhone || order.customerAddress) && (
-                                  <button
-                                    onClick={() => copyAddress(order)}
-                                    className="absolute top-2 right-2 h-7 px-2.5 bg-white border border-slate-200 hover:border-blue-400 hover:text-blue-600 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 active:scale-95 transition-all shadow-sm"
-                                    title="คัดลอก เบอร์ / ชื่อ / ที่อยู่"
-                                  >
-                                    {copiedAddressId === order.id ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
-                                    {copiedAddressId === order.id ? 'คัดลอกแล้ว' : 'คัดลอกที่อยู่'}
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                            <p className="text-xs text-slate-400">🐟 {(order.totalFish || 0)} ตัว • 📋 {(order.items?.length || 0)} รายการ</p>
-                            
-                            {order.note && <p className="text-xs text-slate-400 mt-1 italic">💬 {order.note}</p>}
-                            
-                            <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-200">
-                              <div className="space-y-1">
-                                {order.items?.map((item: OrderItem, i: number) => {
-                                  // Use getItemCost for breed-based cost
-                                  const itemCost = resolveItemCost(item);
-                                  return (
-                                  <div key={i} className="flex items-center justify-between text-xs sm:text-sm bg-white/50 rounded px-2 py-1">
-                                    <div className="flex items-center gap-1 flex-wrap min-w-0">
-                                      <span className="font-medium text-slate-700 truncate">{item.kind === 'food' ? '🍤 ' : ''}{item.breedName}</span>
-                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${item.kind === 'food' ? 'text-amber-600 bg-amber-50' : 'text-blue-600 bg-blue-50'}`}>
-                                        {item.quantity} {item.kind === 'food' ? 'ชิ้น' : `${item.type === 'piece' ? 'ตัว' : item.type === 'pair' ? 'คู่' : 'ชุด'}${item.type === 'piece' && item.gender !== 'mixed' ? (item.gender === 'male' ? '(ผู้)' : '(เมีย)') : ''}`}
-                                      </span>
-                                      {(item.freeQty || 0) > 0 && <span className="text-[9px] bg-green-100 text-green-600 px-1 rounded shrink-0">แถม {item.freeQty}</span>}
-                                      {(item.discount || 0) > 0 && <span className="text-[9px] bg-orange-100 text-orange-600 px-1 rounded shrink-0">ลด {item.discount}</span>}
-                                    </div>
-                                    <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-1 text-[9px] sm:text-[10px]">
-                                      <span className="text-red-400 font-bold">ทุน:{itemCost * item.quantity}</span>
-                                      <span className="font-bold text-green-600">ขาย:{(item.price * Math.max(0, item.quantity - (item.freeQty || 0))) - (item.discount || 0)}</span>
-                                    </div>
-                                  </div>
-                                )})}
-                                {/* Bill Breakdown */}
-                                {(() => {
-                                  return (
-                                    <>
-                                      <div className="flex items-center justify-between text-xs sm:text-sm bg-blue-50/50 rounded px-2 py-1 mt-1">
-                                        <div className="flex items-center gap-1">
-                                          <span className="font-medium text-blue-700">🚚 ค่าส่ง</span>
-                                        </div>
-                                        <span className="font-bold text-blue-600 shrink-0 ml-2">
-                                          ฿{shippingFee}
-                                        </span>
-                                      </div>
-                                      {(order.discount || 0) > 0 && (
-                                        <div className="flex items-center justify-between text-xs sm:text-sm bg-orange-50/50 rounded px-2 py-1 mt-1 border border-orange-100/50">
-                                          <div className="flex items-center gap-1">
-                                            <span className="font-medium text-orange-700">💸 หักส่วนลดท้ายบิล</span>
-                                          </div>
-                                          <span className="font-black text-orange-600 shrink-0 ml-2">
-                                            -฿{(order.discount || 0).toLocaleString()}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                            </div>
-                            
-                            {/* Cost Summary - Simple */}
-                            <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-200 bg-orange-50/50 rounded-lg sm:rounded-xl p-2 sm:p-3">
-                              <div className="flex items-center justify-between text-[10px] sm:text-xs">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-slate-400">ค่าจัดส่งจริง:</span>
-                                  <button onClick={() => openEditModal(order)} className={`font-bold ${order.actualShippingFee !== undefined && order.actualShippingFee !== null ? 'text-slate-400 hover:text-orange-700' : 'text-orange-400 italic'}`}>
-                                    ฿{actualShipping}{order.actualShippingFee === undefined || order.actualShippingFee === null ? ' (ยังไม่ระบุ)' : ''}
-                                  </button>
-                                </div>
-                                <span className="text-slate-400">ทุนปลา: ฿{orderCost}</span>
-                              </div>
-                              <div className="flex items-center justify-between text-[10px] sm:text-xs mt-1">
-                                <span className="text-slate-400">รายได้สุทธิ:</span>
-                                <span className="text-slate-500 font-bold">฿{(order.totalAmount || 0).toLocaleString()}</span>
-                              </div>
-                              <div className="flex items-center justify-between text-xs sm:text-sm mt-2 pt-2 border-t border-orange-200">
-                                <span className="text-slate-500 font-bold">กำไรสุทธิ:</span>
-                                <span className={`font-black text-lg sm:text-xl ${orderProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                  ฿{orderProfit.toLocaleString()}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <div className="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-200 flex justify-end gap-2">
-                              <button onClick={() => openEditModal(order)} className="h-8 sm:h-9 px-3 sm:px-4 bg-blue-100 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition-all text-xs sm:text-sm font-bold" title="แก้ไข">
-                                <Edit2 className="h-3 w-3 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">แก้ไข</span>
-                              </button>
-                              <button onClick={() => deleteOrder(order.id)} className="h-8 sm:h-9 px-3 sm:px-4 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition-all text-xs sm:text-sm font-bold" title="ลบ">
-                                <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">ลบ</span>
-                              </button>
-                            </div>
+                              </Button>
+                            </>
+                          )}
+                          <div className="ml-auto flex gap-2">
+                            <Button variant="outline" size="sm" onClick={() => openEditModal(order)}>
+                              <Edit2 className="size-3.5" /> แก้ไข
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => setOrderToDelete(order)}
+                            >
+                              <Trash2 className="size-3.5" /> ลบ
+                            </Button>
                           </div>
-                        )})}
-                      </div>
-                    </div>
+                        </div>
+                      </CardContent>
+                    </Card>
                   );
-                })()}
-              </>
-            ) : (
-              <>
-                {/* Dashboard Stats - Revenue & Profit */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                  <div className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl text-white">
-                    <p className="text-[10px] uppercase tracking-widest text-blue-100 mb-1">จำนวนบิล</p>
-                    <p className="font-black text-3xl">{dashboardStats.totalOrders}</p>
-                  </div>
-                  <div className="p-5 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl text-white">
-                    <p className="text-[10px] uppercase tracking-widest text-green-100 mb-1">ยอดขายรวม</p>
-                    <p className="font-black text-3xl">฿{dashboardStats.totalSales.toLocaleString()}</p>
-                  </div>
-                  <div className="p-5 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl text-white">
-                    <p className="text-[10px] uppercase tracking-widest text-indigo-100 mb-1">กำไรสุทธิ</p>
-                    <p className="font-black text-3xl">฿{dashboardStats.totalProfit.toLocaleString()}</p>
-                  </div>
-                  <div className="p-5 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl text-white">
-                    <p className="text-[10px] uppercase tracking-widest text-purple-100 mb-1">จำนวนปลาทั้งหมด</p>
-                    <p className="font-black text-3xl">{dashboardStats.totalFish}</p>
-                  </div>
-                  <div className="p-5 bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl text-white">
-                    <p className="text-[10px] uppercase tracking-widest text-orange-100 mb-1">เฉลี่ย/บิล</p>
-                    <p className="font-black text-3xl">฿{Math.round(dashboardStats.avgOrderValue).toLocaleString()}</p>
-                  </div>
-                </div>
-
-                {/* Cost Breakdown */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                  <div className="p-5 bg-white border-2 border-pink-200 rounded-2xl">
-                    <p className="text-[10px] uppercase tracking-widest text-pink-500 mb-1">🎁 ของแถมฟรี</p>
-                    <p className="font-black text-2xl text-pink-600">{dashboardStats.totalFreeQty} <span className="text-sm font-bold text-pink-400">ตัว</span></p>
-                    <p className="text-xs text-slate-400 mt-1">มูลค่า ฿{dashboardStats.totalFreeValue.toLocaleString()}</p>
-                  </div>
-                  <div className="p-5 bg-white border-2 border-amber-200 rounded-2xl">
-                    <p className="text-[10px] uppercase tracking-widest text-amber-500 mb-1">🍤 ต้นทุนอาหาร</p>
-                    <p className="font-black text-2xl text-amber-600">฿{dashboardStats.totalFoodCost.toLocaleString()}</p>
-                    <p className="text-xs text-slate-400 mt-1">จ่ายคนละเจ้ากับปลา</p>
-                  </div>
-                  <div className="p-5 bg-white border-2 border-slate-200 rounded-2xl">
-                    <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-1">🐟 ต้นทุนปลา</p>
-                    <p className="font-black text-2xl text-slate-700">฿{dashboardStats.totalFishCost.toLocaleString()}</p>
-                  </div>
-                  <div className="p-5 bg-white border-2 border-slate-200 rounded-2xl">
-                    <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-1">รายได้ค่าส่ง</p>
-                    <p className="font-black text-2xl text-green-600">฿{dashboardStats.totalShippingIncome.toLocaleString()}</p>
-                    <p className="text-xs text-slate-400 mt-1">จ่ายจริง ฿{dashboardStats.totalShippingCost.toLocaleString()}</p>
-                  </div>
-                  <div className="p-5 bg-white border-2 border-slate-200 rounded-2xl">
-                    <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-1">กำไรค่าส่ง</p>
-                    <p className="font-black text-2xl text-green-600">฿{(dashboardStats.totalShippingIncome - dashboardStats.totalShippingCost).toLocaleString()}</p>
-                  </div>
-                  <div className="p-5 bg-white border-2 border-slate-200 rounded-2xl">
-                    <p className="text-[10px] uppercase tracking-widest text-slate-400 mb-1">ยอดรวมสุทธิ</p>
-                    <p className="font-black text-2xl text-indigo-600">฿{(dashboardStats.totalSales - dashboardStats.totalFishCost - dashboardStats.totalShippingCost).toLocaleString()}</p>
-                  </div>
-                </div>
-
-                {/* Fish Count */}
-                <div className="mb-8">
-                  <div className="p-5 bg-orange-50 border-2 border-orange-100 rounded-2xl">
-                    <p className="text-xs uppercase tracking-widest text-orange-600 font-bold mb-2">🐟 จำนวนปลาทั้งหมด</p>
-                    <p className="font-black text-3xl text-orange-600">{dashboardStats.totalFish} <span className="text-sm font-bold text-orange-400">ตัว</span></p>
-                  </div>
-                </div>
-
-                {/* Top Breeds */}
-                {dashboardStats.topBreeds.length > 0 && (
-                  <div className="mb-8">
-                    <h3 className="font-black text-lg text-slate-800 mb-4">🏆 สายพันธุ์ขายดี</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                      {dashboardStats.topBreeds.map((breed: any, idx: number) => {
-                        const profit = breed.sales - breed.cost;
-                        return (
-                        <div key={idx} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-lg">🐟</span>
-                            <span className="font-bold text-xs text-slate-600 truncate">{breed.name}</span>
-                          </div>
-                          <p className="font-black text-lg text-slate-800">฿{breed.sales.toLocaleString()}</p>
-                          <p className="text-xs text-slate-400">{breed.qty} ตัว</p>
-                          <p className={`text-xs font-black mt-1 ${profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                            กำไร {profit >= 0 ? '+' : ''}฿{profit.toLocaleString()}
-                          </p>
-                        </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Top Customers */}
-                {dashboardStats.topCustomers.length > 0 && (
-                  <div>
-                    <h3 className="font-black text-lg text-slate-800 mb-4">👥 ลูกค้าประจำ</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                      {dashboardStats.topCustomers.map((customer: any, idx: number) => (
-                        <div key={idx} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                          <p className="font-bold text-xs text-slate-600 truncate">{customer.name}</p>
-                          <p className="font-black text-lg text-slate-800">฿{customer.totalSpent.toLocaleString()}</p>
-                          <p className="text-xs text-slate-400">{customer.orders} บิล • {customer.totalFish} ตัว</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
+                })}
+              </div>
             )}
-          </div>
-        </div>
-      </main>
+          </TabsContent>
 
-      {/* Edit Order Modal */}
-      {isEditingOrder && editingOrder && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-2 sm:p-4">
-          <div className="bg-white w-full max-w-2xl lg:max-w-4xl max-h-[95vh] sm:max-h-[90vh] rounded-2xl sm:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
-            <div className="p-4 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-orange-500 to-orange-600">
-              <div className="flex items-center gap-3">
-                <div className="p-2 sm:p-3 bg-white/20 rounded-xl sm:rounded-2xl"><Edit2 className="h-5 w-5 sm:h-6 sm:w-6 text-white" /></div>
-                <div>
-                  <h2 className="font-black text-lg sm:text-xl text-white tracking-tight">แก้ไขออเดอร์</h2>
-                  <p className="text-orange-200 text-xs sm:text-sm">#{editingOrder.id?.slice(-6)}</p>
-                </div>
-              </div>
-              <button onClick={() => { setIsEditingOrder(false); setEditingOrder(null); }} className="h-10 w-10 sm:h-12 sm:w-12 bg-white/20 hover:bg-white/30 rounded-xl sm:rounded-2xl flex items-center justify-center text-white transition-all"><X className="h-5 w-5 sm:h-6 sm:w-6" /></button>
+          {/* ───────── สรุปยอด ───────── */}
+          <TabsContent value="dashboard" className="mt-4 space-y-6">
+            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-5">
+              <Stat label="จำนวนบิล" value={dashboardStats.totalOrders} />
+              <Stat
+                label="ยอดขายรวม"
+                value={`฿${dashboardStats.totalSales.toLocaleString()}`}
+                accent="success"
+              />
+              <Stat
+                label="กำไรสุทธิ"
+                value={`฿${dashboardStats.totalProfit.toLocaleString()}`}
+                accent={dashboardStats.totalProfit >= 0 ? 'primary' : 'destructive'}
+              />
+              <Stat label="จำนวนปลา" value={`${dashboardStats.totalFish} ตัว`} />
+              <Stat
+                label="เฉลี่ย/บิล"
+                value={`฿${Math.round(dashboardStats.avgOrderValue).toLocaleString()}`}
+              />
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:gap-y-4 lg:items-start">
-              {/* ── ข้อมูลลูกค้า / ที่อยู่จัดส่ง ── (ซ้ายบน บนจอคอมพ์) */}
-              <div className="bg-slate-50 rounded-2xl p-3 sm:p-4 space-y-3 lg:col-start-1 lg:row-start-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ข้อมูลลูกค้า / ที่อยู่จัดส่ง</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm" placeholder="👤 ชื่อลูกค้า" />
-                  <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm" placeholder="📱 เบอร์โทร" />
-                </div>
-                <textarea value={editAddress} onChange={(e) => setEditAddress(e.target.value)} rows={2} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm resize-y" placeholder="📍 ที่อยู่จัดส่ง" />
-                <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)} className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-blue-400 text-sm" placeholder="📝 หมายเหตุ" />
-              </div>
 
-              {/* Edit Items Section — ส่วนที่แก้บ่อยสุด: ขวาเต็มความสูงบนจอคอมพ์, บนสุดถัดจากลูกค้าบนมือถือ */}
-              <div className="lg:col-start-2 lg:row-start-1 lg:row-span-2">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold text-blue-500 uppercase tracking-wider block">🐟 รายการปลา</label>
-                  <select
-                    onChange={(e) => { if (e.target.value) { addEditItem(e.target.value); e.target.value = ''; } }}
-                    className="h-8 sm:h-9 bg-blue-50 border border-blue-200 rounded-lg px-2 sm:px-3 text-xs sm:text-sm font-bold text-blue-600 outline-none focus:border-blue-400"
-                    value=""
-                  >
-                    <option value="">+ เพิ่มปลา</option>
-                    {breeds.map((breed: Breed) => (
-                      <option key={breed.id} value={breed.id}>{breed.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  {editItems.map((item: OrderItem, idx: number) => {
-                    // อาหาร: แก้แค่จำนวน ไม่มีสายพันธุ์/เพศ/ชนิด (กันข้อมูลเพี้ยน)
-                    if (item.kind === 'food') {
+            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6">
+              <Stat
+                label="🎁 ของแถมฟรี"
+                value={`${dashboardStats.totalFreeQty} ตัว`}
+                hint={`มูลค่า ฿${dashboardStats.totalFreeValue.toLocaleString()}`}
+              />
+              <Stat
+                label="🍤 ยอดขายอาหาร"
+                value={`฿${dashboardStats.totalFoodSales.toLocaleString()}`}
+                hint={`ทุน ฿${dashboardStats.totalFoodCost.toLocaleString()}`}
+              />
+              <Stat label="🐟 ต้นทุนปลา" value={`฿${dashboardStats.totalFishCost.toLocaleString()}`} />
+              <Stat
+                label="รายได้ค่าส่ง"
+                value={`฿${dashboardStats.totalShippingIncome.toLocaleString()}`}
+                hint={`จ่ายจริง ฿${dashboardStats.totalShippingCost.toLocaleString()}`}
+              />
+              <Stat
+                label="กำไรค่าส่ง"
+                value={`฿${(dashboardStats.totalShippingIncome - dashboardStats.totalShippingCost).toLocaleString()}`}
+                accent="success"
+              />
+              <Stat
+                label="ยอดรวมสุทธิ"
+                value={`฿${(dashboardStats.totalSales - dashboardStats.totalFishCost - dashboardStats.totalShippingCost).toLocaleString()}`}
+                accent="primary"
+              />
+            </div>
+
+            {dashboardStats.topBreeds.length > 0 && (
+              <section>
+                <h3 className="mb-2 font-medium">🏆 สายพันธุ์ขายดี</h3>
+                <Card className="gap-0 py-0">
+                  <div className="divide-y">
+                    {dashboardStats.topBreeds.map((breed: any, idx: number) => {
+                      const profit = breed.sales - breed.cost;
                       return (
-                        <div key={idx} className="bg-amber-50 rounded-xl border-2 border-amber-100 relative pt-4 pb-3 px-3 sm:px-4 mt-3">
-                          <button onClick={() => removeEditItem(idx)} className="absolute -top-2.5 -right-2.5 h-6 w-6 sm:h-7 sm:w-7 bg-red-100 hover:bg-red-500 text-red-500 hover:text-white rounded-full flex items-center justify-center transition-all shadow-sm z-10 border border-white">
-                            <X className="h-3 w-3 sm:h-4 sm:w-4" />
-                          </button>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-sm text-slate-700 min-w-0 truncate">🍤 {item.breedName}</span>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <input
-                                type="number" min="1" value={item.quantity === 0 ? '' : item.quantity}
-                                onChange={(e) => updateEditItem(idx, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
-                                className="w-14 h-9 bg-white border border-amber-200 rounded-lg px-2 text-sm font-black text-amber-700 text-center outline-none focus:border-amber-400"
-                              />
-                              <span className="text-sm font-black text-slate-600 w-16 text-right">฿{(item.price * item.quantity).toLocaleString()}</span>
-                            </div>
+                        <div key={idx} className="flex items-center gap-3 px-4 py-2.5">
+                          <span className="text-muted-foreground w-5 shrink-0 text-sm tabular-nums">
+                            {idx + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{breed.name}</p>
+                            <p className="text-muted-foreground text-xs">{breed.qty} รายการ</p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-sm font-semibold tabular-nums">
+                              ฿{breed.sales.toLocaleString()}
+                            </p>
+                            <p
+                              className={cn(
+                                'text-xs font-medium tabular-nums',
+                                profit >= 0 ? 'text-success' : 'text-destructive'
+                              )}
+                            >
+                              กำไร {profit >= 0 ? '+' : ''}฿{profit.toLocaleString()}
+                            </p>
                           </div>
                         </div>
                       );
-                    }
-                    return (
-                      <div key={idx} className="bg-white rounded-xl sm:rounded-2xl border-2 border-slate-100 shadow-sm relative pt-4 pb-3 sm:pb-4 px-3 sm:px-4 mt-3">
-                        <button onClick={() => removeEditItem(idx)} className="absolute -top-2.5 -right-2.5 h-6 w-6 sm:h-7 sm:w-7 bg-red-100 hover:bg-red-500 text-red-500 hover:text-white rounded-full flex items-center justify-center transition-all shadow-sm z-10 border border-white">
-                          <X className="h-3 w-3 sm:h-4 sm:w-4" />
-                        </button>
+                    })}
+                  </div>
+                </Card>
+              </section>
+            )}
 
-                        <div className="grid grid-cols-12 gap-2 sm:gap-3 mb-3">
-                          <div className="col-span-12 sm:col-span-4">
-                            <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">🐟 สายพันธุ์</label>
-                            <select
-                              value={item.breedId}
-                              onChange={(e) => updateEditItem(idx, 'breedId', e.target.value)}
-                              className="w-full h-9 sm:h-10 bg-slate-50 border border-slate-200 rounded-lg px-2 sm:px-3 text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                            >
-                              {breeds.map((b: Breed) => (
-                                <option key={b.id} value={b.id}>{b.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className={item.type === 'piece' ? "col-span-8 sm:col-span-5" : "col-span-12 sm:col-span-8"}>
-                            <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">ชนิด</label>
-                            <select
-                              value={item.type}
-                              onChange={(e) => updateEditItem(idx, 'type', e.target.value)}
-                              className="w-full h-9 sm:h-10 bg-slate-50 border border-slate-200 rounded-lg px-2 text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                            >
-                              <option value="piece">ตัว</option>
-                              <option value="pair">คู่</option>
-                              <option value="set">ชุด</option>
-                            </select>
-                          </div>
-                          {item.type === 'piece' && (
-                            <div className="col-span-4 sm:col-span-3">
-                              <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1">เพศ</label>
-                              <select
-                                value={item.gender || 'mixed'}
-                                onChange={(e) => updateEditItem(idx, 'gender', e.target.value)}
-                                className="w-full h-9 sm:h-10 bg-slate-50 border border-slate-200 rounded-lg px-2 text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                              >
-                                <option value="male">ผู้</option>
-                                <option value="female">เมีย</option>
-                                <option value="mixed">รวม</option>
-                              </select>
-                            </div>
-                          )}
+            {dashboardStats.topCustomers.length > 0 && (
+              <section>
+                <h3 className="mb-2 font-medium">👥 ลูกค้าประจำ</h3>
+                <Card className="gap-0 py-0">
+                  <div className="divide-y">
+                    {dashboardStats.topCustomers.map((customer: any, idx: number) => (
+                      <div key={idx} className="flex items-center gap-3 px-4 py-2.5">
+                        <span className="text-muted-foreground w-5 shrink-0 text-sm tabular-nums">
+                          {idx + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{customer.name}</p>
+                          <p className="text-muted-foreground text-xs">
+                            {customer.orders} บิล · {customer.totalFish} ตัว
+                          </p>
                         </div>
-                        
-                        <div className="grid grid-cols-3 gap-2 sm:gap-3 pt-3 border-t border-slate-100">
-                          <div>
-                            <label className="text-[10px] sm:text-xs text-blue-600 font-bold block mb-1 text-center">จำนวน</label>
-                            <input
-                              type="number"
-                              min="1"
-                              placeholder="1"
-                              value={item.quantity === 0 ? '' : item.quantity}
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value);
-                                updateEditItem(idx, 'quantity', isNaN(val) ? 0 : Math.max(0, val));
-                              }}
-                              className="w-full h-9 sm:h-10 bg-blue-50/50 border border-blue-100 rounded-lg text-xs sm:text-sm font-black text-blue-700 text-center outline-none focus:border-blue-400"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] sm:text-xs text-green-600 font-bold block mb-1 text-center">แถม</label>
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.freeQty || ''}
-                              placeholder="0"
-                              onChange={(e) => updateEditItem(idx, 'freeQty', parseInt(e.target.value) || 0)}
-                              className="w-full h-9 sm:h-10 bg-green-50/50 border border-green-100 rounded-lg text-xs sm:text-sm font-black text-green-700 text-center outline-none focus:border-green-400"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] sm:text-xs text-slate-500 font-bold block mb-1 text-center">หน่วยละ</label>
-                            <div className="w-full h-9 sm:h-10 bg-slate-100 rounded-lg text-xs sm:text-sm font-black text-slate-500 flex items-center justify-center">
-                              ฿{item.price}
-                            </div>
-                          </div>
-                        </div>
+                        <p className="shrink-0 text-sm font-semibold tabular-nums">
+                          ฿{customer.totalSpent.toLocaleString()}
+                        </p>
                       </div>
-                    );
-                  })}
-                  {editItems.length === 0 && (
-                    <p className="text-center text-slate-400 text-xs sm:text-sm py-3 sm:py-4">ยังไม่มีรายการปลา</p>
-                  )}
+                    ))}
+                  </div>
+                </Card>
+              </section>
+            )}
+          </TabsContent>
+
+          {/* ───────── สลิป ───────── */}
+          <TabsContent value="slips" className="mt-4">
+            <PendingSlips onConfirmed={() => loadAllOrders(reportPeriod)} />
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* ───────── แก้ไขออเดอร์ ───────── */}
+      <ResponsiveModal
+        open={isEditingOrder}
+        onOpenChange={(open) => {
+          setIsEditingOrder(open);
+          if (!open) setEditingOrder(null);
+        }}
+      >
+        <ResponsiveModalContent className="sm:max-w-3xl">
+          <ResponsiveModalHeader>
+            <ResponsiveModalTitle>
+              แก้ไขออเดอร์ {editingOrder?.orderNumber || ''}
+            </ResponsiveModalTitle>
+          </ResponsiveModalHeader>
+
+          <ResponsiveModalBody className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0">
+            {/* ── ข้อมูลลูกค้า / ที่อยู่จัดส่ง ── */}
+            <div className="space-y-3 lg:col-start-1 lg:row-start-1">
+              <p className="text-muted-foreground text-sm font-medium">ข้อมูลลูกค้า / ที่อยู่จัดส่ง</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="e-name">ชื่อลูกค้า</Label>
+                  <Input id="e-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="e-phone">เบอร์โทร</Label>
+                  <Input
+                    id="e-phone"
+                    type="tel"
+                    inputMode="tel"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                  />
                 </div>
               </div>
-
-              {/* ── ค่าส่ง / ส่วนลดท้ายบิล ── (ซ้ายล่าง บนจอคอมพ์) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 lg:col-start-1 lg:row-start-2">
-                <div>
-                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block mb-2">🚚 ค่าจัดส่งจริง (ต้นทุนที่เสียไป)</label>
-                  <input type="number" value={editActualShipping} onChange={(e) => setEditActualShipping(e.target.value)} placeholder="ยังไม่ระบุ" className="w-full h-10 sm:h-12 bg-orange-50 border border-orange-200 rounded-xl px-3 sm:px-4 font-bold text-orange-700 outline-none focus:border-orange-400 text-sm sm:text-base" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-orange-600 uppercase tracking-wider block mb-2">💸 ส่วนลดท้ายบิลบัญชีนี้</label>
-                  <input type="number" value={editDiscount} onChange={(e) => setEditDiscount(e.target.value)} placeholder="0" className="w-full h-10 sm:h-12 bg-orange-100 border border-orange-300 rounded-xl px-3 sm:px-4 font-black text-orange-700 outline-none focus:border-orange-500 text-sm sm:text-base" />
-                </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="e-address">ที่อยู่จัดส่ง</Label>
+                <Textarea
+                  id="e-address"
+                  rows={2}
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="e-note">หมายเหตุ</Label>
+                <Input id="e-note" value={editNote} onChange={(e) => setEditNote(e.target.value)} />
               </div>
             </div>
 
-            <div className="p-3 sm:p-6 border-t border-slate-100 bg-slate-50 space-y-2 sm:space-y-3">
-              {/* ยอดรวมสด — เห็นผลก่อนบันทึก */}
-              {(() => {
-                const itemsTotal = editItems.reduce((s, it) => s + (it.price * Math.max(0, it.quantity - (it.freeQty || 0))) - (it.discount || 0), 0);
+            {/* ── ค่าส่ง / ส่วนลด ── */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:col-start-1 lg:row-start-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="e-shipping">ค่าจัดส่งจริง (ต้นทุน)</Label>
+                <Input
+                  id="e-shipping"
+                  type="number"
+                  inputMode="numeric"
+                  value={editActualShipping}
+                  onChange={(e) => setEditActualShipping(e.target.value)}
+                  placeholder="ยังไม่ระบุ"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="e-discount">ส่วนลดท้ายบิล</Label>
+                <Input
+                  id="e-discount"
+                  type="number"
+                  inputMode="numeric"
+                  value={editDiscount}
+                  onChange={(e) => setEditDiscount(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            {/* ── รายการปลา ── */}
+            <div className="space-y-2 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+              <div className="flex items-center justify-between gap-2">
+                <Label>รายการสินค้า</Label>
+                <Select value="" onValueChange={(v) => v && addEditItem(v)}>
+                  <SelectTrigger size="sm" className="w-40">
+                    <span className="flex items-center gap-1.5">
+                      <Plus className="size-3.5" /> เพิ่มปลา
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {breeds.map((breed: Breed) => (
+                      <SelectItem key={breed.id} value={breed.id}>
+                        {breed.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                {editItems.map((item: OrderItem, idx: number) => {
+                  // อาหาร: แก้แค่จำนวน ไม่มีสายพันธุ์/เพศ/ชนิด (กันข้อมูลเพี้ยน)
+                  if (item.kind === 'food') {
+                    return (
+                      <div
+                        key={idx}
+                        className="bg-warning/8 flex items-center justify-between gap-2 rounded-lg border p-3"
+                      >
+                        <span className="min-w-0 truncate text-sm font-medium">
+                          🍤 {item.breedName}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Input
+                            type="number"
+                            min="1"
+                            value={item.quantity === 0 ? '' : item.quantity}
+                            onChange={(e) =>
+                              updateEditItem(idx, 'quantity', Math.max(1, parseInt(e.target.value) || 1))
+                            }
+                            className="h-9 w-16 text-center"
+                          />
+                          <span className="w-16 text-right text-sm font-semibold tabular-nums">
+                            ฿{(item.price * item.quantity).toLocaleString()}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="ลบรายการ"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => removeEditItem(idx)}
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={idx} className="space-y-2.5 rounded-lg border p-3">
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={item.breedId}
+                          onValueChange={(v) => updateEditItem(idx, 'breedId', v)}
+                        >
+                          <SelectTrigger size="sm" className="min-w-0 flex-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {breeds.map((b: Breed) => (
+                              <SelectItem key={b.id} value={b.id}>
+                                {b.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="ลบรายการ"
+                          className="text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={() => removeEditItem(idx)}
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-muted-foreground text-xs">หน่วยขาย</Label>
+                          <Select value={item.type} onValueChange={(v) => updateEditItem(idx, 'type', v)}>
+                            <SelectTrigger size="sm" className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="piece">ตัว</SelectItem>
+                              <SelectItem value="pair">คู่</SelectItem>
+                              <SelectItem value="set">ชุด</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {item.type === 'piece' && (
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">เพศ</Label>
+                            <Select
+                              value={item.gender || 'mixed'}
+                              onValueChange={(v) => updateEditItem(idx, 'gender', v)}
+                            >
+                              <SelectTrigger size="sm" className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="male">ผู้</SelectItem>
+                                <SelectItem value="female">เมีย</SelectItem>
+                                <SelectItem value="mixed">รวม</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-muted-foreground text-xs">จำนวน</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="1"
+                            value={item.quantity === 0 ? '' : item.quantity}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              updateEditItem(idx, 'quantity', isNaN(val) ? 0 : Math.max(0, val));
+                            }}
+                            className="h-9 text-center"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-muted-foreground text-xs">แถม</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={item.freeQty || ''}
+                            onChange={(e) => updateEditItem(idx, 'freeQty', parseInt(e.target.value) || 0)}
+                            className="h-9 text-center"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-muted-foreground text-xs">หน่วยละ</Label>
+                          <div className="bg-muted flex h-9 items-center justify-center rounded-md text-sm font-medium tabular-nums">
+                            ฿{item.price.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {editItems.length === 0 && (
+                  <p className="text-muted-foreground py-4 text-center text-sm">ยังไม่มีรายการ</p>
+                )}
+              </div>
+            </div>
+          </ResponsiveModalBody>
+
+          <ResponsiveModalFooter className="space-y-2">
+            {/* ยอดรวมสด — เห็นผลก่อนบันทึก */}
+            {editingOrder &&
+              (() => {
+                const itemsTotal = editItems.reduce(
+                  (s, it) => s + (it.price * Math.max(0, it.quantity - (it.freeQty || 0)) - (it.discount || 0)),
+                  0
+                );
                 const grand = itemsTotal - (Number(editDiscount) || 0) + (editingOrder.shippingFee ?? 60);
                 return (
-                  <div className="flex items-center justify-between px-1 pb-1">
-                    <span className="text-xs font-bold text-slate-500">ยอดรวมใหม่ (รวมค่าส่ง ฿{editingOrder.shippingFee ?? 60})</span>
-                    <span className="font-black text-xl text-orange-600">฿{grand.toLocaleString()}</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-sm">
+                      ยอดรวมใหม่ (รวมค่าส่ง ฿{editingOrder.shippingFee ?? 60})
+                    </span>
+                    <span className="text-primary text-xl font-semibold tabular-nums">
+                      ฿{grand.toLocaleString()}
+                    </span>
                   </div>
                 );
               })()}
-              <button
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                size="lg"
                 onClick={() => {
                   const message = buildOrderMessage({
                     items: editItems,
-                    totalFish: editItems.reduce((s, it) => s + (it.type === 'piece' ? it.quantity : it.type === 'pair' ? it.quantity * 2 : it.quantity * 3), 0),
-                    shippingFee: editingOrder.shippingFee ?? 60,
+                    totalFish: editItems.reduce(
+                      (s, it) =>
+                        s + (it.type === 'piece' ? it.quantity : it.type === 'pair' ? it.quantity * 2 : it.quantity * 3),
+                      0
+                    ),
+                    shippingFee: editingOrder?.shippingFee ?? 60,
                     billDiscount: Number(editDiscount) || 0,
                     bankInfo,
                     customerName: editName,
@@ -1297,48 +1693,76 @@ export default function AdminPage() {
                     });
                   }
                 }}
-                className={cn("w-full h-12 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 border-2", editCopySuccess ? "bg-blue-600 border-blue-600 text-white" : "bg-white text-slate-600 border-slate-200")}
               >
-                {editCopySuccess ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                {editCopySuccess ? 'Copied!' : 'Copy Message'}
-              </button>
-              <button
-                onClick={updateOrder}
-                className="w-full h-14 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black uppercase text-sm tracking-widest transition-all flex items-center justify-center gap-2"
-              >
-                <Save className="h-5 w-5" />
-                บันทึกการแก้ไข
-              </button>
+                {editCopySuccess ? <Check className="size-4" /> : <Copy className="size-4" />}
+                {editCopySuccess ? 'คัดลอกแล้ว' : 'คัดลอกข้อความ'}
+              </Button>
+              <Button size="lg" onClick={updateOrder}>
+                <Save className="size-4" /> บันทึก
+              </Button>
             </div>
-          </div>
-        </div>
-      )}
-      {/* Modal ดูสลิป */}
-      {slipModalUrl && (
-        <div
-          className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4"
-          onClick={() => setSlipModalUrl(null)}
-        >
-          <button
-            onClick={() => setSlipModalUrl(null)}
-            className="absolute top-4 right-4 h-10 w-10 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center text-xl"
-            aria-label="ปิด"
-          >
-            ✕
-          </button>
+          </ResponsiveModalFooter>
+        </ResponsiveModalContent>
+      </ResponsiveModal>
+
+      {/* ───────── ยืนยันลบบิล ───────── */}
+      <Dialog open={!!orderToDelete} onOpenChange={(open) => !open && setOrderToDelete(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>ลบบิลนี้?</DialogTitle>
+            <DialogDescription>ลบแล้วกู้คืนไม่ได้ ยอดขายและกำไรของช่วงนี้จะเปลี่ยนตามด้วย</DialogDescription>
+          </DialogHeader>
+
+          {orderToDelete && (
+            <div className="bg-muted/50 space-y-1 rounded-lg px-3 py-2.5 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-primary font-medium">{orderToDelete.orderNumber}</span>
+                <span className="font-semibold tabular-nums">
+                  ฿{(orderToDelete.totalAmount || 0).toLocaleString()}
+                </span>
+              </div>
+              {orderToDelete.customerName && (
+                <p className="text-muted-foreground">{orderToDelete.customerName}</p>
+              )}
+              <p className="text-muted-foreground text-xs">
+                {new Date(orderToDelete.created_at).toLocaleString('th-TH', {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })}{' '}
+                · {orderToDelete.items?.length || 0} รายการ
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setOrderToDelete(null)} disabled={deleting}>
+              ยกเลิก
+            </Button>
+            <Button variant="destructive" onClick={deleteOrder} disabled={deleting}>
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              ลบบิล
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───────── ดูสลิป ───────── */}
+      <Dialog open={!!slipModalUrl} onOpenChange={(open) => !open && setSlipModalUrl(null)}>
+        <DialogContent className="max-w-[min(32rem,calc(100%-2rem))] bg-transparent p-0 shadow-none">
+          <DialogTitle className="sr-only">สลิปโอนเงิน</DialogTitle>
           {slipModalUrl === 'loading' ? (
-            <Loader2 className="h-8 w-8 animate-spin text-white" />
-          ) : (
-            // กดที่รูปไม่ปิด (หยุด propagation) ให้ซูมดูได้ กดพื้นหลังถึงปิด
+            <div className="flex h-56 items-center justify-center">
+              <Loader2 className="size-8 animate-spin text-white" />
+            </div>
+          ) : slipModalUrl ? (
             <img
               src={slipModalUrl}
               alt="สลิปโอนเงิน"
-              onClick={(e) => e.stopPropagation()}
-              className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl"
+              className="max-h-[85dvh] w-full rounded-xl object-contain"
             />
-          )}
-        </div>
-      )}
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

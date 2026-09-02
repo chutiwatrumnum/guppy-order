@@ -219,7 +219,7 @@ export default function PublicOrderPage() {
     // iPhone บางรุ่นส่ง HEIC มา ถ้าเจอก็บอกให้ส่งทางไลน์แทน ไม่ปล่อยให้งง
     const allowed = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowed.includes(file.type)) {
-      toast.error('รองรับเฉพาะไฟล์ JPG, PNG, WebP\nถ้าส่งไม่ได้ รบกวนส่งสลิปในไลน์แทนครับ');
+      toast.error('รองรับเฉพาะไฟล์ JPG, PNG, WebP\nถ้าเป็นไฟล์แบบอื่น รบกวนถ่ายภาพหน้าจอแล้วส่งใหม่ครับ');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -237,7 +237,7 @@ export default function PublicOrderPage() {
 
     if (uploadError) {
       setUploading(false);
-      toast.error('อัปโหลดไม่สำเร็จ รบกวนลองใหม่ หรือส่งสลิปในไลน์ก็ได้ครับ');
+      toast.error('อัปโหลดไม่สำเร็จ รบกวนลองใหม่อีกครั้ง หรือทักหาแอดมินได้เลยครับ');
       return;
     }
 
@@ -255,7 +255,7 @@ export default function PublicOrderPage() {
           ? 'ออเดอร์นี้จัดส่งแล้ว ไม่ต้องส่งสลิปเพิ่มครับ'
           : reason === 'too_many'
             ? 'ส่งสลิปมาหลายใบแล้ว รอทางร้านตรวจสอบสักครู่นะครับ'
-            : 'บันทึกสลิปไม่สำเร็จ รบกวนส่งในไลน์แทนครับ'
+            : 'บันทึกสลิปไม่สำเร็จ รบกวนลองใหม่ หรือทักหาแอดมินได้เลยครับ'
       );
       return;
     }
@@ -475,7 +475,7 @@ export default function PublicOrderPage() {
                     </p>
                   )}
                   <p className="text-muted-foreground mt-3 text-center text-xs">
-                    หรือส่งสลิปในไลน์ก็ได้เหมือนกันครับ 🙏
+                    แนบที่นี่ทางเดียวนะครับ ระบบจะได้รู้ว่าเป็นของบิลไหนทันที 🙏
                   </p>
                 </>
               )}

@@ -67,7 +67,10 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
 
   // <a download> ไม่ทำงานใน in-app browser ของ LINE ทั้ง iOS และ Android
   // (webview บล็อกการดาวน์โหลด และ iOS ไม่รองรับ download กับ data: URL อยู่แล้ว)
-  // ปุ่มเดิมจึงกดแล้วไม่มีอะไรเกิดขึ้น — เช็คก่อนว่าแชร์ไฟล์ได้จริงค่อยโชว์ปุ่ม
+  //
+  // Web Share ใช้ได้บางเครื่อง แต่ "ซ่อนปุ่มเมื่อใช้ไม่ได้" ก็แย่พอกัน —
+  // คนกดหาปุ่มบันทึกแล้วไม่เจอ ย่อมสรุปว่าระบบพัง
+  // ปุ่มจึงโชว์เสมอ กดแล้วได้อย่างใดอย่างหนึ่ง: แชร์จริง หรือบอกวิธีที่ได้ผลแน่
   useEffect(() => {
     if (!dataUrl) {
       setCanShare(false);
@@ -81,14 +84,20 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
     }
   }, [dataUrl]);
 
+  const longPressHint = 'กดค้างที่รูป QR ด้านบน แล้วเลือก "บันทึกรูปภาพ" ครับ';
+
   const shareQr = async () => {
+    if (!canShare) {
+      toast.info(longPressHint, { duration: 6000 });
+      return;
+    }
     try {
       const file = dataUrlToFile(dataUrl, `promptpay-${reference || Math.round(amount)}.png`);
       await navigator.share({ files: [file], title: `พร้อมเพย์ ฿${amount.toLocaleString()}` });
     } catch (err: any) {
       // ผู้ใช้กดยกเลิกเองไม่ใช่ error ที่ต้องบอก
       if (err?.name === 'AbortError') return;
-      toast.error('บันทึกไม่สำเร็จ ลองกดค้างที่รูปเพื่อบันทึกแทนครับ');
+      toast.info(longPressHint, { duration: 6000 });
     }
   };
 
@@ -135,15 +144,13 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
         ลูกค้าไม่ต้องพิมพ์ยอดเอง
       </p>
 
-      {canShare ? (
-        <Button variant="outline" size="sm" className="mt-3" onClick={shareQr}>
-          <Share2 className="size-3.5" /> บันทึก / แชร์รูป QR
-        </Button>
-      ) : null}
+      <Button variant="outline" size="sm" className="mt-3" onClick={shareQr}>
+        <Share2 className="size-3.5" /> บันทึกรูป QR
+      </Button>
 
-      {/* วิธีที่ได้ผลทุกเครื่องจริง ๆ — บอกไว้เสมอ ไม่ใช่แค่ตอนไม่มีปุ่ม */}
+      {/* วิธีที่ได้ผลทุกเครื่องจริง ๆ — บอกไว้เสมอ ไม่ใช่แค่ตอนกดปุ่มแล้วไม่ได้ */}
       <p className="text-muted-foreground mt-3 text-center text-xs">
-        หรือกดค้างที่รูปเพื่อบันทึกลงเครื่อง
+        หรือกดค้างที่รูป QR เพื่อบันทึกลงเครื่อง
       </p>
     </div>
   );

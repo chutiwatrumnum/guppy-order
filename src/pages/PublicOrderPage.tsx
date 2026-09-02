@@ -56,6 +56,8 @@ interface PublicOrder {
   // สถานะสลิปใบล่าสุด — null คือยังไม่เคยส่ง
   slip_status?: 'pending' | 'confirmed' | 'rejected' | null;
   line_display_name?: string | null;
+  /** ชื่อในบิลนี้ลูกค้าเป็นคนกรอกเอง ไม่ใช่ร้านใส่ให้ */
+  contact_from_customer?: boolean;
   payment: {
     promptpay_id?: string | null;
     bank_name?: string | null;
@@ -65,6 +67,18 @@ interface PublicOrder {
 }
 
 type BadgeVariant = React.ComponentProps<typeof Badge>['variant'];
+
+/**
+ * ชื่อที่เอาไปตั้งไว้ในช่อง "ชื่อผู้รับ"
+ *
+ * ชื่อในบิลเชื่อได้ก็ต่อเมื่อลูกค้าเป็นคนกรอกเอง (contact_from_customer)
+ * ถ้าร้านเป็นคนใส่ ปล่อยว่างไว้ดีกว่าตั้งชื่อผิดไว้ให้ลูกค้ากดผ่าน —
+ * ชื่อ LINE พอใช้เป็นตัวตั้งได้ เพราะอย่างน้อยก็มาจากบัญชีของเจ้าตัวเอง
+ */
+function nameSuggestion(order: PublicOrder, displayName?: string | null): string {
+  if (order.contact_from_customer && order.customer_name) return order.customer_name;
+  return displayName || '';
+}
 
 const TYPE_LABEL: Record<string, string> = { piece: 'ตัว', pair: 'คู่', set: 'ชุด' };
 const GENDER_LABEL: Record<string, string> = { male: '♂', female: '♀', mixed: '⚥' };
@@ -117,7 +131,8 @@ export default function PublicOrderPage() {
 
       const o = data as PublicOrder;
       setOrder(o);
-      setName(o.customer_name || '');
+      // ยังไม่รู้ชื่อ LINE ตอนนี้ — เติมทีหลังหลังผูกบัญชีเสร็จ
+      setName(nameSuggestion(o));
       setPhone(o.customer_phone || '');
       setAddress(o.customer_address || '');
       setSlipStatus(o.slip_status ?? null);
@@ -150,11 +165,10 @@ export default function PublicOrderPage() {
         setOrder(r);
         // เขียนเฉพาะช่องที่ยังว่าง เผื่อลูกค้าเริ่มพิมพ์ไปแล้วระหว่างรอ
         //
-        // ชื่อ: เอาของเดิมก่อน ไม่มีค่อยใช้ชื่อ LINE เป็นตัวตั้ง
-        // ร้านมักออกบิลโดยไม่ใส่ชื่อ ลูกค้าจะได้ไม่ต้องพิมพ์เองตั้งแต่ศูนย์
-        // เป็นแค่ค่าตั้งต้นในช่องที่แก้ได้ ไม่ได้เขียนทับอะไร —
-        // ชื่อ LINE มักเป็นชื่อเล่นหรือมีอิโมจิ ลูกค้าควรได้เห็นและแก้ก่อนบันทึก
-        setName((prev) => prev || r.customer_name || profile.displayName || '');
+        // ชื่อ: ใช้ของในบิลได้เฉพาะตอนที่ลูกค้าเคยกรอกเอง
+        // ร้านออกบิลตอนรู้จักลูกค้าแค่ชื่อในแชท บางทีใส่ชื่อคร่าว ๆ ไปก่อน
+        // เอามาตั้งไว้ในช่องแล้วลูกค้ากดผ่าน จะได้ชื่อมั่ว ๆ ไปจ่าหน้ากล่อง
+        setName((prev) => prev || nameSuggestion(r, profile.displayName));
         setPhone((prev) => prev || r.customer_phone || '');
         setAddress((prev) => prev || r.customer_address || '');
       }

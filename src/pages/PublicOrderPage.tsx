@@ -128,6 +128,18 @@ export default function PublicOrderPage() {
         setLinkedToLine(true);
         // แสดงชื่อที่เพิ่งส่งไปเลย ไม่ต้องรอโหลดใบสรุปใหม่
         if (profile.displayName) setLineName(profile.displayName);
+
+        // ตอนผูกบัญชี ฝั่ง DB อาจเติมชื่อ/เบอร์/ที่อยู่จากครั้งก่อนลงบิลให้
+        // ต้องอ่านซ้ำ ไม่งั้นฟอร์มยังว่างทั้งที่ข้อมูลเข้าไปแล้ว
+        const { data: refreshed } = await supabase.rpc('get_public_order', { p_token: token });
+        if (!active || !refreshed) return;
+
+        const r = refreshed as PublicOrder;
+        setOrder(r);
+        // เขียนเฉพาะช่องที่ยังว่าง เผื่อลูกค้าเริ่มพิมพ์ไปแล้วระหว่างรอ
+        setName((prev) => prev || r.customer_name || '');
+        setPhone((prev) => prev || r.customer_phone || '');
+        setAddress((prev) => prev || r.customer_address || '');
       }
     })();
 

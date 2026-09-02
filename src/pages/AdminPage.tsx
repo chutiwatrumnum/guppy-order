@@ -260,6 +260,7 @@ export default function AdminPage() {
         customerName: order.customer_name,
         customerPhone: order.customer_phone,
         customerAddress: order.customer_address,
+        lineDisplayName: order.line_display_name,
         note: order.note,
       }));
 
@@ -293,8 +294,11 @@ export default function AdminPage() {
   };
 
   // คัดลอกที่อยู่จัดส่ง เรียง เบอร์ / ชื่อ / ที่อยู่ ไว้แปะฟอร์มส่งพัสดุได้เลย
+  //
+  // ลูกค้าที่ไม่กรอกชื่อจะไม่เหลืออะไรเขียนหน้ากล่อง ใช้ชื่อ LINE แทนได้
+  // แต่เป็นตัวสำรองเท่านั้น ไม่เอามาต่อท้ายชื่อจริง เพราะบล็อกนี้เอาไปวางในฟอร์มส่งพัสดุตรง ๆ
   const formatAddress = (order: SavedOrder) =>
-    [order.customerPhone, order.customerName, order.customerAddress]
+    [order.customerPhone, order.customerName?.trim() || order.lineDisplayName, order.customerAddress]
       .map((v) => (v || '').trim())
       .filter(Boolean)
       .join('\n');

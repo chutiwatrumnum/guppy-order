@@ -69,6 +69,8 @@ export interface SavedOrder {
   orderNumber?: string;
   publicToken?: string;
   lineUserId?: string | null;
+  /** ชื่อที่ตั้งไว้ในบัญชี LINE — ไม่ใช่ชื่อผู้รับ อาจเป็นชื่อเล่นหรือมีอิโมจิ */
+  lineDisplayName?: string | null;
   status?: OrderStatus;
   paymentStatus?: PaymentStatus;
   paidAmount?: number;

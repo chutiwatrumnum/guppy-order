@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Download, Loader2 } from 'lucide-react';
+import { Loader2, Share2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { buildPromptPayPayload } from '@/utils/promptpay';
 import { Button } from '@/components/ui/button';
@@ -12,10 +13,21 @@ interface PromptPayQRProps {
   reference?: string;
 }
 
+/** data: URL → File เพื่อส่งเข้า Web Share API */
+function dataUrlToFile(dataUrl: string, name: string): File {
+  const [head, b64] = dataUrl.split(',');
+  const mime = head.match(/:(.*?);/)?.[1] || 'image/png';
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], name, { type: mime });
+}
+
 export default function PromptPayQR({ promptPayId, amount, reference }: PromptPayQRProps) {
   const [dataUrl, setDataUrl] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [canShare, setCanShare] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -53,6 +65,33 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
     };
   }, [promptPayId, amount]);
 
+  // <a download> ไม่ทำงานใน in-app browser ของ LINE ทั้ง iOS และ Android
+  // (webview บล็อกการดาวน์โหลด และ iOS ไม่รองรับ download กับ data: URL อยู่แล้ว)
+  // ปุ่มเดิมจึงกดแล้วไม่มีอะไรเกิดขึ้น — เช็คก่อนว่าแชร์ไฟล์ได้จริงค่อยโชว์ปุ่ม
+  useEffect(() => {
+    if (!dataUrl) {
+      setCanShare(false);
+      return;
+    }
+    try {
+      const file = dataUrlToFile(dataUrl, 'qr.png');
+      setCanShare(!!navigator.canShare?.({ files: [file] }));
+    } catch {
+      setCanShare(false);
+    }
+  }, [dataUrl]);
+
+  const shareQr = async () => {
+    try {
+      const file = dataUrlToFile(dataUrl, `promptpay-${reference || Math.round(amount)}.png`);
+      await navigator.share({ files: [file], title: `พร้อมเพย์ ฿${amount.toLocaleString()}` });
+    } catch (err: any) {
+      // ผู้ใช้กดยกเลิกเองไม่ใช่ error ที่ต้องบอก
+      if (err?.name === 'AbortError') return;
+      toast.error('บันทึกไม่สำเร็จ ลองกดค้างที่รูปเพื่อบันทึกแทนครับ');
+    }
+  };
+
   if (!promptPayId?.trim()) {
     return (
       <div className="bg-muted/40 rounded-lg border border-dashed p-4 text-center">
@@ -80,8 +119,6 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
     );
   }
 
-  const fileName = `promptpay-${reference || Math.round(amount)}.png`;
-
   return (
     <div className="flex flex-col items-center rounded-lg border p-4">
       <p className="text-primary text-sm font-medium">สแกนจ่าย ฿{amount.toLocaleString()}</p>
@@ -98,11 +135,16 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
         ลูกค้าไม่ต้องพิมพ์ยอดเอง
       </p>
 
-      <Button asChild variant="outline" size="sm" className="mt-3">
-        <a href={dataUrl} download={fileName}>
-          <Download className="size-3.5" /> บันทึกรูป QR
-        </a>
-      </Button>
+      {canShare ? (
+        <Button variant="outline" size="sm" className="mt-3" onClick={shareQr}>
+          <Share2 className="size-3.5" /> บันทึก / แชร์รูป QR
+        </Button>
+      ) : null}
+
+      {/* วิธีที่ได้ผลทุกเครื่องจริง ๆ — บอกไว้เสมอ ไม่ใช่แค่ตอนไม่มีปุ่ม */}
+      <p className="text-muted-foreground mt-3 text-center text-xs">
+        หรือกดค้างที่รูปเพื่อบันทึกลงเครื่อง
+      </p>
     </div>
   );
 }

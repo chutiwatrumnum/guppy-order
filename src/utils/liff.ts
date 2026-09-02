@@ -24,13 +24,18 @@ export function ensureLiffInit() {
   return initPromise;
 }
 
+export interface LineProfile {
+  userId: string;
+  displayName: string | null;
+}
+
 /**
- * คืน LINE userId ถ้าเปิดอยู่ในแอป LINE ไม่งั้นคืน null
+ * คืนโปรไฟล์ LINE ถ้าเปิดอยู่ในแอป LINE ไม่งั้นคืน null
  *
  * ตั้งใจให้ "เงียบ" เมื่อเปิดนอก LINE — หน้าใบสรุปต้องใช้งานได้ตามปกติ
- * ถ้าลูกค้าเปิดในเบราว์เซอร์ธรรมดา แค่ไม่ได้ userId เท่านั้น ไม่ควรเด้ง login ใส่หน้าเขา
+ * ถ้าลูกค้าเปิดในเบราว์เซอร์ธรรมดา แค่ไม่ได้โปรไฟล์เท่านั้น ไม่ควรเด้ง login ใส่หน้าเขา
  */
-export async function getLineUserId(): Promise<string | null> {
+export async function getLineProfile(): Promise<LineProfile | null> {
   try {
     const liff = await ensureLiffInit();
 
@@ -39,10 +44,17 @@ export async function getLineUserId(): Promise<string | null> {
     if (!liff.isLoggedIn()) return null;
 
     const profile = await liff.getProfile();
-    return profile.userId || null;
+    if (!profile.userId) return null;
+
+    return { userId: profile.userId, displayName: profile.displayName || null };
   } catch (err) {
     // LIFF พังไม่ควรทำให้ใบสรุปเปิดไม่ได้ — บันทึกไว้เฉย ๆ แล้วไปต่อ
     console.warn('LIFF getProfile failed:', err);
     return null;
   }
+}
+
+/** คืนแค่ userId — เก็บไว้ให้โค้ดเดิมที่ไม่ต้องใช้ชื่อเรียกได้เหมือนเดิม */
+export async function getLineUserId(): Promise<string | null> {
+  return (await getLineProfile())?.userId ?? null;
 }

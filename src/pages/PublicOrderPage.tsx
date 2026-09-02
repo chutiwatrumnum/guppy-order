@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Bell, Check, Copy, Fish, Loader2, Receipt, Send, Upload } from 'lucide-react';
+import { Bell, Check, Copy, Fish, Loader2, MessageCircle, Receipt, Send, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
 import PromptPayQR from '@/components/PromptPayQR';
-import { getLineUserId } from '@/utils/liff';
+import { getLineProfile } from '@/utils/liff';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -43,6 +43,7 @@ interface PublicOrder {
   note?: string | null;
   // สถานะสลิปใบล่าสุด — null คือยังไม่เคยส่ง
   slip_status?: 'pending' | 'confirmed' | 'rejected' | null;
+  line_display_name?: string | null;
   payment: {
     promptpay_id?: string | null;
     bank_name?: string | null;
@@ -84,6 +85,7 @@ export default function PublicOrderPage() {
 
   const [uploading, setUploading] = useState(false);
   const [slipStatus, setSlipStatus] = useState<PublicOrder['slip_status']>(null);
+  const [lineName, setLineName] = useState<string | null>(null);
   const lineUserIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -106,20 +108,26 @@ export default function PublicOrderPage() {
       setPhone(o.customer_phone || '');
       setAddress(o.customer_address || '');
       setSlipStatus(o.slip_status ?? null);
+      setLineName(o.line_display_name ?? null);
       setLoading(false);
 
       // ถ้าเปิดในแอป LINE ให้ผูกบัญชีกับออเดอร์เงียบ ๆ
       // ลูกค้าจะได้รับอัปเดตพัสดุอัตโนมัติโดยไม่ต้องทำอะไรเพิ่ม
       // เปิดในเบราว์เซอร์ธรรมดาก็ข้ามไป หน้ายังใช้งานได้ครบ
-      const lineUserId = await getLineUserId();
-      if (!active || !lineUserId) return;
-      lineUserIdRef.current = lineUserId;
+      const profile = await getLineProfile();
+      if (!active || !profile) return;
+      lineUserIdRef.current = profile.userId;
 
       const { data: linked } = await supabase.rpc('link_order_line_user', {
         p_token: token,
-        p_line_user_id: lineUserId,
+        p_line_user_id: profile.userId,
+        p_display_name: profile.displayName,
       });
-      if (active && linked?.ok) setLinkedToLine(true);
+      if (active && linked?.ok) {
+        setLinkedToLine(true);
+        // แสดงชื่อที่เพิ่งส่งไปเลย ไม่ต้องรอโหลดใบสรุปใหม่
+        if (profile.displayName) setLineName(profile.displayName);
+      }
     })();
 
     return () => {
@@ -432,6 +440,16 @@ export default function PublicOrderPage() {
         <Card>
           <CardContent>
             <p className="text-muted-foreground mb-3 text-sm font-medium">ที่อยู่จัดส่ง</p>
+
+            {/* ชื่อ LINE ไม่ใช่ชื่อผู้รับ — โชว์ไว้ให้รู้ว่าร้านคุยกับบัญชีไหนอยู่ */}
+            {lineName && (
+              <div className="bg-muted/40 mb-3 flex items-center gap-2 rounded-lg px-3 py-2">
+                <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
+                <p className="text-muted-foreground text-xs">
+                  บัญชี LINE <span className="text-foreground font-medium">{lineName}</span>
+                </p>
+              </div>
+            )}
 
             {!canEditAddress ? (
               <div className="space-y-1 text-sm">

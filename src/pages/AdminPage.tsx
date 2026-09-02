@@ -157,6 +157,10 @@ export default function AdminPage() {
     Record<string, { image_path: string; reviewed_by: string | null; reviewed_at: string | null }>
   >({});
   const [slipModalUrl, setSlipModalUrl] = useState<string | null>(null);
+  // จำนวนสลิปที่รอกดยืนยัน ไว้ขึ้นตัวเลขบนแท็บ
+  // นับแยกจาก PendingSlips เพราะ Radix ถอดคอมโพเนนต์ในแท็บที่ไม่ได้เปิดออกจาก DOM
+  // ถ้าไปพึ่งค่าจากในนั้น ตัวเลขจะไม่ขึ้นเลยจนกว่าจะกดเข้าแท็บสลิปก่อน — ซึ่งกลับหัวกลับหาง
+  const [pendingSlipCount, setPendingSlipCount] = useState(0);
   const [copiedAddressId, setCopiedAddressId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [missingAddressOnly, setMissingAddressOnly] = useState(false);
@@ -280,9 +284,21 @@ export default function AdminPage() {
         });
         setOrderSlips(map);
       }
+
+      await loadPendingSlipCount();
     } catch (err) {
       console.error('Load all orders error:', err);
     }
+  };
+
+  // นับสลิปที่รอตรวจ — head:true คือขอแค่จำนวน ไม่ดึงแถวจริงมาให้เปลืองเน็ต
+  const loadPendingSlipCount = async () => {
+    const { count, error } = await supabase
+      .from('payment_slips')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending');
+
+    if (!error) setPendingSlipCount(count || 0);
   };
 
   // ดึงบิลใหม่ตามช่วงเวลาที่เลือกอยู่ — เดิมต้องรีโหลดทั้งหน้าถึงจะเห็นบิลที่เพิ่งออก
@@ -880,6 +896,12 @@ export default function AdminPage() {
             </TabsTrigger>
             <TabsTrigger value="slips">
               <Receipt className="size-4" /> สลิป
+              {/* ขึ้นเฉพาะตอนมีของรอจริง ๆ — เลข 0 ค้างอยู่ตลอดจะกลายเป็นสิ่งที่ตาเลิกมอง */}
+              {pendingSlipCount > 0 && (
+                <span className="bg-destructive text-destructive-foreground ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold tabular-nums">
+                  {pendingSlipCount > 99 ? '99+' : pendingSlipCount}
+                </span>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -1421,7 +1443,10 @@ export default function AdminPage() {
 
           {/* ───────── สลิป ───────── */}
           <TabsContent value="slips" className="mt-4">
-            <PendingSlips onConfirmed={() => loadAllOrders(reportPeriod)} />
+            <PendingSlips
+              onConfirmed={() => loadAllOrders(reportPeriod)}
+              onChanged={loadPendingSlipCount}
+            />
           </TabsContent>
         </Tabs>
       </div>

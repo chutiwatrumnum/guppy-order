@@ -39,7 +39,15 @@ interface PendingOrder {
   total_amount: number;
 }
 
-export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void }) {
+export default function PendingSlips({
+  onConfirmed,
+  onChanged,
+}: {
+  /** ยืนยันแล้ว — บิลเปลี่ยนสถานะ ต้องโหลดรายการบิลใหม่ */
+  onConfirmed?: () => void;
+  /** คิวสลิปเปลี่ยนจำนวน ไม่ว่าจะยืนยันหรือปฏิเสธ — ไว้อัปเดตตัวเลขบนแท็บ */
+  onChanged?: () => void;
+}) {
   const { user } = useAuth();
   const [slips, setSlips] = useState<Slip[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -181,6 +189,7 @@ export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void
     }
     setSlips((prev) => prev.filter((s) => s.id !== slip.id));
     onConfirmed?.();
+    onChanged?.();
   };
 
   const reject = async (slip: Slip) => {
@@ -196,6 +205,7 @@ export default function PendingSlips({ onConfirmed }: { onConfirmed?: () => void
       .eq('id', slip.id);
     setBusy(null);
     setSlips((prev) => prev.filter((s) => s.id !== slip.id));
+    onChanged?.();
     toast.success('ปฏิเสธสลิปแล้ว');
   };
 

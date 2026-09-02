@@ -55,6 +55,8 @@ interface PublicOrder {
   note?: string | null;
   // สถานะสลิปใบล่าสุด — null คือยังไม่เคยส่ง
   slip_status?: 'pending' | 'confirmed' | 'rejected' | null;
+  /** เหตุผลที่ร้านปฏิเสธสลิปใบล่าสุด */
+  slip_note?: string | null;
   line_display_name?: string | null;
   /** ชื่อในบิลนี้ลูกค้าเป็นคนกรอกเอง ไม่ใช่ร้านใส่ให้ */
   contact_from_customer?: boolean;
@@ -507,9 +509,16 @@ export default function PublicOrderPage() {
                     )}
                   </Button>
                   {slipStatus === 'rejected' && (
-                    <p className="text-warning mt-2 text-center text-xs">
-                      สลิปที่ส่งมาก่อนหน้านี้ตรวจสอบไม่ผ่าน รบกวนส่งใหม่ครับ
-                    </p>
+                    <div className="bg-warning/10 mt-3 rounded-xl px-3 py-2.5">
+                      <p className="text-warning text-xs font-medium">
+                        สลิปที่ส่งมาก่อนหน้านี้ตรวจสอบไม่ผ่าน
+                      </p>
+                      {/* บอกเหตุผลด้วย ไม่งั้นลูกค้าก็ส่งใบเดิมกลับมาอีก */}
+                      {order.slip_note && (
+                        <p className="text-warning/90 mt-0.5 text-xs">เหตุผล: {order.slip_note}</p>
+                      )}
+                      <p className="text-warning/90 mt-0.5 text-xs">รบกวนแนบใหม่อีกครั้งครับ 🙏</p>
+                    </div>
                   )}
                   <p className="text-muted-foreground mt-3 text-center text-xs">
                     แนบที่นี่ทางเดียวนะครับ ระบบจะได้รู้ว่าเป็นของบิลไหนทันที 🙏

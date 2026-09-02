@@ -8,6 +8,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -19,6 +28,9 @@ import {
 //
 // ตั้งใจให้ "คน" เป็นคนตัดสิน — ระบบแค่เอาสลิปมาวางคู่กับบิลที่น่าจะใช่
 // ถ้าให้เครื่องอ่านยอดจากรูปแล้วปิดบิลเอง จะกลายเป็นระบบที่ยืนยันสลิปปลอมให้อัตโนมัติ
+
+// เหตุผลที่ปฏิเสธบ่อยสุด กดทีเดียวจบ ไม่ต้องพิมพ์ซ้ำทุกครั้ง
+const REJECT_REASONS = ['ยอดไม่ตรง', 'ไม่ใช่สลิปโอนเงิน', 'รูปไม่ชัด', 'สลิปซ้ำ'];
 
 /** สลิปใบอื่นที่ไฟล์ตรงกัน */
 interface DupeRow {
@@ -71,6 +83,10 @@ export default function PendingSlips({
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  // สลิปที่กำลังจะปฏิเสธ พร้อมเหตุผล
+  const [rejecting, setRejecting] = useState<Slip | null>(null);
+  const [presetNote, setPresetNote] = useState('');
+  const [rejectNote, setRejectNote] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -230,18 +246,49 @@ export default function PendingSlips({
     onChanged?.(remaining.length);
   };
 
-  const reject = async (slip: Slip) => {
-    if (!window.confirm('ปฏิเสธสลิปนี้? ลูกค้าจะไม่ถูกปิดบิล')) return;
+  const reject = async () => {
+    const slip = rejecting;
+    if (!slip) return;
+
+    const note = (rejectNote || presetNote).trim();
     setBusy(slip.id);
     await supabase
       .from('payment_slips')
       .update({
         status: 'rejected',
+        review_note: note || null,
         reviewed_at: new Date().toISOString(),
         reviewed_by: user?.username || null,
       })
       .eq('id', slip.id);
+
+    // บอกลูกค้าด้วยว่าทำไมไม่ผ่าน ไม่งั้นจะส่งใบเดิมมาซ้ำ หรือหายไปแล้วบิลค้าง
+    // ต้องมี LINE จริงถึงจะส่งได้ — อัปจากเบราว์เซอร์ธรรมดาจะเป็น web:<token>
+    if (slip.order_id && /^U[0-9a-f]{32}$/.test(slip.line_user_id)) {
+      const { data: order } = await supabase
+        .from('orders')
+        .select('order_number, public_token')
+        .eq('id', slip.order_id)
+        .single();
+
+      if (order) {
+        await supabase.from('line_notifications').insert({
+          line_user_id: slip.line_user_id,
+          order_id: slip.order_id,
+          message:
+            `⚠️ สลิปที่ส่งมายังตรวจสอบไม่ผ่านครับ\n` +
+            `บิล ${order.order_number}\n\n` +
+            (note ? `เหตุผล: ${note}\n\n` : '') +
+            `รบกวนแนบสลิปใหม่อีกครั้งที่ลิงก์นี้ครับ 🙏\n` +
+            `https://liff.line.me/2010766267-xz9flUvC/o/${order.public_token}`,
+        });
+      }
+    }
+
     setBusy(null);
+    setRejecting(null);
+    setRejectNote('');
+    setPresetNote('');
     const remaining = slips.filter((s) => s.id !== slip.id);
     setSlips(remaining);
     onChanged?.(remaining.length);
@@ -378,7 +425,15 @@ export default function PendingSlips({
                     )}
                     ยืนยันรับเงิน
                   </Button>
-                  <Button variant="outline" onClick={() => reject(slip)} disabled={busy === slip.id}>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setRejecting(slip);
+                      setPresetNote('');
+                      setRejectNote('');
+                    }}
+                    disabled={busy === slip.id}
+                  >
                     <X className="size-4" /> ปฏิเสธ
                   </Button>
                 </div>
@@ -387,6 +442,67 @@ export default function PendingSlips({
           );
         })}
       </div>
+
+      {/* ปฏิเสธพร้อมเหตุผล — ลูกค้าได้รู้ว่าต้องแก้อะไร ร้านเปิดย้อนดูทีหลังก็ยังจำได้ */}
+      <Dialog open={!!rejecting} onOpenChange={(open) => !open && setRejecting(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>ปฏิเสธสลิปนี้?</DialogTitle>
+            <DialogDescription>
+              บิลจะไม่ถูกปิด และระบบจะแจ้งเหตุผลให้ลูกค้าในไลน์พร้อมลิงก์ส่งใหม่
+            </DialogDescription>
+          </DialogHeader>
+
+          {rejecting?.orders && (
+            <div className="bg-muted/50 flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm">
+              <span className="text-primary font-medium">{rejecting.orders.order_number}</span>
+              <span className="font-semibold tabular-nums">
+                ฿{Number(rejecting.orders.total_amount).toLocaleString()}
+              </span>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {/* เหตุผลที่เจอบ่อย กดทีเดียวไม่ต้องพิมพ์ */}
+            <div className="flex flex-wrap gap-2">
+              {REJECT_REASONS.map((r) => (
+                <Button
+                  key={r}
+                  type="button"
+                  variant={presetNote === r ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    setPresetNote(presetNote === r ? '' : r);
+                    setRejectNote('');
+                  }}
+                >
+                  {r}
+                </Button>
+              ))}
+            </div>
+
+            <Textarea
+              value={rejectNote}
+              onChange={(e) => {
+                setRejectNote(e.target.value);
+                if (e.target.value) setPresetNote('');
+              }}
+              placeholder="หรือพิมพ์เหตุผลเอง (ไม่ใส่ก็ได้)"
+              rows={2}
+            />
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRejecting(null)} disabled={!!busy}>
+              ยกเลิก
+            </Button>
+            <Button variant="destructive" onClick={reject} disabled={!!busy}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
+              ปฏิเสธสลิป
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

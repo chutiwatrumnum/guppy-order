@@ -165,6 +165,7 @@ export default function AdminPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [missingAddressOnly, setMissingAddressOnly] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<SavedOrder | null>(null);
+  const [orderToUnlink, setOrderToUnlink] = useState<SavedOrder | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   // Edit state
@@ -295,9 +296,9 @@ export default function AdminPage() {
   //
   // บิลผูกกับบัญชีแรกที่เปิดลิงก์ ซึ่งไม่ใช่ลูกค้าเสมอไป — ร้านเปิดเองเพื่อเช็ค
   // หรือลูกค้าส่งต่อให้คนอื่นกดก่อน ปลดแล้วคนถัดไปที่เปิดจะผูกใหม่ได้
-  const unlinkLine = async (order: SavedOrder) => {
-    const who = order.lineDisplayName || 'บัญชีนี้';
-    if (!window.confirm(`ปลดการผูก LINE (${who}) ออกจากบิล ${order.orderNumber}?\nลูกค้าคนถัดไปที่เปิดลิงก์จะผูกแทน`)) return;
+  const unlinkLine = async () => {
+    const order = orderToUnlink;
+    if (!order) return;
 
     const { data, error } = await supabase.rpc('unlink_order_line_user', { p_order_id: order.id });
     if (error || !data?.ok) {
@@ -308,6 +309,7 @@ export default function AdminPage() {
     setAllOrders((prev) =>
       prev.map((o) => (o.id === order.id ? { ...o, lineUserId: null, lineDisplayName: null } : o))
     );
+    setOrderToUnlink(null);
     toast.success('ปลดการผูกแล้ว', { description: 'คนถัดไปที่เปิดลิงก์จะผูกกับบิลนี้แทน' });
   };
 
@@ -1139,7 +1141,7 @@ export default function AdminPage() {
                               <button
                                 type="button"
                                 className="text-muted-foreground hover:text-destructive mt-0.5 text-xs underline underline-offset-2"
-                                onClick={() => unlinkLine(order)}
+                                onClick={() => setOrderToUnlink(order)}
                               >
                                 ปลดการผูก LINE
                               </button>
@@ -1786,6 +1788,36 @@ export default function AdminPage() {
       </ResponsiveModal>
 
       {/* ───────── ยืนยันลบบิล ───────── */}
+      {/* ───────── ปลดการผูก LINE ───────── */}
+      <Dialog open={!!orderToUnlink} onOpenChange={(open) => !open && setOrderToUnlink(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>ปลดการผูก LINE?</DialogTitle>
+            <DialogDescription>
+              บิลจะหยุดส่งแจ้งเตือนหาบัญชีนี้ และคนถัดไปที่เปิดลิงก์จะผูกแทน
+            </DialogDescription>
+          </DialogHeader>
+
+          {orderToUnlink && (
+            <div className="bg-muted/50 space-y-1 rounded-lg px-3 py-2.5 text-sm">
+              <p className="text-primary font-medium">{orderToUnlink.orderNumber}</p>
+              <p className="text-muted-foreground">
+                ผูกอยู่กับ {orderToUnlink.lineDisplayName || 'บัญชี LINE ที่ไม่ทราบชื่อ'}
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setOrderToUnlink(null)}>
+              ยกเลิก
+            </Button>
+            <Button variant="destructive" onClick={unlinkLine}>
+              ปลดการผูก
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!orderToDelete} onOpenChange={(open) => !open && setOrderToDelete(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>

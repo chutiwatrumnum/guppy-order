@@ -56,7 +56,7 @@ export default function AuthScreen() {
             height={64}
             className="mb-4 size-16 rounded-full object-contain"
           />
-          <h1 className="text-2xl font-semibold tracking-tight">บ้านหมีมีปลา</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">บ้านหมีมีปลานะ</h1>
           <p className="text-muted-foreground mt-1 text-sm">ระบบจัดการออเดอร์ปลาหางนกยูง</p>
         </div>
 

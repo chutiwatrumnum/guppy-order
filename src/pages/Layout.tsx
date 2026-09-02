@@ -51,7 +51,7 @@ export default function Layout({ children }: LayoutProps) {
               className="size-9 shrink-0 rounded-full object-contain"
             />
             <div className="min-w-0">
-              <p className="truncate text-sm leading-tight font-semibold">บ้านหมีมีปลา</p>
+              <p className="truncate text-sm leading-tight font-semibold">บ้านหมีมีปลานะ</p>
               <p className="text-muted-foreground truncate text-xs leading-tight">
                 {user?.shop_name || 'ร้านค้า'}
               </p>

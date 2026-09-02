@@ -1,4 +1,4 @@
-// Types for บ้านหมีมีปลา
+// Types for บ้านหมีมีปลานะ
 
 export interface Breed {
   id: string;

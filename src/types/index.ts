@@ -1,4 +1,4 @@
-// Types for Guppy Order App
+// Types for บ้านหมีมีปลา
 
 export interface Breed {
   id: string;

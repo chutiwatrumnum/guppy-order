@@ -663,7 +663,7 @@ export default function PublicOrderPage() {
           </Card>
         )}
 
-        <p className="text-muted-foreground/60 py-4 text-center text-xs">GuppyReal</p>
+        <p className="text-muted-foreground/60 py-4 text-center text-xs">บ้านหมีมีปลา</p>
       </div>
     </div>
   );

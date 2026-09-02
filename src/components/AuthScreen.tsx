@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Fish, Loader2, Lock, User as UserIcon } from 'lucide-react';
+import { Loader2, Lock, User as UserIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
@@ -47,10 +47,16 @@ export default function AuthScreen() {
     <div className="flex min-h-[100dvh] items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="bg-primary text-primary-foreground mb-4 flex size-14 items-center justify-center rounded-2xl">
-            <Fish className="size-7" />
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight">GuppyReal</h1>
+          {/* โลโก้ร้านจริง ไม่ใช่ไอคอนปลาทั่วไป */}
+          <img
+            src="/logo.png"
+            alt=""
+            aria-hidden
+            width={64}
+            height={64}
+            className="mb-4 size-16 rounded-full object-contain"
+          />
+          <h1 className="text-2xl font-semibold tracking-tight">บ้านหมีมีปลา</h1>
           <p className="text-muted-foreground mt-1 text-sm">ระบบจัดการออเดอร์ปลาหางนกยูง</p>
         </div>
 

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Fish, ShoppingCart, Settings2, ClipboardList, LogOut, Users } from 'lucide-react';
+import { ShoppingCart, Settings2, ClipboardList, LogOut, Users } from 'lucide-react';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -41,11 +41,17 @@ export default function Layout({ children }: LayoutProps) {
       <header className="bg-card/85 sticky top-0 z-40 border-b pt-safe backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4">
           <Link to="/" className="flex min-w-0 items-center gap-2.5">
-            <div className="bg-primary text-primary-foreground flex size-9 shrink-0 items-center justify-center rounded-lg">
-              <Fish className="size-5" />
-            </div>
+            {/* โลโก้จริงแทนไอคอนปลาทั่วไป — โลโก้เป็นวงกลม เลยตัดกลม */}
+            <img
+              src="/logo.png"
+              alt=""
+              aria-hidden
+              width={36}
+              height={36}
+              className="size-9 shrink-0 rounded-full object-contain"
+            />
             <div className="min-w-0">
-              <p className="truncate text-sm leading-tight font-semibold">GuppyReal</p>
+              <p className="truncate text-sm leading-tight font-semibold">บ้านหมีมีปลา</p>
               <p className="text-muted-foreground truncate text-xs leading-tight">
                 {user?.shop_name || 'ร้านค้า'}
               </p>

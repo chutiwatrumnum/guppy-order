@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Copy,
   Edit2,
+  HeartCrack,
   Loader2,
   MapPinOff,
   Plus,
@@ -19,6 +20,7 @@ import {
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { buildOrderMessage, buildOrderLinkMessage, calculateItemTotal } from '@/utils/message';
 import { getLiffOrderUrl } from '@/utils/liff';
@@ -26,6 +28,7 @@ import { getPublicOrderUrl } from '@/utils/publicUrl';
 import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '@/types';
 import Layout from './Layout';
 import PendingSlips from '@/components/PendingSlips';
+import ClaimsPanel, { fetchClaims } from '@/components/ClaimsPanel';
 import FailedNotifications from '@/components/FailedNotifications';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -139,6 +142,7 @@ function Stat({
 }
 
 export default function AdminPage() {
+  const { user } = useAuth();
   // State
   const [allOrders, setAllOrders] = useState<SavedOrder[]>([]);
   const [breeds, setBreeds] = useState<Breed[]>([]);
@@ -166,6 +170,15 @@ export default function AdminPage() {
   const [missingAddressOnly, setMissingAddressOnly] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<SavedOrder | null>(null);
   const [orderToUnlink, setOrderToUnlink] = useState<SavedOrder | null>(null);
+  // เคลมปลาตาย — บิลที่กำลังบันทึก พร้อมค่าที่กรอก
+  const [claimOrder, setClaimOrder] = useState<SavedOrder | null>(null);
+  const [claimBreed, setClaimBreed] = useState('');
+  const [claimQty, setClaimQty] = useState('');
+  const [claimRefund, setClaimRefund] = useState('');
+  const [claimNote, setClaimNote] = useState('');
+  const [savingClaim, setSavingClaim] = useState(false);
+  const [claimsVersion, setClaimsVersion] = useState(0);
+  const [claimTotals, setClaimTotals] = useState({ dead: 0, refund: 0 });
   const [deleting, setDeleting] = useState(false);
 
   // Edit state
@@ -311,6 +324,80 @@ export default function AdminPage() {
     );
     setOrderToUnlink(null);
     toast.success('ปลดการผูกแล้ว', { description: 'คนถัดไปที่เปิดลิงก์จะผูกกับบิลนี้แทน' });
+  };
+
+  // ช่วงเวลาเดียวกับที่ loadAllOrders ใช้ เพื่อให้ยอดเคลมกับยอดขายพูดถึงช่วงเดียวกัน
+  // (เหตุผลเรื่อง timezone อยู่ในคอมเมนต์ของ loadAllOrders — อย่าใช้ toISOString().split)
+  const claimRange = (): [string?, string?] => {
+    const now = new Date();
+    if (reportPeriod === 'today')
+      return [new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()];
+    if (reportPeriod === 'week')
+      return [new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()];
+    if (reportPeriod === 'month')
+      return [new Date(now.getFullYear(), now.getMonth(), 1).toISOString()];
+    if (reportPeriod === 'year') return [new Date(now.getFullYear(), 0, 1).toISOString()];
+    if (reportPeriod === 'custom' && startDate && endDate)
+      return [
+        new Date(`${startDate}T00:00:00`).toISOString(),
+        new Date(`${endDate}T23:59:59.999`).toISOString(),
+      ];
+    return [];
+  };
+
+  // เปิดกล่องเคลม — ตั้งค่าเริ่มต้นจากบิล
+  const openClaim = (order: SavedOrder) => {
+    setClaimOrder(order);
+    // บิลที่มีปลาพันธุ์เดียวก็เดาให้เลย ไม่ต้องเลือก
+    const fish = (order.items || []).filter((i: OrderItem) => i.kind !== 'food');
+    setClaimBreed(fish.length === 1 ? fish[0].breedName : '');
+    setClaimQty('');
+    setClaimRefund('');
+    setClaimNote('');
+  };
+
+  const saveClaim = async () => {
+    if (!claimOrder) return;
+    const qty = Number(claimQty);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast.error('ใส่จำนวนปลาที่ตายก่อนครับ');
+      return;
+    }
+
+    setSavingClaim(true);
+    const { error } = await supabase.from('claims').insert({
+      order_id: claimOrder.id,
+      breed_name: claimBreed.trim() || null,
+      dead_qty: qty,
+      refund_amount: Number(claimRefund) || 0,
+      note: claimNote.trim() || null,
+      created_by: user?.username || null,
+    });
+    setSavingClaim(false);
+
+    if (error) {
+      toast.error('บันทึกเคลมไม่สำเร็จ');
+      return;
+    }
+
+    setClaimOrder(null);
+    setClaimsVersion((v) => v + 1);
+    loadClaimTotals();
+    toast.success('บันทึกเคลมแล้ว', { description: 'หักออกจากกำไรในหน้าสรุปให้แล้ว' });
+  };
+
+  // ยอดเคลมรวมของช่วงที่เลือก — เอาไปหักกำไรในหน้าสรุป
+  const loadClaimTotals = async () => {
+    try {
+      const rows = await fetchClaims(...claimRange());
+      setClaimTotals({
+        dead: rows.reduce((sum, c) => sum + c.dead_qty, 0),
+        refund: rows.reduce((sum, c) => sum + c.refund_amount, 0),
+      });
+    } catch {
+      // โหลดยอดเคลมพลาดไม่ควรทำให้หน้าสรุปพัง แค่ถือว่ายังไม่มี
+      setClaimTotals({ dead: 0, refund: 0 });
+    }
   };
 
   // นับสลิปที่รอตรวจ — head:true คือขอแค่จำนวน ไม่ดึงแถวจริงมาให้เปลืองเน็ต
@@ -612,12 +699,16 @@ export default function AdminPage() {
       totalFreeValue,
       totalFoodCost,
       totalFoodSales,
-      totalProfit,
+      // หักเงินที่คืนลูกค้าตอนปลาตายออกจากกำไร
+      // ไม่หักแล้วตัวเลขจะสูงเกินจริงทุกเดือน
+      totalProfit: totalProfit - claimTotals.refund,
+      totalRefund: claimTotals.refund,
+      totalDeadFish: claimTotals.dead,
       avgOrderValue,
       topBreeds,
       topCustomers,
     };
-  }, [allOrders]);
+  }, [allOrders, claimTotals]);
 
   // Order actions
   const updateOrder = async () => {
@@ -909,12 +1000,15 @@ export default function AdminPage() {
         <FailedNotifications />
 
         <Tabs value={adminView} onValueChange={(v) => setAdminView(v as typeof adminView)}>
-          <TabsList className="grid w-full grid-cols-3 sm:w-auto sm:inline-flex">
+          <TabsList className="grid w-full grid-cols-4 sm:w-auto sm:inline-flex">
             <TabsTrigger value="orders" onClick={() => loadAllOrders(reportPeriod)}>
               <ClipboardList className="size-4" /> รายการบิล
             </TabsTrigger>
             <TabsTrigger value="dashboard" onClick={() => loadAllOrders(reportPeriod)}>
               สรุปยอด
+            </TabsTrigger>
+            <TabsTrigger value="claims">
+              <HeartCrack className="size-4" /> เคลม
             </TabsTrigger>
             <TabsTrigger value="slips">
               <Receipt className="size-4" /> สลิป
@@ -1338,6 +1432,17 @@ export default function AdminPage() {
                               </Button>
                             </>
                           )}
+                          {/* เคลมเปิดได้เฉพาะบิลที่ส่งของไปแล้ว ปลายังไม่ออกจากร้านก็ยังไม่ตายระหว่างส่ง */}
+                          {order.status !== 'pending' && order.status !== 'cancelled' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => openClaim(order)}
+                            >
+                              <HeartCrack className="size-3.5" /> เคลม
+                            </Button>
+                          )}
                           <div className="ml-auto flex gap-2">
                             <Button variant="outline" size="sm" onClick={() => openEditModal(order)}>
                               <Edit2 className="size-3.5" /> แก้ไข
@@ -1364,6 +1469,11 @@ export default function AdminPage() {
           <TabsContent value="dashboard" className="mt-4 space-y-6">
             <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-5">
               <Stat label="จำนวนบิล" value={dashboardStats.totalOrders} />
+              <Stat
+                label="ปลาตาย / คืนเงิน"
+                value={`${dashboardStats.totalDeadFish} ตัว · ฿${dashboardStats.totalRefund.toLocaleString()}`}
+                accent={dashboardStats.totalDeadFish > 0 ? 'destructive' : undefined}
+              />
               <Stat
                 label="ยอดขายรวม"
                 value={`฿${dashboardStats.totalSales.toLocaleString()}`}
@@ -1472,6 +1582,16 @@ export default function AdminPage() {
                 </Card>
               </section>
             )}
+          </TabsContent>
+
+          {/* ───────── เคลมปลาตาย ───────── */}
+          <TabsContent value="claims" className="mt-4">
+            <ClaimsPanel
+              from={claimRange()[0]}
+              to={claimRange()[1]}
+              onChanged={loadClaimTotals}
+              key={claimsVersion}
+            />
           </TabsContent>
 
           {/* ───────── สลิป ───────── */}
@@ -1788,6 +1908,105 @@ export default function AdminPage() {
       </ResponsiveModal>
 
       {/* ───────── ยืนยันลบบิล ───────── */}
+      {/* ───────── เคลมปลาตาย ───────── */}
+      <Dialog open={!!claimOrder} onOpenChange={(open) => !open && setClaimOrder(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>บันทึกเคลมปลาตาย</DialogTitle>
+            <DialogDescription>
+              เก็บไว้ดูว่าแต่ละช่วงตายกี่ตัว บิลไหนบ้าง และหักเงินที่คืนออกจากกำไรให้
+            </DialogDescription>
+          </DialogHeader>
+
+          {claimOrder && (
+            <div className="bg-muted/50 flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm">
+              <div className="min-w-0">
+                <span className="text-primary font-medium">{claimOrder.orderNumber}</span>
+                {claimOrder.customerName && (
+                  <span className="text-muted-foreground ml-2 text-xs">{claimOrder.customerName}</span>
+                )}
+              </div>
+              <span className="shrink-0 font-semibold tabular-nums">
+                ฿{(claimOrder.totalAmount || 0).toLocaleString()}
+              </span>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="claim-breed">สายพันธุ์ที่ตาย</Label>
+              {/* เลือกจากปลาในบิลนี้เท่านั้น พิมพ์เองไม่ได้ จะได้ไม่มีชื่อสะกดต่างกันจนรวมยอดไม่ตรง */}
+              <Select value={claimBreed || undefined} onValueChange={setClaimBreed}>
+                <SelectTrigger id="claim-breed" className="w-full">
+                  <SelectValue placeholder="เลือกสายพันธุ์" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from(
+                    new Set(
+                      (claimOrder?.items || [])
+                        .filter((i: OrderItem) => i.kind !== 'food')
+                        .map((i: OrderItem) => i.breedName)
+                    )
+                  ).map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="claim-qty">ตายกี่ตัว</Label>
+                <Input
+                  id="claim-qty"
+                  type="number"
+                  min="1"
+                  value={claimQty}
+                  onChange={(e) => setClaimQty(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="claim-refund">คืนเงิน (บาท)</Label>
+                <Input
+                  id="claim-refund"
+                  type="number"
+                  min="0"
+                  value={claimRefund}
+                  onChange={(e) => setClaimRefund(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              ส่งปลาชดเชยแทนเงิน ก็ใส่คืนเงินเป็น 0 ได้ จำนวนตัวยังถูกนับอยู่
+            </p>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="claim-note">หมายเหตุ</Label>
+              <Input
+                id="claim-note"
+                value={claimNote}
+                onChange={(e) => setClaimNote(e.target.value)}
+                placeholder="เช่น ส่งช้า อากาศร้อน (ไม่ใส่ก็ได้)"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setClaimOrder(null)} disabled={savingClaim}>
+              ยกเลิก
+            </Button>
+            <Button onClick={saveClaim} disabled={savingClaim}>
+              {savingClaim ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              บันทึกเคลม
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ───────── ปลดการผูก LINE ───────── */}
       <Dialog open={!!orderToUnlink} onOpenChange={(open) => !open && setOrderToUnlink(null)}>
         <DialogContent className="sm:max-w-sm">

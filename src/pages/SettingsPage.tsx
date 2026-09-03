@@ -10,6 +10,7 @@ import {
   Loader2,
   Plus,
   Save,
+  Store,
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -21,9 +22,12 @@ import Layout from './Layout';
 import FoodProducts from '@/components/FoodProducts';
 import ShippingNoticeCard from '@/components/ShippingNoticeCard';
 import MessageTemplatesCard from '@/components/MessageTemplatesCard';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
+type SettingsTab = 'products' | 'shop';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -184,6 +188,7 @@ export default function SettingsPage() {
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [editingBreed, setEditingBreed] = useState<Breed | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [tab, setTab] = useState<SettingsTab>('products');
   const [sortConfig, setSortConfig] = useState<{ key: string; dir: 'asc' | 'desc' }>({
     key: 'name',
     dir: 'asc',
@@ -372,12 +377,12 @@ export default function SettingsPage() {
       <div className="mx-auto max-w-6xl space-y-4 px-4 py-4">
         <PageHeader
           title="ตั้งค่า"
-          description="ราคาสายพันธุ์ อาหาร และข้อมูลบัญชีร้าน"
+          description={
+            tab === 'products' ? 'ราคาสายพันธุ์และอาหาร' : 'บัญชีร้านและคำที่ระบบพูดกับลูกค้า'
+          }
           action={
-            <>
-              <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => setIsBankModalOpen(true)}>
-                <CreditCard className="size-4" /> บัญชี / ค่าส่ง
-              </Button>
+            // ปุ่มตามแท็บที่เปิดอยู่ — โชว์ทั้งคู่ตลอดจะกดผิดง่ายและกินที่บนมือถือ
+            tab === 'products' ? (
               <Button
                 className="flex-1 sm:flex-none"
                 onClick={() => {
@@ -387,10 +392,23 @@ export default function SettingsPage() {
               >
                 <Plus className="size-4" /> เพิ่มสายพันธุ์
               </Button>
-            </>
+            ) : null
           }
         />
 
+        {/* แยกของสองแบบออกจากกัน — ของที่ขาย กับการตั้งค่าร้าน
+            เดิมอยู่หน้าเดียวกัน ตารางสายพันธุ์ยาวจนดันการตั้งค่าตกไปท้ายหน้า */}
+        <Tabs value={tab} onValueChange={(v) => setTab(v as SettingsTab)}>
+          <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-flex">
+            <TabsTrigger value="products">
+              <Fish className="size-4" /> สินค้า
+            </TabsTrigger>
+            <TabsTrigger value="shop">
+              <Store className="size-4" /> ตั้งค่าร้าน
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="products" className="mt-4 space-y-4">
         <div className="bg-background/95 sticky top-header z-20 -mx-4 px-4 py-3 backdrop-blur-md">
           <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder="ค้นหาสายพันธุ์…" />
         </div>
@@ -545,14 +563,32 @@ export default function SettingsPage() {
           </Card>
         )}
 
-        {/* ข้อความที่ส่งให้ลูกค้าตอนแจ้งเลขพัสดุ */}
-        <ShippingNoticeCard settingsId={bankInfo.id} />
+            {/* อาหาร / สินค้าอื่นที่ไม่ใช่ปลา — อยู่กับสายพันธุ์เพราะเป็นของที่ขายเหมือนกัน */}
+            <FoodProducts />
+          </TabsContent>
 
-        {/* คำที่ระบบพูดกับลูกค้าทั้งหมด */}
-        <MessageTemplatesCard />
+          <TabsContent value="shop" className="mt-4 space-y-4">
+            <Card>
+              <CardContent className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium">บัญชีรับเงิน / ค่าจัดส่ง</p>
+                  <p className="text-muted-foreground text-sm">
+                    เลขบัญชี พร้อมเพย์ และค่าส่งเริ่มต้นของบิลใหม่
+                  </p>
+                </div>
+                <Button variant="outline" onClick={() => setIsBankModalOpen(true)}>
+                  <CreditCard className="size-4" /> แก้ไข
+                </Button>
+              </CardContent>
+            </Card>
 
-        {/* อาหาร / สินค้าอื่นที่ไม่ใช่ปลา */}
-        <FoodProducts />
+            {/* ข้อความที่ส่งให้ลูกค้าตอนแจ้งเลขพัสดุ */}
+            <ShippingNoticeCard settingsId={bankInfo.id} />
+
+            {/* คำที่ระบบพูดกับลูกค้าทั้งหมด */}
+            <MessageTemplatesCard />
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* ── บัญชีธนาคาร / ค่าจัดส่ง ── */}

@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import type { Breed } from '@/types';
 import Layout from './Layout';
 import FoodProducts from '@/components/FoodProducts';
+import ShippingNoticeCard from '@/components/ShippingNoticeCard';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -542,6 +543,9 @@ export default function SettingsPage() {
             </div>
           </Card>
         )}
+
+        {/* ข้อความที่ส่งให้ลูกค้าตอนแจ้งเลขพัสดุ */}
+        <ShippingNoticeCard settingsId={bankInfo.id} />
 
         {/* อาหาร / สินค้าอื่นที่ไม่ใช่ปลา */}
         <FoodProducts />

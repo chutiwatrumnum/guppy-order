@@ -655,7 +655,36 @@ export default function AdminPage() {
       return;
     }
 
-    toast.success('บันทึกแล้ว — บอทจะแจ้งสถานะพัสดุให้ลูกค้าอัตโนมัติ');
+    // แจ้งลูกค้าทันทีว่าส่งของแล้ว พร้อมข้อความ/รูปที่ตั้งไว้ในหน้าตั้งค่า
+    //
+    // บอทที่ poll สถานะพัสดุจะเงียบจนกว่าไปรษณีย์จะสแกนครั้งแรก ซึ่งกินเวลาเป็นชั่วโมง
+    // ลูกค้าที่เพิ่งคุยกับร้านอยู่ควรได้รู้ตั้งแต่ตอนนี้ว่าของออกไปแล้ว
+    //
+    // ล้มเหลวตรงนี้ไม่ควรทำให้การบันทึกเลขพัสดุพัง — เลขบันทึกไปแล้วและติดตามได้แล้ว
+    try {
+      const { data: cfg } = await supabase
+        .from('settings')
+        .select('shipping_message, shipping_images')
+        .limit(1)
+        .maybeSingle();
+
+      const extra = (cfg?.shipping_message || '').trim();
+      await supabase.from('line_notifications').insert({
+        line_user_id: order.lineUserId,
+        order_id: order.id,
+        message:
+          `🚚 จัดส่งแล้วครับ\n` +
+          `บิล ${order.orderNumber}\n` +
+          `เลขพัสดุ ${tracking}\n\n` +
+          `ระบบจะแจ้งความคืบหน้าให้อัตโนมัติ 🔔` +
+          (extra ? `\n\n${extra}` : ''),
+        images: cfg?.shipping_images || [],
+      });
+    } catch (err) {
+      console.error('[SHIPPING NOTICE]', err);
+    }
+
+    toast.success('บันทึกแล้ว — แจ้งลูกค้าและติดตามสถานะให้อัตโนมัติ');
   };
 
   // Dashboard stats

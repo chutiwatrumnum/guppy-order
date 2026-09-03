@@ -3,7 +3,6 @@ import { HeartCrack, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -22,18 +21,29 @@ export interface Claim {
   refund_amount: number;
   note: string | null;
   created_at: string;
-  orders?: { order_number: string; customer_name: string | null } | null;
+  orders?: { order_number: string; customer_name: string | null; created_at: string } | null;
 }
 
-/** ดึงเคลมในช่วงเวลาหนึ่ง — ใช้ร่วมกับหน้าสรุปยอดด้วย */
+/**
+ * ดึงเคลมในช่วงเวลาหนึ่ง — ใช้ร่วมกับหน้าสรุปยอดด้วย
+ *
+ * กรองด้วย "วันที่ของบิล" ไม่ใช่วันที่กดบันทึกเคลม
+ * ปลาตายเป็นเรื่องของรอบที่ส่งบิลนั้นออกไป ส่วนร้านจะมานั่งกรอกวันไหนเป็นคนละเรื่อง
+ * ถ้ากรองด้วยวันที่บันทึก บิลเดือนสิงหาที่มากรอกเดือนกันยาจะหายไปจากรายงานเดือนสิงหา
+ * และไปโผล่ในเดือนกันยาที่ไม่เกี่ยวข้องแทน
+ *
+ * !inner ทำให้ตัวกรองบน orders มีผลกับ claims ด้วย ไม่งั้น PostgREST จะคืนทุกแถว
+ */
 export async function fetchClaims(from?: string, to?: string) {
   let q = supabase
     .from('claims')
-    .select('id, order_id, breed_name, dead_qty, refund_amount, note, created_at, orders(order_number, customer_name)')
+    .select(
+      'id, order_id, breed_name, dead_qty, refund_amount, note, created_at, orders!inner(order_number, customer_name, created_at)'
+    )
     .order('created_at', { ascending: false });
 
-  if (from) q = q.gte('created_at', from);
-  if (to) q = q.lte('created_at', to);
+  if (from) q = q.gte('orders.created_at', from);
+  if (to) q = q.lte('orders.created_at', to);
 
   const { data, error } = await q;
   if (error) throw new Error(error.message);
@@ -50,7 +60,6 @@ export default function ClaimsPanel({
   /** ยอดเคลมเปลี่ยน — หน้าสรุปต้องคิดกำไรใหม่ */
   onChanged?: () => void;
 }) {
-  const { user } = useAuth();
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -184,12 +193,15 @@ export default function ClaimsPanel({
                   )}
                 </p>
                 {c.note && <p className="text-muted-foreground text-xs">{c.note}</p>}
+                {/* วันที่ของบิล ไม่ใช่วันที่กดบันทึก — ช่วงเวลาที่กรองยึดวันบิล
+                    ถ้าโชว์วันที่บันทึกจะดูขัดกับตัวกรองจนงงว่าทำไมรายการนี้อยู่ในช่วงนี้ */}
                 <p className="text-muted-foreground text-xs">
-                  {new Date(c.created_at).toLocaleString('th-TH', {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
-                  })}
-                  {user?.role === 'admin' ? '' : ''}
+                  บิลวันที่{' '}
+                  {c.orders?.created_at
+                    ? new Date(c.orders.created_at).toLocaleDateString('th-TH', { dateStyle: 'medium' })
+                    : '—'}
+                  {' · บันทึกเคลม '}
+                  {new Date(c.created_at).toLocaleDateString('th-TH', { dateStyle: 'medium' })}
                 </p>
               </div>
 

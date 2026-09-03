@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ArrowLeft,
-  Check,
   Copy,
   Fish,
   Loader2,
@@ -25,7 +24,6 @@ import {
   calculateItemTotal,
   getGenderLabel,
   buildOrderLinkMessage,
-  buildOrderMessage,
 } from '@/utils/message';
 import { parseThaiAddress } from '@/utils/address';
 import { getLiffOrderUrl } from '@/utils/liff';
@@ -110,7 +108,6 @@ export default function HomePage() {
     shipping_fee: 60,
   });
   const [loading, setLoading] = useState(true);
-  const [copySuccess, setCopySuccess] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showCart, setShowCart] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -450,39 +447,6 @@ export default function HomePage() {
     totalFishPrice - billDiscount + (orderItems.length > 0 ? bankInfo.shipping_fee : 0)
   );
 
-  const lineMessage = useMemo(
-    () =>
-      buildOrderMessage({
-        items: orderItems,
-        totalFish: totalFishCount,
-        shippingFee: bankInfo.shipping_fee,
-        billDiscount,
-        bankInfo,
-        customerName,
-        customerPhone,
-        customerAddress,
-        shortClosing: !!selectedCustomerId,
-      }),
-    [
-      orderItems,
-      totalFishCount,
-      bankInfo,
-      billDiscount,
-      customerName,
-      customerPhone,
-      customerAddress,
-      selectedCustomerId,
-    ]
-  );
-
-  const copyToClipboard = () => {
-    if (!lineMessage) return;
-    navigator.clipboard.writeText(lineMessage).then(() => {
-      setCopySuccess(true);
-      setTimeout(() => setCopySuccess(false), 2000);
-    });
-  };
-
   const copyOrderLink = async () => {
     if (!lastOrderLink) return;
     try {
@@ -496,15 +460,6 @@ export default function HomePage() {
   const shareLinkToLine = () => {
     if (!lastOrderLink) return;
     window.open(`https://line.me/R/msg/text/?${encodeURIComponent(lastOrderLink.message)}`, '_blank');
-  };
-
-  const shareToLine = () => {
-    if (!lineMessage) return;
-    const lineUrl = `line://msg/text/${encodeURIComponent(lineMessage)}`;
-    window.location.href = lineUrl;
-    setTimeout(() => {
-      window.open(`https://line.me/R/msg/text/?${encodeURIComponent(lineMessage)}`, '_blank');
-    }, 500);
   };
 
   // Save order
@@ -971,15 +926,6 @@ export default function HomePage() {
                     )}
                     {isSavingOrder ? 'กำลังบันทึก…' : 'บันทึกออเดอร์'}
                   </Button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button variant="line" size="lg" onClick={shareToLine}>
-                      <MessageCircle className="size-4" /> ส่งไลน์
-                    </Button>
-                    <Button variant="outline" size="lg" onClick={copyToClipboard}>
-                      {copySuccess ? <Check className="size-4" /> : <Copy className="size-4" />}
-                      {copySuccess ? 'คัดลอกแล้ว' : 'คัดลอกข้อความ'}
-                    </Button>
-                  </div>
                 </div>
               </CardContent>
             </Card>

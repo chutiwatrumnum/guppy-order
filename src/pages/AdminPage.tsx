@@ -643,7 +643,9 @@ export default function AdminPage() {
         tracking_number: tracking,
         line_user_id: order.lineUserId,
         order_id: order.id,
-        last_status: null,
+        // ห้ามส่ง last_status มาด้วย — เลขเดิมที่กดบันทึกซ้ำจะโดนล้างความจำบอท
+        // แล้วรอบถัดไปมันจะแจ้งสถานะที่ลูกค้าเคยได้ไปแล้วซ้ำอีก
+        // แถวใหม่ไม่ต้องตั้งอะไร คอลัมน์นี้เริ่มเป็น null อยู่แล้ว
       },
       { onConflict: 'tracking_number' }
     );

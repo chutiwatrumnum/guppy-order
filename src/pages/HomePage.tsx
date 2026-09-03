@@ -40,12 +40,6 @@ import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageLoader } from '@/components/ui/page-loader';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -676,66 +670,45 @@ export default function HomePage() {
                 </div>
               ))}
 
-              {/* อาหาร / สินค้าอื่น — แยกจากปลา ไม่นับเป็นจำนวนตัว */}
-              {(products.length > 0 || foodItems.length > 0) && (
+              {/* อาหาร / สินค้าอื่น — แยกจากปลา ไม่นับเป็นจำนวนตัว
+                  โผล่เฉพาะตอนมีของในตะกร้าจริง ไม่งั้นกินที่ในสรุปทุกบิลทั้งที่ส่วนใหญ่ขายแต่ปลา
+                  เพิ่มอาหารหยิบจากรายการสินค้าเอา ที่เดียวกับปลา */}
+              {foodItems.length > 0 && (
                 <div className="rounded-lg border p-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <p className="flex items-center gap-1.5 text-sm font-medium">
                       <Package className="text-warning size-4" /> อาหาร / สินค้าอื่น
                     </p>
-                    {products.length > 0 && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm">
-                            <Plus className="size-4" /> เพิ่มอาหาร
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {products.map((p) => (
-                            <DropdownMenuItem key={p.id} onSelect={() => addFoodToOrder(p)}>
-                              {p.name}
-                              <span className="text-muted-foreground ml-auto pl-3">
-                                ฿{p.price.toLocaleString()}
-                              </span>
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
                   </div>
 
-                  {foodItems.length === 0 ? (
-                    <p className="text-muted-foreground text-xs">ยังไม่ได้เลือกอาหาร</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {foodItems.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between gap-2">
-                          <span className="min-w-0 truncate text-sm">{item.breedName}</span>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <Input
-                              type="number"
-                              min="1"
-                              value={item.quantity}
-                              onChange={(e) => setItemQty(item.id, Number(e.target.value) || 1)}
-                              className="h-9 w-16 text-center"
-                            />
-                            <span className="w-16 text-right text-sm font-semibold">
-                              ฿{(item.price * item.quantity).toLocaleString()}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="text-muted-foreground hover:text-destructive"
-                              onClick={() => removeFromOrder(item.id)}
-                              aria-label="ลบรายการ"
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </div>
+                  <div className="space-y-2">
+                    {foodItems.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-sm">{item.breedName}</span>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => setItemQty(item.id, Number(e.target.value) || 1)}
+                            className="h-9 w-16 text-center"
+                          />
+                          <span className="w-16 text-right text-sm font-semibold">
+                            ฿{(item.price * item.quantity).toLocaleString()}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => removeFromOrder(item.id)}
+                            aria-label="ลบรายการ"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

@@ -4,7 +4,6 @@ import {
   Bell,
   Check,
   Copy,
-  Fish,
   Loader2,
   MessageCircle,
   Pencil,
@@ -349,7 +348,14 @@ export default function PublicOrderPage() {
   if (!order) {
     return (
       <div className="flex min-h-[100dvh] flex-col items-center justify-center px-6 text-center">
-        <Fish className="text-muted-foreground mb-4 size-12" />
+        <img
+          src="/logo.png"
+          alt=""
+          aria-hidden
+          width={56}
+          height={56}
+          className="mb-4 size-14 rounded-full object-contain opacity-50"
+        />
         <h1 className="text-lg font-semibold">ไม่พบใบสรุปนี้</h1>
         <p className="text-muted-foreground mt-2 text-sm">
           ลิงก์อาจไม่ถูกต้อง กรุณาสอบถามทางร้านอีกครั้ง
@@ -588,9 +594,15 @@ export default function PublicOrderPage() {
         {/* หัวใบสรุป */}
         <Card>
           <CardContent className="text-center">
-            <div className="bg-primary text-primary-foreground mx-auto mb-3 flex size-11 items-center justify-center rounded-xl">
-              <Fish className="size-6" />
-            </div>
+            {/* โลโก้ร้านจริง — หน้านี้ลูกค้าเปิดจากไลน์ ต้องรู้ทันทีว่าเป็นร้านไหน */}
+            <img
+              src="/logo.png"
+              alt=""
+              aria-hidden
+              width={48}
+              height={48}
+              className="mx-auto mb-3 size-12 rounded-full object-contain"
+            />
             <h1 className="text-lg font-semibold">ใบสรุปรายการสั่งซื้อ</h1>
             <p className="text-primary mt-0.5 text-sm font-medium">{order.order_number}</p>
             <p className="text-muted-foreground mt-1 text-xs">

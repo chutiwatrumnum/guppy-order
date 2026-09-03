@@ -172,9 +172,10 @@ export default function AdminPage() {
   const [orderToUnlink, setOrderToUnlink] = useState<SavedOrder | null>(null);
   // เคลมปลาตาย — บิลที่กำลังบันทึก พร้อมค่าที่กรอก
   const [claimOrder, setClaimOrder] = useState<SavedOrder | null>(null);
-  const [claimBreed, setClaimBreed] = useState('');
-  const [claimQty, setClaimQty] = useState('');
-  const [claimRefund, setClaimRefund] = useState('');
+  // กรอกทีละสายพันธุ์ไม่ได้ บิลหนึ่งตายได้หลายพันธุ์ — เก็บเป็น map ชื่อพันธุ์ → ที่กรอกไว้
+  const [claimRows, setClaimRows] = useState<Record<string, { qty: string; refund: string }>>({});
+  // เคลมของแต่ละบิล ไว้ติดป้ายบนการ์ด
+  const [orderClaims, setOrderClaims] = useState<Record<string, { dead: number; refund: number }>>({});
   const [claimNote, setClaimNote] = useState('');
   const [savingClaim, setSavingClaim] = useState(false);
   const [claimsVersion, setClaimsVersion] = useState(0);
@@ -212,6 +213,8 @@ export default function AdminPage() {
       }
 
       await loadAllOrders(reportPeriod);
+      // ยอดเคลม: ตัวรวมไว้หักกำไร และรายบิลไว้ติดป้ายบนการ์ด
+      await Promise.all([loadClaimTotals(), loadOrderClaims()]);
     } catch (err) {
       console.error('Fetch error:', err);
       toast.error('โหลดข้อมูลไม่สำเร็จ — ข้อมูลที่เห็นอาจไม่ครบ ลองรีเฟรชอีกครั้ง');
@@ -348,31 +351,62 @@ export default function AdminPage() {
   // เปิดกล่องเคลม — ตั้งค่าเริ่มต้นจากบิล
   const openClaim = (order: SavedOrder) => {
     setClaimOrder(order);
-    // บิลที่มีปลาพันธุ์เดียวก็เดาให้เลย ไม่ต้องเลือก
-    const fish = (order.items || []).filter((i: OrderItem) => i.kind !== 'food');
-    setClaimBreed(fish.length === 1 ? fish[0].breedName : '');
-    setClaimQty('');
-    setClaimRefund('');
+    setClaimRows({});
     setClaimNote('');
+  };
+
+  /** สายพันธุ์ปลาในบิล ไม่ซ้ำ — อาหารไม่นับ */
+  const breedsOf = (order: SavedOrder | null) =>
+    Array.from(
+      new Set(
+        (order?.items || [])
+          .filter((i: OrderItem) => i.kind !== 'food')
+          .map((i: OrderItem) => i.breedName)
+      )
+    );
+
+  const setClaimRow = (breed: string, field: 'qty' | 'refund', value: string) =>
+    setClaimRows((prev) => {
+      const row = prev[breed] ?? { qty: '', refund: '' };
+      return { ...prev, [breed]: { ...row, [field]: value } };
+    });
+
+  const claimDraftTotals = () => {
+    let dead = 0;
+    let refund = 0;
+    for (const r of Object.values(claimRows)) {
+      const q = Number(r.qty) || 0;
+      if (q > 0) {
+        dead += q;
+        refund += Number(r.refund) || 0;
+      }
+    }
+    return { dead, refund };
   };
 
   const saveClaim = async () => {
     if (!claimOrder) return;
-    const qty = Number(claimQty);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      toast.error('ใส่จำนวนปลาที่ตายก่อนครับ');
+    // แถวไหนกรอกจำนวนไว้ก็เป็นเคลมหนึ่งแถว — ตายหลายพันธุ์ก็บันทึกทีเดียวจบ
+    const rows = Object.entries(claimRows)
+      .map(([breed, r]) => ({ breed, qty: Number(r.qty) || 0, refund: Number(r.refund) || 0 }))
+      .filter((r) => r.qty > 0);
+
+    if (rows.length === 0) {
+      toast.error('ใส่จำนวนปลาที่ตายอย่างน้อยหนึ่งสายพันธุ์ครับ');
       return;
     }
 
     setSavingClaim(true);
-    const { error } = await supabase.from('claims').insert({
-      order_id: claimOrder.id,
-      breed_name: claimBreed.trim() || null,
-      dead_qty: qty,
-      refund_amount: Number(claimRefund) || 0,
-      note: claimNote.trim() || null,
-      created_by: user?.username || null,
-    });
+    const { error } = await supabase.from('claims').insert(
+      rows.map((r) => ({
+        order_id: claimOrder.id,
+        breed_name: r.breed,
+        dead_qty: r.qty,
+        refund_amount: r.refund,
+        note: claimNote.trim() || null,
+        created_by: user?.username || null,
+      }))
+    );
     setSavingClaim(false);
 
     if (error) {
@@ -383,7 +417,27 @@ export default function AdminPage() {
     setClaimOrder(null);
     setClaimsVersion((v) => v + 1);
     loadClaimTotals();
-    toast.success('บันทึกเคลมแล้ว', { description: 'หักออกจากกำไรในหน้าสรุปให้แล้ว' });
+    loadOrderClaims();
+    const t = rows.reduce((a, r) => ({ dead: a.dead + r.qty, refund: a.refund + r.refund }), { dead: 0, refund: 0 });
+    toast.success(`บันทึกเคลมแล้ว — ตาย ${t.dead} ตัว`, {
+      description: t.refund > 0 ? `คืน ฿${t.refund.toLocaleString()} · หักออกจากกำไรให้แล้ว` : undefined,
+    });
+  };
+
+  // เคลมของแต่ละบิลที่แสดงอยู่ ไว้ติดป้ายบนการ์ด
+  // ดึงทีเดียวทั้งช่วง ไม่ยิงทีละบิล
+  const loadOrderClaims = async () => {
+    try {
+      const rows = await fetchClaims(...claimRange());
+      const map: Record<string, { dead: number; refund: number }> = {};
+      for (const c of rows) {
+        const cur = map[c.order_id] || { dead: 0, refund: 0 };
+        map[c.order_id] = { dead: cur.dead + c.dead_qty, refund: cur.refund + c.refund_amount };
+      }
+      setOrderClaims(map);
+    } catch {
+      setOrderClaims({});
+    }
   };
 
   // ยอดเคลมรวมของช่วงที่เลือก — เอาไปหักกำไรในหน้าสรุป
@@ -1211,6 +1265,18 @@ export default function AdminPage() {
                           )}
                         </div>
 
+                        {/* เคลมของบิลนี้ — เห็นจากรายการได้เลยว่าใบไหนมีปลาตาย */}
+                        {orderClaims[order.id] && (
+                          <div className="bg-destructive/10 flex items-center gap-2 rounded-lg px-3 py-2">
+                            <HeartCrack className="text-destructive size-4 shrink-0" />
+                            <p className="text-destructive text-sm">
+                              เคลม {orderClaims[order.id].dead} ตัว
+                              {orderClaims[order.id].refund > 0 &&
+                                ` · คืน ฿${orderClaims[order.id].refund.toLocaleString()}`}
+                            </p>
+                          </div>
+                        )}
+
                         {/* ลูกค้า / ที่อยู่ */}
                         {(order.customerName ||
                           order.customerPhone ||
@@ -1933,55 +1999,62 @@ export default function AdminPage() {
           )}
 
           <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="claim-breed">สายพันธุ์ที่ตาย</Label>
-              {/* เลือกจากปลาในบิลนี้เท่านั้น พิมพ์เองไม่ได้ จะได้ไม่มีชื่อสะกดต่างกันจนรวมยอดไม่ตรง */}
-              <Select value={claimBreed || undefined} onValueChange={setClaimBreed}>
-                <SelectTrigger id="claim-breed" className="w-full">
-                  <SelectValue placeholder="เลือกสายพันธุ์" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from(
-                    new Set(
-                      (claimOrder?.items || [])
-                        .filter((i: OrderItem) => i.kind !== 'food')
-                        .map((i: OrderItem) => i.breedName)
-                    )
-                  ).map((name) => (
-                    <SelectItem key={name} value={name}>
-                      {name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* ตารางต่อสายพันธุ์ — บิลหนึ่งตายได้หลายพันธุ์ กรอกทีเดียวจบ ไม่ต้องเปิดกล่องซ้ำ */}
+            <div className="space-y-2">
+              <div className="text-muted-foreground grid grid-cols-[1fr_5rem_6rem] gap-2 text-xs">
+                <span>สายพันธุ์ในบิลนี้</span>
+                <span className="text-center">ตาย (ตัว)</span>
+                <span className="text-center">คืนเงิน (฿)</span>
+              </div>
+
+              {breedsOf(claimOrder).map((name) => (
+                <div key={name} className="grid grid-cols-[1fr_5rem_6rem] items-center gap-2">
+                  <span className="truncate text-sm" title={name}>
+                    {name}
+                  </span>
+                  <Input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    className="text-center"
+                    value={claimRows[name]?.qty ?? ''}
+                    onChange={(e) => setClaimRow(name, 'qty', e.target.value)}
+                    placeholder="0"
+                    aria-label={`จำนวนที่ตายของ ${name}`}
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    className="text-center"
+                    value={claimRows[name]?.refund ?? ''}
+                    onChange={(e) => setClaimRow(name, 'refund', e.target.value)}
+                    placeholder="0"
+                    aria-label={`เงินคืนของ ${name}`}
+                    // ยังไม่ได้ใส่จำนวนตาย ก็ยังไม่มีอะไรให้คืน
+                    disabled={!(Number(claimRows[name]?.qty) > 0)}
+                  />
+                </div>
+              ))}
+
+              {breedsOf(claimOrder).length === 0 && (
+                <p className="text-muted-foreground text-sm">บิลนี้ไม่มีรายการปลา</p>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="claim-qty">ตายกี่ตัว</Label>
-                <Input
-                  id="claim-qty"
-                  type="number"
-                  min="1"
-                  value={claimQty}
-                  onChange={(e) => setClaimQty(e.target.value)}
-                  placeholder="0"
-                />
+            {claimDraftTotals().dead > 0 && (
+              <div className="bg-muted/50 flex items-center justify-between rounded-lg px-3 py-2 text-sm">
+                <span className="text-muted-foreground">รวมที่จะบันทึก</span>
+                <span className="font-medium">
+                  ตาย {claimDraftTotals().dead} ตัว
+                  {claimDraftTotals().refund > 0 &&
+                    ` · คืน ฿${claimDraftTotals().refund.toLocaleString()}`}
+                </span>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="claim-refund">คืนเงิน (บาท)</Label>
-                <Input
-                  id="claim-refund"
-                  type="number"
-                  min="0"
-                  value={claimRefund}
-                  onChange={(e) => setClaimRefund(e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-            </div>
+            )}
+
             <p className="text-muted-foreground text-xs">
-              ส่งปลาชดเชยแทนเงิน ก็ใส่คืนเงินเป็น 0 ได้ จำนวนตัวยังถูกนับอยู่
+              ส่งปลาชดเชยแทนเงิน ก็ปล่อยคืนเงินเป็น 0 ได้ จำนวนตัวยังถูกนับอยู่
             </p>
 
             <div className="space-y-1.5">

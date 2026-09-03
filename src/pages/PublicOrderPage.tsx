@@ -124,6 +124,8 @@ export default function PublicOrderPage() {
   const [saved, setSaved] = useState(false);
   const [linkedToLine, setLinkedToLine] = useState(false);
   const [copiedAccount, setCopiedAccount] = useState(false);
+  const [copiedTracking, setCopiedTracking] = useState(false);
+  const addressRef = useRef<HTMLDivElement>(null);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -302,6 +304,28 @@ export default function PublicOrderPage() {
 
     setSlipStatus('pending');
     toast.success('ได้รับสลิปแล้วครับ ทางร้านกำลังตรวจสอบ 🙏');
+
+    // จ่ายเงินเสร็จลูกค้าถือว่าจบแล้ว ถ้ายังไม่มีที่อยู่ต้องพาไปตรงนั้นทันที
+    // ไม่บล็อกการส่งสลิป แค่ไม่ปล่อยให้ปิดหน้าไปโดยที่ร้านไม่รู้จะส่งไปไหน
+    if (!order?.customer_address?.trim()) {
+      setTimeout(() => {
+        addressRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        toast.warning('เหลืออีกขั้นเดียว', { description: 'กรอกที่อยู่จัดส่งให้ร้านด้วยนะครับ' });
+      }, 600);
+    }
+  };
+
+  // ลากเลือกตัวหนังสือในเบราว์เซอร์ของไลน์ทำยาก ต้องมีปุ่มให้กด
+  const copyTracking = async () => {
+    if (!order?.tracking_number) return;
+    try {
+      await navigator.clipboard.writeText(order.tracking_number);
+      setCopiedTracking(true);
+      toast.success('คัดลอกเลขพัสดุแล้ว');
+      setTimeout(() => setCopiedTracking(false), 2000);
+    } catch {
+      toast.error('คัดลอกไม่สำเร็จ');
+    }
   };
 
   const copyAccountNumber = async () => {
@@ -339,6 +363,225 @@ export default function PublicOrderPage() {
   const payment = PAYMENT_TEXT[order.payment_status] || PAYMENT_TEXT.unpaid;
   const status = STATUS_TEXT[order.status] || STATUS_TEXT.pending;
 
+  // ลูกค้าที่ยังไม่มีที่อยู่ต้องเจอช่องกรอกก่อนถึงจะสแกนจ่าย
+  // เดิมจ่ายเงินอยู่บน พอโอนกับแนบสลิปเสร็จลูกค้าถือว่าจบแล้วและปิดหน้าไป
+  // ร้านเลยได้เงินมาโดยไม่มีที่อยู่ส่ง ต้องไปตามทวงในแชท ซึ่งคือเรื่องที่หน้านี้ตั้งใจจะเลิกทำ
+  // ลูกค้าเก่าที่มีที่อยู่แล้วไม่มีอะไรต้องกรอก จ่ายเงินขึ้นก่อนตามเดิม
+  const paymentCard = order.payment_status !== 'paid' && (
+    <Card>
+      <CardContent>
+        <p className="text-muted-foreground mb-3 text-sm font-medium">ชำระเงิน</p>
+
+        <PromptPayQR
+          promptPayId={order.payment.promptpay_id}
+          amount={order.total_amount || 0}
+          reference={order.order_number}
+        />
+
+        {order.payment.account_number && (
+          <>
+            <Separator className="my-4" />
+            <div className="text-center text-sm">
+              <p className="text-muted-foreground text-xs">หรือโอนเข้าบัญชี</p>
+              <p className="mt-1 font-medium">{order.payment.bank_name}</p>
+              <Button variant="ghost" className="mt-1 h-auto py-1.5" onClick={copyAccountNumber}>
+                <span className="text-lg font-semibold tracking-wide tabular-nums">
+                  {order.payment.account_number}
+                </span>
+                {copiedAccount ? (
+                  <Check className="text-success size-4" />
+                ) : (
+                  <Copy className="text-muted-foreground size-4" />
+                )}
+              </Button>
+              <p className="text-muted-foreground">{order.payment.account_name}</p>
+            </div>
+          </>
+        )}
+
+        <Separator className="my-4" />
+
+        {/* แจ้งสลิป — ทำได้ 2 ทาง ตรงนี้กับส่งเข้าไลน์ ลงที่เดียวกัน */}
+        {slipStatus === 'pending' ? (
+          <div className="bg-success/10 flex items-start gap-2 rounded-xl px-4 py-3">
+            <Receipt className="text-success mt-0.5 size-4 shrink-0" />
+            <div>
+              <p className="text-success text-sm font-medium">ได้รับสลิปแล้วครับ</p>
+              <p className="text-success/80 text-xs">
+                ทางร้านกำลังตรวจสอบ เมื่อยืนยันแล้วสถานะจะเปลี่ยนเป็น "ชำระเงินแล้ว"
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                // เคลียร์ค่าทิ้งทุกครั้ง ไม่งั้นเลือกไฟล์เดิมซ้ำแล้ว onChange ไม่ยิง
+                e.target.value = '';
+                if (file) uploadSlip(file);
+              }}
+            />
+            <Button
+              size="lg"
+              className="w-full"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> กำลังส่งสลิป...
+                </>
+              ) : (
+                <>
+                  <Upload className="size-4" />
+                  {slipStatus === 'rejected' ? 'ส่งสลิปใหม่อีกครั้ง' : 'แนบสลิปโอนเงิน'}
+                </>
+              )}
+            </Button>
+            {slipStatus === 'rejected' && (
+              <div className="bg-warning/10 mt-3 rounded-xl px-3 py-2.5">
+                <p className="text-warning text-xs font-medium">
+                  สลิปที่ส่งมาก่อนหน้านี้ตรวจสอบไม่ผ่าน
+                </p>
+                {/* บอกเหตุผลด้วย ไม่งั้นลูกค้าก็ส่งใบเดิมกลับมาอีก */}
+                {order.slip_note && (
+                  <p className="text-warning/90 mt-0.5 text-xs">เหตุผล: {order.slip_note}</p>
+                )}
+                <p className="text-warning/90 mt-0.5 text-xs">รบกวนแนบใหม่อีกครั้งครับ 🙏</p>
+              </div>
+            )}
+            <p className="text-muted-foreground mt-3 text-center text-xs">
+              แนบที่นี่ทางเดียวนะครับ ระบบจะได้รู้ว่าเป็นของบิลไหนทันที 🙏
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  const addressCard = (
+  <div ref={addressRef}>
+  <Card>
+    <CardContent>
+      <p className="text-muted-foreground mb-3 text-sm font-medium">ที่อยู่จัดส่ง</p>
+
+      {/* ชื่อ LINE ไม่ใช่ชื่อผู้รับ — โชว์ไว้ให้รู้ว่าร้านคุยกับบัญชีไหนอยู่ */}
+      {lineName && (
+        <div className="bg-muted/40 mb-3 flex items-center gap-2 rounded-lg px-3 py-2">
+          <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
+          <p className="text-muted-foreground text-xs">
+            บัญชี LINE <span className="text-foreground font-medium">{lineName}</span>
+          </p>
+        </div>
+      )}
+
+      {!canEditAddress ? (
+        <div className="space-y-1 text-sm">
+          <p className="font-medium">{order.customer_name || lineName || '-'}</p>
+          <p className="text-muted-foreground">{order.customer_phone || '-'}</p>
+          <p className="text-muted-foreground leading-relaxed">{order.customer_address || '-'}</p>
+          <p className="text-muted-foreground pt-2 text-xs">
+            ออเดอร์จัดส่งแล้ว ไม่สามารถแก้ไขที่อยู่ได้
+          </p>
+        </div>
+      ) : !editingAddress && hasSavedAddress ? (
+        /* มีที่อยู่แล้ว — โชว์เฉย ๆ ไม่ต้องให้กรอกซ้ำ
+           ฟอร์มเปล่าที่มีปุ่ม "ส่งที่อยู่" ค้างอยู่ทำให้เข้าใจว่ายังต้องทำอะไรอีก
+           ทั้งที่จริงเหลือแค่แนบสลิป */
+        <div className="space-y-3">
+          <div className="space-y-1 text-sm">
+            <p className="font-medium">{order.customer_name || lineName || '-'}</p>
+            <p className="text-muted-foreground">{order.customer_phone || '-'}</p>
+            <p className="text-muted-foreground leading-relaxed">{order.customer_address}</p>
+          </div>
+
+          <div className="bg-success/10 flex items-start gap-2 rounded-xl px-3 py-2.5">
+            <Check className="text-success mt-0.5 size-4 shrink-0" />
+            <p className="text-success text-xs leading-relaxed">
+              ร้านได้รับที่อยู่แล้ว ไม่ต้องส่งซ้ำครับ
+              {order.payment_status !== 'paid' && slipStatus !== 'pending' && (
+                <> เหลือแค่แนบสลิปโอนเงินด้านบน</>
+              )}
+            </p>
+          </div>
+
+          <Button variant="outline" className="w-full" onClick={() => setEditingAddress(true)}>
+            <Pencil className="size-4" /> แก้ไขที่อยู่
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="p-name">ชื่อผู้รับ</Label>
+            <Input
+              id="p-name"
+              value={name}
+              onChange={(e) => editField(setName, e.target.value)}
+              placeholder="ชื่อ-นามสกุล สำหรับจ่าหน้ากล่อง"
+            />
+            {/* ช่องนี้ตั้งต้นด้วยชื่อ LINE ซึ่งมักเป็นชื่อเล่น
+                บอกไว้กันลูกค้าปล่อยผ่านแล้วกล่องมาถึงพร้อมชื่อ "🐻หมีน้อย" */}
+            {name && name === lineName && (
+              <p className="text-muted-foreground text-xs">
+                ดึงมาจากชื่อ LINE รบกวนแก้เป็นชื่อจริงถ้าไม่ตรงครับ
+              </p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="p-phone">เบอร์โทรศัพท์</Label>
+            <Input
+              id="p-phone"
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => editField(setPhone, e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="p-address">ที่อยู่</Label>
+            <Textarea
+              id="p-address"
+              rows={4}
+              value={address}
+              onChange={(e) => editField(setAddress, e.target.value)}
+              placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
+            />
+            <p className="text-muted-foreground text-xs">
+              อย่าลืมรหัสไปรษณีย์ 5 หลัก ไม่งั้นทางร้านส่งของไม่ได้ครับ
+            </p>
+          </div>
+          <Button size="lg" className="w-full" onClick={submitContact} disabled={saving}>
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : saved ? (
+              <>
+                <Check className="size-4" /> บันทึกแล้ว
+              </>
+            ) : (
+              <>
+                <Send className="size-4" />
+                {/* บิลที่มีที่อยู่อยู่แล้ว = กำลังแก้ ไม่ใช่ส่งครั้งแรก */}
+                {order.customer_address ? 'บันทึกที่อยู่ใหม่' : 'ส่งที่อยู่ให้ร้าน'}
+              </>
+            )}
+          </Button>
+          {saved && (
+            <p className="text-success text-center text-xs font-medium">
+              ร้านได้รับที่อยู่แล้ว แก้ไขเพิ่มได้จนกว่าจะจัดส่ง
+            </p>
+          )}
+        </div>
+      )}
+    </CardContent>
+  </Card>
+  </div>
+  );
+
   return (
     <div className="min-h-[100dvh] px-4 pt-safe pb-10">
       <div className="mx-auto max-w-md space-y-3 py-5">
@@ -365,7 +608,18 @@ export default function PublicOrderPage() {
               )}
             </div>
             {order.tracking_number && (
-              <p className="mt-3 text-sm font-medium">📦 เลขพัสดุ {order.tracking_number}</p>
+              <button
+                type="button"
+                onClick={copyTracking}
+                className="hover:bg-muted mx-auto mt-3 flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium"
+              >
+                📦 เลขพัสดุ {order.tracking_number}
+                {copiedTracking ? (
+                  <Check className="text-success size-3.5" />
+                ) : (
+                  <Copy className="text-muted-foreground size-3.5" />
+                )}
+              </button>
             )}
           </CardContent>
         </Card>
@@ -429,218 +683,17 @@ export default function PublicOrderPage() {
           </CardContent>
         </Card>
 
-        {/* ชำระเงิน */}
-        {order.payment_status !== 'paid' && (
-          <Card>
-            <CardContent>
-              <p className="text-muted-foreground mb-3 text-sm font-medium">ชำระเงิน</p>
-
-              <PromptPayQR
-                promptPayId={order.payment.promptpay_id}
-                amount={order.total_amount || 0}
-                reference={order.order_number}
-              />
-
-              {order.payment.account_number && (
-                <>
-                  <Separator className="my-4" />
-                  <div className="text-center text-sm">
-                    <p className="text-muted-foreground text-xs">หรือโอนเข้าบัญชี</p>
-                    <p className="mt-1 font-medium">{order.payment.bank_name}</p>
-                    <Button variant="ghost" className="mt-1 h-auto py-1.5" onClick={copyAccountNumber}>
-                      <span className="text-lg font-semibold tracking-wide tabular-nums">
-                        {order.payment.account_number}
-                      </span>
-                      {copiedAccount ? (
-                        <Check className="text-success size-4" />
-                      ) : (
-                        <Copy className="text-muted-foreground size-4" />
-                      )}
-                    </Button>
-                    <p className="text-muted-foreground">{order.payment.account_name}</p>
-                  </div>
-                </>
-              )}
-
-              <Separator className="my-4" />
-
-              {/* แจ้งสลิป — ทำได้ 2 ทาง ตรงนี้กับส่งเข้าไลน์ ลงที่เดียวกัน */}
-              {slipStatus === 'pending' ? (
-                <div className="bg-success/10 flex items-start gap-2 rounded-xl px-4 py-3">
-                  <Receipt className="text-success mt-0.5 size-4 shrink-0" />
-                  <div>
-                    <p className="text-success text-sm font-medium">ได้รับสลิปแล้วครับ</p>
-                    <p className="text-success/80 text-xs">
-                      ทางร้านกำลังตรวจสอบ เมื่อยืนยันแล้วสถานะจะเปลี่ยนเป็น "ชำระเงินแล้ว"
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      // เคลียร์ค่าทิ้งทุกครั้ง ไม่งั้นเลือกไฟล์เดิมซ้ำแล้ว onChange ไม่ยิง
-                      e.target.value = '';
-                      if (file) uploadSlip(file);
-                    }}
-                  />
-                  <Button
-                    size="lg"
-                    className="w-full"
-                    disabled={uploading}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {uploading ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" /> กำลังส่งสลิป...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="size-4" />
-                        {slipStatus === 'rejected' ? 'ส่งสลิปใหม่อีกครั้ง' : 'แนบสลิปโอนเงิน'}
-                      </>
-                    )}
-                  </Button>
-                  {slipStatus === 'rejected' && (
-                    <div className="bg-warning/10 mt-3 rounded-xl px-3 py-2.5">
-                      <p className="text-warning text-xs font-medium">
-                        สลิปที่ส่งมาก่อนหน้านี้ตรวจสอบไม่ผ่าน
-                      </p>
-                      {/* บอกเหตุผลด้วย ไม่งั้นลูกค้าก็ส่งใบเดิมกลับมาอีก */}
-                      {order.slip_note && (
-                        <p className="text-warning/90 mt-0.5 text-xs">เหตุผล: {order.slip_note}</p>
-                      )}
-                      <p className="text-warning/90 mt-0.5 text-xs">รบกวนแนบใหม่อีกครั้งครับ 🙏</p>
-                    </div>
-                  )}
-                  <p className="text-muted-foreground mt-3 text-center text-xs">
-                    แนบที่นี่ทางเดียวนะครับ ระบบจะได้รู้ว่าเป็นของบิลไหนทันที 🙏
-                  </p>
-                </>
-              )}
-            </CardContent>
-          </Card>
+        {hasSavedAddress ? (
+          <>
+            {paymentCard}
+            {addressCard}
+          </>
+        ) : (
+          <>
+            {addressCard}
+            {paymentCard}
+          </>
         )}
-
-        {/* ที่อยู่จัดส่ง */}
-        <Card>
-          <CardContent>
-            <p className="text-muted-foreground mb-3 text-sm font-medium">ที่อยู่จัดส่ง</p>
-
-            {/* ชื่อ LINE ไม่ใช่ชื่อผู้รับ — โชว์ไว้ให้รู้ว่าร้านคุยกับบัญชีไหนอยู่ */}
-            {lineName && (
-              <div className="bg-muted/40 mb-3 flex items-center gap-2 rounded-lg px-3 py-2">
-                <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
-                <p className="text-muted-foreground text-xs">
-                  บัญชี LINE <span className="text-foreground font-medium">{lineName}</span>
-                </p>
-              </div>
-            )}
-
-            {!canEditAddress ? (
-              <div className="space-y-1 text-sm">
-                <p className="font-medium">{order.customer_name || lineName || '-'}</p>
-                <p className="text-muted-foreground">{order.customer_phone || '-'}</p>
-                <p className="text-muted-foreground leading-relaxed">{order.customer_address || '-'}</p>
-                <p className="text-muted-foreground pt-2 text-xs">
-                  ออเดอร์จัดส่งแล้ว ไม่สามารถแก้ไขที่อยู่ได้
-                </p>
-              </div>
-            ) : !editingAddress && hasSavedAddress ? (
-              /* มีที่อยู่แล้ว — โชว์เฉย ๆ ไม่ต้องให้กรอกซ้ำ
-                 ฟอร์มเปล่าที่มีปุ่ม "ส่งที่อยู่" ค้างอยู่ทำให้เข้าใจว่ายังต้องทำอะไรอีก
-                 ทั้งที่จริงเหลือแค่แนบสลิป */
-              <div className="space-y-3">
-                <div className="space-y-1 text-sm">
-                  <p className="font-medium">{order.customer_name || lineName || '-'}</p>
-                  <p className="text-muted-foreground">{order.customer_phone || '-'}</p>
-                  <p className="text-muted-foreground leading-relaxed">{order.customer_address}</p>
-                </div>
-
-                <div className="bg-success/10 flex items-start gap-2 rounded-xl px-3 py-2.5">
-                  <Check className="text-success mt-0.5 size-4 shrink-0" />
-                  <p className="text-success text-xs leading-relaxed">
-                    ร้านได้รับที่อยู่แล้ว ไม่ต้องส่งซ้ำครับ
-                    {order.payment_status !== 'paid' && slipStatus !== 'pending' && (
-                      <> เหลือแค่แนบสลิปโอนเงินด้านบน</>
-                    )}
-                  </p>
-                </div>
-
-                <Button variant="outline" className="w-full" onClick={() => setEditingAddress(true)}>
-                  <Pencil className="size-4" /> แก้ไขที่อยู่
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="p-name">ชื่อผู้รับ</Label>
-                  <Input
-                    id="p-name"
-                    value={name}
-                    onChange={(e) => editField(setName, e.target.value)}
-                    placeholder="ชื่อ-นามสกุล สำหรับจ่าหน้ากล่อง"
-                  />
-                  {/* ช่องนี้ตั้งต้นด้วยชื่อ LINE ซึ่งมักเป็นชื่อเล่น
-                      บอกไว้กันลูกค้าปล่อยผ่านแล้วกล่องมาถึงพร้อมชื่อ "🐻หมีน้อย" */}
-                  {name && name === lineName && (
-                    <p className="text-muted-foreground text-xs">
-                      ดึงมาจากชื่อ LINE รบกวนแก้เป็นชื่อจริงถ้าไม่ตรงครับ
-                    </p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="p-phone">เบอร์โทรศัพท์</Label>
-                  <Input
-                    id="p-phone"
-                    type="tel"
-                    inputMode="tel"
-                    value={phone}
-                    onChange={(e) => editField(setPhone, e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="p-address">ที่อยู่</Label>
-                  <Textarea
-                    id="p-address"
-                    rows={4}
-                    value={address}
-                    onChange={(e) => editField(setAddress, e.target.value)}
-                    placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    อย่าลืมรหัสไปรษณีย์ 5 หลัก ไม่งั้นทางร้านส่งของไม่ได้ครับ
-                  </p>
-                </div>
-                <Button size="lg" className="w-full" onClick={submitContact} disabled={saving}>
-                  {saving ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : saved ? (
-                    <>
-                      <Check className="size-4" /> บันทึกแล้ว
-                    </>
-                  ) : (
-                    <>
-                      <Send className="size-4" />
-                      {/* บิลที่มีที่อยู่อยู่แล้ว = กำลังแก้ ไม่ใช่ส่งครั้งแรก */}
-                      {order.customer_address ? 'บันทึกที่อยู่ใหม่' : 'ส่งที่อยู่ให้ร้าน'}
-                    </>
-                  )}
-                </Button>
-                {saved && (
-                  <p className="text-success text-center text-xs font-medium">
-                    ร้านได้รับที่อยู่แล้ว แก้ไขเพิ่มได้จนกว่าจะจัดส่ง
-                  </p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {linkedToLine && (
           <div className="bg-success/10 flex items-start gap-2 rounded-xl px-4 py-3">

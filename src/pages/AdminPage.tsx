@@ -180,6 +180,9 @@ export default function AdminPage() {
   const [savingClaim, setSavingClaim] = useState(false);
   const [claimsVersion, setClaimsVersion] = useState(0);
   const [claimTotals, setClaimTotals] = useState({ dead: 0, refund: 0 });
+  // ช่วงเวลาที่กดใช้แล้วจริง ๆ ไม่ใช่ค่าที่กำลังพิมพ์อยู่ในช่องวันที่
+  // แยกไว้เพราะ setReportPeriod ยังไม่มีผลทันทีตอนกดปุ่ม อ่าน state ตอนนั้นจะได้ค่าเก่า
+  const [appliedRange, setAppliedRange] = useState<[string?, string?]>([]);
   const [deleting, setDeleting] = useState(false);
 
   // Edit state
@@ -213,8 +216,7 @@ export default function AdminPage() {
       }
 
       await loadAllOrders(reportPeriod);
-      // ยอดเคลม: ตัวรวมไว้หักกำไร และรายบิลไว้ติดป้ายบนการ์ด
-      await Promise.all([loadClaimTotals(), loadOrderClaims()]);
+      setAppliedRange(rangeFor(reportPeriod, startDate, endDate));
     } catch (err) {
       console.error('Fetch error:', err);
       toast.error('โหลดข้อมูลไม่สำเร็จ — ข้อมูลที่เห็นอาจไม่ครบ ลองรีเฟรชอีกครั้ง');
@@ -331,19 +333,21 @@ export default function AdminPage() {
 
   // ช่วงเวลาเดียวกับที่ loadAllOrders ใช้ เพื่อให้ยอดเคลมกับยอดขายพูดถึงช่วงเดียวกัน
   // (เหตุผลเรื่อง timezone อยู่ในคอมเมนต์ของ loadAllOrders — อย่าใช้ toISOString().split)
-  const claimRange = (): [string?, string?] => {
+  const rangeFor = (
+    period: 'today' | 'week' | 'month' | 'year' | 'custom',
+    from?: string,
+    to?: string
+  ): [string?, string?] => {
     const now = new Date();
-    if (reportPeriod === 'today')
+    if (period === 'today')
       return [new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()];
-    if (reportPeriod === 'week')
-      return [new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()];
-    if (reportPeriod === 'month')
-      return [new Date(now.getFullYear(), now.getMonth(), 1).toISOString()];
-    if (reportPeriod === 'year') return [new Date(now.getFullYear(), 0, 1).toISOString()];
-    if (reportPeriod === 'custom' && startDate && endDate)
+    if (period === 'week') return [new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()];
+    if (period === 'month') return [new Date(now.getFullYear(), now.getMonth(), 1).toISOString()];
+    if (period === 'year') return [new Date(now.getFullYear(), 0, 1).toISOString()];
+    if (period === 'custom' && from && to)
       return [
-        new Date(`${startDate}T00:00:00`).toISOString(),
-        new Date(`${endDate}T23:59:59.999`).toISOString(),
+        new Date(`${from}T00:00:00`).toISOString(),
+        new Date(`${to}T23:59:59.999`).toISOString(),
       ];
     return [];
   };
@@ -424,11 +428,22 @@ export default function AdminPage() {
     });
   };
 
+  // ช่วงเปลี่ยนเมื่อไหร่ก็ดึงเคลมใหม่ ทั้งยอดรวมและป้ายบนการ์ด
+  // เดิมโหลดแค่ตอนเปิดหน้า พอสลับช่วงแล้วตัวเลขค้างของเดิมไว้
+  useEffect(() => {
+    // ตอนเพิ่งเปิดหน้ายังไม่ได้ตั้งช่วง ยิงตอนนี้จะได้เคลมทั้งหมดตั้งแต่เปิดร้าน
+    // มาแวบหนึ่งก่อนค่าจริงจะมาทับ
+    if (appliedRange.length === 0) return;
+    loadClaimTotals();
+    loadOrderClaims();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedRange]);
+
   // เคลมของแต่ละบิลที่แสดงอยู่ ไว้ติดป้ายบนการ์ด
   // ดึงทีเดียวทั้งช่วง ไม่ยิงทีละบิล
   const loadOrderClaims = async () => {
     try {
-      const rows = await fetchClaims(...claimRange());
+      const rows = await fetchClaims(...appliedRange);
       const map: Record<string, { dead: number; refund: number }> = {};
       for (const c of rows) {
         const cur = map[c.order_id] || { dead: 0, refund: 0 };
@@ -443,7 +458,7 @@ export default function AdminPage() {
   // ยอดเคลมรวมของช่วงที่เลือก — เอาไปหักกำไรในหน้าสรุป
   const loadClaimTotals = async () => {
     try {
-      const rows = await fetchClaims(...claimRange());
+      const rows = await fetchClaims(...appliedRange);
       setClaimTotals({
         dead: rows.reduce((sum, c) => sum + c.dead_qty, 0),
         refund: rows.reduce((sum, c) => sum + c.refund_amount, 0),
@@ -1006,7 +1021,10 @@ export default function AdminPage() {
               key={p.key}
               onClick={() => {
                 setReportPeriod(p.key);
-                if (p.key !== 'custom') loadAllOrders(p.key);
+                if (p.key !== 'custom') {
+                  loadAllOrders(p.key);
+                  setAppliedRange(rangeFor(p.key));
+                }
               }}
               className={cn(
                 'h-9 shrink-0 rounded-full border px-3.5 text-sm font-medium transition-colors',
@@ -1042,7 +1060,10 @@ export default function AdminPage() {
                 />
               </div>
               <Button
-                onClick={() => loadAllOrders('custom', startDate, endDate)}
+                onClick={() => {
+                  loadAllOrders('custom', startDate, endDate);
+                  setAppliedRange(rangeFor('custom', startDate, endDate));
+                }}
                 disabled={!startDate || !endDate}
               >
                 ดูรายงาน
@@ -1653,8 +1674,8 @@ export default function AdminPage() {
           {/* ───────── เคลมปลาตาย ───────── */}
           <TabsContent value="claims" className="mt-4">
             <ClaimsPanel
-              from={claimRange()[0]}
-              to={claimRange()[1]}
+              from={appliedRange[0]}
+              to={appliedRange[1]}
               onChanged={loadClaimTotals}
               key={claimsVersion}
             />

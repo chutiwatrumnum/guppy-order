@@ -3,6 +3,7 @@ import { AlertTriangle, Check, Loader2, Receipt, RefreshCw, X } from 'lucide-rea
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
+import { renderTemplate } from '@/utils/templates';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -220,14 +221,19 @@ export default function PendingSlips({
     let notifyError = null;
     if (notifyUserId) {
       const summaryUrl = `https://liff.line.me/2010766267-xz9flUvC/o/${order.public_token}`;
+      const message = await renderTemplate(
+        'payment_confirmed',
+        {
+          order_number: order.order_number,
+          total: Number(order.total_amount).toLocaleString(),
+          summary_url: summaryUrl,
+        },
+        `✅ ยืนยันการชำระเงินแล้วครับ\nบิล ${order.order_number}`
+      );
       ({ error: notifyError } = await supabase.from('line_notifications').insert({
         line_user_id: notifyUserId,
         order_id: orderId,
-        message:
-          `✅ ยืนยันการชำระเงินแล้วครับ\n` +
-          `บิล ${order.order_number} · ฿${Number(order.total_amount).toLocaleString()}\n\n` +
-          `ทางร้านกำลังจัดเตรียมพัสดุ เมื่อจัดส่งจะแจ้งเลขพัสดุให้อีกครั้งครับ 🐟\n` +
-          `ดูใบสรุป: ${summaryUrl}`,
+        message,
       }));
     }
 
@@ -272,15 +278,20 @@ export default function PendingSlips({
         .single();
 
       if (order) {
+        const message = await renderTemplate(
+          'slip_rejected',
+          {
+            order_number: order.order_number,
+            // ว่างไว้ถ้าไม่ได้ใส่เหตุผล จะได้ไม่เหลือคำว่า "เหตุผล:" ลอยอยู่
+            reason: note ? `เหตุผล: ${note}\n\n` : '',
+            summary_url: `https://liff.line.me/2010766267-xz9flUvC/o/${order.public_token}`,
+          },
+          `⚠️ สลิปที่ส่งมายังตรวจสอบไม่ผ่านครับ\nบิล ${order.order_number}`
+        );
         await supabase.from('line_notifications').insert({
           line_user_id: slip.line_user_id,
           order_id: slip.order_id,
-          message:
-            `⚠️ สลิปที่ส่งมายังตรวจสอบไม่ผ่านครับ\n` +
-            `บิล ${order.order_number}\n\n` +
-            (note ? `เหตุผล: ${note}\n\n` : '') +
-            `รบกวนแนบสลิปใหม่อีกครั้งที่ลิงก์นี้ครับ 🙏\n` +
-            `https://liff.line.me/2010766267-xz9flUvC/o/${order.public_token}`,
+          message,
         });
       }
     }

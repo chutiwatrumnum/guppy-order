@@ -20,6 +20,7 @@ import type { Breed } from '@/types';
 import Layout from './Layout';
 import FoodProducts from '@/components/FoodProducts';
 import ShippingNoticeCard from '@/components/ShippingNoticeCard';
+import MessageTemplatesCard from '@/components/MessageTemplatesCard';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -546,6 +547,9 @@ export default function SettingsPage() {
 
         {/* ข้อความที่ส่งให้ลูกค้าตอนแจ้งเลขพัสดุ */}
         <ShippingNoticeCard settingsId={bankInfo.id} />
+
+        {/* คำที่ระบบพูดกับลูกค้าทั้งหมด */}
+        <MessageTemplatesCard />
 
         {/* อาหาร / สินค้าอื่นที่ไม่ใช่ปลา */}
         <FoodProducts />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Bell,
   BellOff,
@@ -14,6 +14,7 @@ import {
   Receipt,
   RefreshCw,
   Save,
+  Send,
   Trash2,
   X,
 } from 'lucide-react';
@@ -170,6 +171,13 @@ export default function AdminPage() {
   const [missingAddressOnly, setMissingAddressOnly] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<SavedOrder | null>(null);
   const [orderToUnlink, setOrderToUnlink] = useState<SavedOrder | null>(null);
+  // ปุ่มส่งเลขพัสดุซ้ำของบิลไหนกำลังทำงานอยู่
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  // เวลาที่เพิ่งส่งข้อความ "จัดส่งแล้ว" ของแต่ละบิล
+  //
+  // กดปุ่ม "ส่งซ้ำ" ตอนที่เพิ่งพิมพ์เลขในช่องข้าง ๆ จะเกิด blur → บันทึก+ส่ง ก่อนหนึ่งที
+  // แล้วคลิกค่อยมาถึง = ลูกค้าได้ข้อความเดียวกันสองครั้ง และกิน push โควต้าฟรีสองใบ
+  const lastNoticeRef = useRef<Record<string, number>>({});
   // เคลมปลาตาย — บิลที่กำลังบันทึก พร้อมค่าที่กรอก
   const [claimOrder, setClaimOrder] = useState<SavedOrder | null>(null);
   // กรอกทีละสายพันธุ์ไม่ได้ บิลหนึ่งตายได้หลายพันธุ์ — เก็บเป็น map ชื่อพันธุ์ → ที่กรอกไว้
@@ -603,6 +611,40 @@ export default function AdminPage() {
     }
   };
 
+  // ข้อความ "จัดส่งแล้ว" ลงคิว LINE พร้อมข้อความ/รูปที่ร้านตั้งไว้ในหน้าตั้งค่า
+  //
+  // ล้มเหลวตรงนี้ไม่ควรทำให้การบันทึกเลขพัสดุพัง — เลขบันทึกไปแล้วและติดตามได้แล้ว
+  const queueShippingNotice = async (order: SavedOrder, tracking: string, subscribed: boolean) => {
+    try {
+      const { data: cfg } = await supabase
+        .from('settings')
+        .select('shipping_message, shipping_images')
+        .limit(1)
+        .maybeSingle();
+
+      const extra = (cfg?.shipping_message || '').trim();
+      const { error } = await supabase.from('line_notifications').insert({
+        line_user_id: order.lineUserId,
+        order_id: order.id,
+        message:
+          `🚚 จัดส่งแล้วครับ\n` +
+          `บิล ${order.orderNumber}\n` +
+          `เลขพัสดุ ${tracking}` +
+          // ไม่สัญญาว่าจะแจ้งอัตโนมัติ ถ้าสมัครติดตามไม่ผ่าน
+          (subscribed ? `\n\nระบบจะแจ้งความคืบหน้าให้อัตโนมัติ 🔔` : '') +
+          (extra ? `\n\n${extra}` : ''),
+        images: cfg?.shipping_images || [],
+      });
+
+      if (error) throw error;
+      lastNoticeRef.current[order.id] = Date.now();
+      return true;
+    } catch (err) {
+      console.error('[SHIPPING NOTICE]', err);
+      return false;
+    }
+  };
+
   // กรอกเลขพัสดุ → บันทึกลงออเดอร์ แล้วสมัครติดตามให้บอท LINE ในคราวเดียว
   // บอท poll ตาราง parcel_subscriptions อยู่แล้ว จึงไม่ต้องมี API คั่นกลาง
   const saveTrackingNumber = async (order: SavedOrder, raw: string) => {
@@ -662,38 +704,71 @@ export default function AdminPage() {
       }
     }
 
-    // แจ้งลูกค้าทันทีว่าส่งของแล้ว พร้อมข้อความ/รูปที่ตั้งไว้ในหน้าตั้งค่า
+    // แจ้งลูกค้าทันทีว่าส่งของแล้ว
     //
     // บอทที่ poll สถานะพัสดุจะเงียบจนกว่าไปรษณีย์จะสแกนครั้งแรก ซึ่งกินเวลาเป็นชั่วโมง
     // ลูกค้าที่เพิ่งคุยกับร้านอยู่ควรได้รู้ตั้งแต่ตอนนี้ว่าของออกไปแล้ว
-    //
-    // ล้มเหลวตรงนี้ไม่ควรทำให้การบันทึกเลขพัสดุพัง — เลขบันทึกไปแล้วและติดตามได้แล้ว
-    try {
-      const { data: cfg } = await supabase
-        .from('settings')
-        .select('shipping_message, shipping_images')
-        .limit(1)
-        .maybeSingle();
-
-      const extra = (cfg?.shipping_message || '').trim();
-      await supabase.from('line_notifications').insert({
-        line_user_id: order.lineUserId,
-        order_id: order.id,
-        message:
-          `🚚 จัดส่งแล้วครับ\n` +
-          `บิล ${order.orderNumber}\n` +
-          `เลขพัสดุ ${tracking}` +
-          // ไม่สัญญาว่าจะแจ้งอัตโนมัติ ถ้าสมัครติดตามไม่ผ่าน
-          (subscribed ? `\n\nระบบจะแจ้งความคืบหน้าให้อัตโนมัติ 🔔` : '') +
-          (extra ? `\n\n${extra}` : ''),
-        images: cfg?.shipping_images || [],
-      });
-    } catch (err) {
-      console.error('[SHIPPING NOTICE]', err);
-    }
+    await queueShippingNotice(order, tracking, subscribed);
 
     if (subscribed) toast.success('บันทึกแล้ว — แจ้งลูกค้าและติดตามสถานะให้อัตโนมัติ');
   };
+
+  // ส่งเลขพัสดุให้ลูกค้าใน LINE อีกรอบ
+  //
+  // ใช้ตอนกู้เคสที่การติดตามหลุดไปเงียบ ๆ — ลูกค้าเพิ่งมาผูกบัญชี LINE ทีหลัง
+  // หรือเลขเคยถูกบิลอื่นยึดไป (บิลทดสอบที่กรอกเลขเดียวกัน)
+  //
+  // ซิงก์การติดตามก่อนส่งเสมอ ไม่งั้นข้อความไปถึงแต่บอทยังไม่ตามให้ = สัญญาลอย ๆ
+  const resendTracking = async (order: SavedOrder) => {
+    const tracking = order.trackingNumber?.trim().toUpperCase();
+    if (!tracking || resendingId) return;
+
+    const since = Date.now() - (lastNoticeRef.current[order.id] || 0);
+    if (since < 5000) {
+      toast.info('เพิ่งส่งไปเมื่อสักครู่', { description: 'ลูกค้าได้เลขพัสดุนี้ไปแล้ว' });
+      return;
+    }
+
+    if (!order.lineUserId) {
+      toast.warning('ยังส่งให้ไม่ได้', {
+        description: 'บิลนี้ยังไม่ผูกบัญชี LINE — ให้ลูกค้าเปิดใบสรุปในแอป LINE ก่อน',
+        duration: 6000,
+      });
+      return;
+    }
+
+    setResendingId(order.id);
+    try {
+      const { data: sub, error: subError } = await supabase.rpc('sync_parcel_subscription', {
+        p_order_id: order.id,
+      });
+      const subscribed = !subError && sub?.ok === true;
+
+      if (!(await queueShippingNotice(order, tracking, subscribed))) {
+        toast.error('ส่งเลขพัสดุไม่สำเร็จ');
+        return;
+      }
+
+      // ส่งไปแล้วก็จริง แต่ถ้าติดตามไม่ผ่านต้องบอกร้าน ไม่งั้นเข้าใจว่าจบแล้ว
+      if (!subscribed) {
+        toast.warning('ส่งเลขให้ลูกค้าแล้ว แต่ยังติดตามอัตโนมัติไม่ได้', {
+          description:
+            sub?.reason === 'taken_by_other_order'
+              ? `เลขนี้ถูกบิล ${sub.order_number ?? '—'} ถืออยู่ — ปลดการผูกที่บิลนั้นก่อน แล้วกดส่งซ้ำอีกที`
+              : (subError?.message ?? sub?.reason ?? 'ไม่ทราบสาเหตุ'),
+          duration: 10000,
+        });
+        return;
+      }
+
+      toast.success('ส่งเลขพัสดุให้ลูกค้าอีกรอบแล้ว', {
+        description: 'ติดตามสถานะให้อัตโนมัติเรียบร้อย',
+      });
+    } finally {
+      setResendingId(null);
+    }
+  };
+
 
   // Dashboard stats
   const dashboardStats = useMemo(() => {
@@ -1308,6 +1383,24 @@ export default function AdminPage() {
                             }}
                             className="h-9 flex-1 uppercase"
                           />
+                          {/* ส่งเลขซ้ำ — ลูกค้าหาข้อความเก่าไม่เจอ หรือการติดตามหลุดไปแล้ว */}
+                          {order.trackingNumber && order.lineUserId && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-9 shrink-0 px-2.5"
+                              disabled={resendingId === order.id}
+                              onClick={() => resendTracking(order)}
+                              title="ส่งเลขพัสดุให้ลูกค้าใน LINE อีกรอบ พร้อมซ่อมการติดตามให้ด้วย"
+                            >
+                              {resendingId === order.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Send className="size-3.5" />
+                              )}
+                              ส่งซ้ำ
+                            </Button>
+                          )}
                           {order.lineUserId ? (
                             <Badge
                               variant="success"

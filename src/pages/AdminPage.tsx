@@ -611,6 +611,34 @@ export default function AdminPage() {
     }
   };
 
+  // เลขพัสดุนี้ถูกบิลอื่นถือครองอยู่ไหม — คืนบิลที่ถือถ้าชน
+  //
+  // เกณฑ์เดียวกับฝั่ง DB (sync_parcel_subscription): ลูกค้าคนเดียวกันส่งรวมกล่องได้
+  // แถวกำพร้าเพราะบิลเดิมถูกลบก็ย้ายมาได้ ห้ามเฉพาะการแย่งจากบิลอื่นที่ยังอยู่
+  //
+  // อ่านรายการติดตามไม่ขึ้นก็ถือว่าไม่ผ่าน — fail closed
+  // เดาว่า "คงไม่ชนหรอก" แล้วเขียนไปเลย คือท่าที่ทำให้เรื่องนี้เกิดตั้งแต่แรก
+  const findTrackingConflict = async (order: SavedOrder, tracking: string) => {
+    const { data: row, error } = await supabase
+      .from('parcel_subscriptions')
+      .select('order_id, line_user_id')
+      .eq('tracking_number', tracking)
+      .maybeSingle();
+
+    if (error) return { unreadable: true, orderNumber: null };
+    if (!row?.order_id) return null;
+    if (row.order_id === order.id) return null;
+    if (row.line_user_id === order.lineUserId) return null;
+
+    const { data: holder } = await supabase
+      .from('orders')
+      .select('order_number')
+      .eq('id', row.order_id)
+      .maybeSingle();
+
+    return { unreadable: false, orderNumber: (holder?.order_number as string | undefined) ?? null };
+  };
+
   // ข้อความ "จัดส่งแล้ว" ลงคิว LINE พร้อมข้อความ/รูปที่ร้านตั้งไว้ในหน้าตั้งค่า
   //
   // ล้มเหลวตรงนี้ไม่ควรทำให้การบันทึกเลขพัสดุพัง — เลขบันทึกไปแล้วและติดตามได้แล้ว
@@ -656,6 +684,29 @@ export default function AdminPage() {
       return;
     }
 
+    // เช็คก่อนเขียนอะไรทั้งสิ้น
+    //
+    // เขียนไปก่อนแล้วค่อยตีกลับตอนสมัครติดตามยังไม่พอ — เลขของลูกค้าคนอื่นจะค้างอยู่บน
+    // ใบสรุปของบิลนี้ ซึ่งลูกค้าเปิดดูเองได้ตลอด และสถานะบิลก็เด้งเป็น "ส่งแล้ว" ทั้งที่ยังไม่ได้ส่ง
+    // ความผิดพลาดถึงลูกค้าอยู่ดี แม้จะไม่ได้ push อะไรออกไป
+    const conflict = await findTrackingConflict(order, tracking);
+    if (conflict?.unreadable) {
+      toast.error('เช็คเลขพัสดุไม่ได้ — ยังไม่ได้บันทึกอะไร', {
+        description: 'อ่านรายการติดตามไม่ขึ้น ลองกดบันทึกใหม่อีกทีครับ',
+        duration: 8000,
+      });
+      return;
+    }
+    if (conflict) {
+      toast.error('เลขพัสดุนี้อยู่ในบิลอื่นแล้ว — ยังไม่ได้บันทึกอะไร', {
+        description:
+          `${conflict.orderNumber ? `บิล ${conflict.orderNumber}` : 'อีกบิลหนึ่ง'} ถืออยู่ — ` +
+          'ถ้าตั้งใจย้ายมาบิลนี้ ให้กดปลดการผูกที่บิลนั้นก่อน',
+        duration: 12000,
+      });
+      return;
+    }
+
     const { error } = await supabase
       .from('orders')
       .update({ tracking_number: tracking, status: 'shipped' })
@@ -688,20 +739,24 @@ export default function AdminPage() {
 
     const subscribed = !subError && sub?.ok === true;
 
+    // ด่านสอง เผื่อการเช็คก่อนหน้าอ่านไม่ขึ้น หรือมีคนกรอกเลขเดียวกันคาบเกี่ยวกัน
+    // ห้ามส่งอะไรถึงลูกค้าตรงนี้เด็ดขาด — ข้อความ LINE ถอนคืนไม่ได้
+    // และเลขที่จะส่งไปเป็นของอีกบิลหนึ่ง ให้ร้านไปแก้ให้จบก่อนแล้วค่อยกดปุ่ม "ส่งซ้ำ"
+    if (sub?.reason === 'taken_by_other_order') {
+      toast.error('เลขพัสดุนี้อยู่ในบิลอื่น — ยังไม่ได้แจ้งลูกค้า', {
+        description: `บิล ${sub.order_number ?? '—'} ถืออยู่ — ปลดการผูกที่บิลนั้นก่อน แล้วกดปุ่ม "ส่งซ้ำ" ที่บิลนี้`,
+        duration: 12000,
+      });
+      return;
+    }
+
     if (!subscribed) {
-      // เคสที่เจอจริง: เอาเลขพัสดุของลูกค้าไปกรอกในบิลทดสอบ แล้วการติดตามย้ายไปทั้งดุ้น
-      // ลูกค้าเงียบหายโดยไม่มี error ให้ใครเห็น — ตอนนี้ตีกลับแทนการเขียนทับ
-      if (sub?.reason === 'taken_by_other_order') {
-        toast.error('เลขพัสดุนี้ติดตามอยู่ในบิลอื่นแล้ว', {
-          description: `บิล ${sub.order_number ?? '—'} ถืออยู่ — ลบเลขหรือปลดการผูกที่บิลนั้นก่อน แล้วค่อยกรอกใหม่ที่นี่`,
-          duration: 10000,
-        });
-      } else {
-        toast.error('บันทึกเลขพัสดุแล้ว แต่สมัครติดตามไม่สำเร็จ', {
-          description: subError?.message ?? sub?.reason ?? 'ไม่ทราบสาเหตุ',
-          duration: 8000,
-        });
-      }
+      // เลขไม่ได้ชนกับใคร แค่สมัครติดตามไม่ผ่าน — ข้อความยังถูกต้อง ส่งได้ตามปกติ
+      // (ข้างล่างจะตัดบรรทัดสัญญาว่าจะแจ้งอัตโนมัติออกให้เอง)
+      toast.error('บันทึกเลขพัสดุแล้ว แต่สมัครติดตามไม่สำเร็จ', {
+        description: subError?.message ?? sub?.reason ?? 'ไม่ทราบสาเหตุ',
+        duration: 8000,
+      });
     }
 
     // แจ้งลูกค้าทันทีว่าส่งของแล้ว
@@ -744,6 +799,15 @@ export default function AdminPage() {
       });
       const subscribed = !subError && sub?.ok === true;
 
+      // ยังชนกับบิลอื่นอยู่ = ยังไม่ได้แก้ ไม่ส่งอะไรออกไปทั้งนั้น
+      if (sub?.reason === 'taken_by_other_order') {
+        toast.error('ยังส่งให้ไม่ได้ — เลขนี้อยู่ในบิลอื่น', {
+          description: `บิล ${sub.order_number ?? '—'} ถืออยู่ — ปลดการผูกที่บิลนั้นก่อน แล้วค่อยกดส่งซ้ำ`,
+          duration: 12000,
+        });
+        return;
+      }
+
       if (!(await queueShippingNotice(order, tracking, subscribed))) {
         toast.error('ส่งเลขพัสดุไม่สำเร็จ');
         return;
@@ -752,10 +816,7 @@ export default function AdminPage() {
       // ส่งไปแล้วก็จริง แต่ถ้าติดตามไม่ผ่านต้องบอกร้าน ไม่งั้นเข้าใจว่าจบแล้ว
       if (!subscribed) {
         toast.warning('ส่งเลขให้ลูกค้าแล้ว แต่ยังติดตามอัตโนมัติไม่ได้', {
-          description:
-            sub?.reason === 'taken_by_other_order'
-              ? `เลขนี้ถูกบิล ${sub.order_number ?? '—'} ถืออยู่ — ปลดการผูกที่บิลนั้นก่อน แล้วกดส่งซ้ำอีกที`
-              : (subError?.message ?? sub?.reason ?? 'ไม่ทราบสาเหตุ'),
+          description: subError?.message ?? sub?.reason ?? 'ไม่ทราบสาเหตุ',
           duration: 10000,
         });
         return;

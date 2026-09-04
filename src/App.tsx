@@ -14,6 +14,7 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const AdminPage = lazy(() => import('@/pages/AdminPage'));
 const CustomersPage = lazy(() => import('@/pages/CustomersPage'));
 const PublicOrderPage = lazy(() => import('@/pages/PublicOrderPage'));
+const FarmPage = lazy(() => import('@/pages/FarmPage'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -33,6 +34,9 @@ export default function App() {
         <Routes>
           {/* ใบสรุปสำหรับลูกค้า — เปิดได้โดยไม่ต้องล็อกอิน ต้องอยู่นอก ProtectedRoute */}
           <Route path="/o/:token" element={<PublicOrderPage />} />
+
+          {/* หน้าโชว์ฟาร์มสำหรับลูกค้าใหม่ — สาธารณะเช่นกัน ห้ามให้ ProtectedRoute เด้งไปหน้าล็อกอิน */}
+          <Route path="/farm" element={<FarmPage />} />
 
           {/* Auth Route - Always accessible */}
           <Route path="/auth" element={user ? <Navigate to="/" replace /> : <AuthScreen />} />

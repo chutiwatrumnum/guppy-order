@@ -632,27 +632,34 @@ export default function AdminPage() {
 
     if (!order.lineUserId) {
       toast.warning('บันทึกเลขพัสดุแล้ว แต่ยังแจ้งเตือนอัตโนมัติไม่ได้', {
-        description: 'ลูกค้ายังไม่เคยเปิดใบสรุปในแอป LINE',
+        description: 'ลูกค้ายังไม่เคยเปิดใบสรุปในแอป LINE — พอเปิดเมื่อไหร่ ระบบสมัครติดตามให้เอง',
         duration: 6000,
       });
       return;
     }
 
-    const { error: subError } = await supabase.from('parcel_subscriptions').upsert(
-      {
-        tracking_number: tracking,
-        line_user_id: order.lineUserId,
-        order_id: order.id,
-        // ห้ามส่ง last_status มาด้วย — เลขเดิมที่กดบันทึกซ้ำจะโดนล้างความจำบอท
-        // แล้วรอบถัดไปมันจะแจ้งสถานะที่ลูกค้าเคยได้ไปแล้วซ้ำอีก
-        // แถวใหม่ไม่ต้องตั้งอะไร คอลัมน์นี้เริ่มเป็น null อยู่แล้ว
-      },
-      { onConflict: 'tracking_number' }
-    );
+    // ฝั่ง DB เป็นคนตัดสินว่าสมัครติดตามได้ไหม และมี trigger คอยเรียกซ้ำให้เอง
+    // ตอนลูกค้าเปิดใบสรุปผูกบัญชีทีหลัง — ที่นี่เรียกตรงเพื่อเอาเหตุผลมาบอกร้านทันที
+    const { data: sub, error: subError } = await supabase.rpc('sync_parcel_subscription', {
+      p_order_id: order.id,
+    });
 
-    if (subError) {
-      toast.error('บันทึกเลขพัสดุแล้ว แต่สมัครติดตามไม่สำเร็จ', { description: subError.message });
-      return;
+    const subscribed = !subError && sub?.ok === true;
+
+    if (!subscribed) {
+      // เคสที่เจอจริง: เอาเลขพัสดุของลูกค้าไปกรอกในบิลทดสอบ แล้วการติดตามย้ายไปทั้งดุ้น
+      // ลูกค้าเงียบหายโดยไม่มี error ให้ใครเห็น — ตอนนี้ตีกลับแทนการเขียนทับ
+      if (sub?.reason === 'taken_by_other_order') {
+        toast.error('เลขพัสดุนี้ติดตามอยู่ในบิลอื่นแล้ว', {
+          description: `บิล ${sub.order_number ?? '—'} ถืออยู่ — ลบเลขหรือปลดการผูกที่บิลนั้นก่อน แล้วค่อยกรอกใหม่ที่นี่`,
+          duration: 10000,
+        });
+      } else {
+        toast.error('บันทึกเลขพัสดุแล้ว แต่สมัครติดตามไม่สำเร็จ', {
+          description: subError?.message ?? sub?.reason ?? 'ไม่ทราบสาเหตุ',
+          duration: 8000,
+        });
+      }
     }
 
     // แจ้งลูกค้าทันทีว่าส่งของแล้ว พร้อมข้อความ/รูปที่ตั้งไว้ในหน้าตั้งค่า
@@ -675,8 +682,9 @@ export default function AdminPage() {
         message:
           `🚚 จัดส่งแล้วครับ\n` +
           `บิล ${order.orderNumber}\n` +
-          `เลขพัสดุ ${tracking}\n\n` +
-          `ระบบจะแจ้งความคืบหน้าให้อัตโนมัติ 🔔` +
+          `เลขพัสดุ ${tracking}` +
+          // ไม่สัญญาว่าจะแจ้งอัตโนมัติ ถ้าสมัครติดตามไม่ผ่าน
+          (subscribed ? `\n\nระบบจะแจ้งความคืบหน้าให้อัตโนมัติ 🔔` : '') +
           (extra ? `\n\n${extra}` : ''),
         images: cfg?.shipping_images || [],
       });
@@ -684,7 +692,7 @@ export default function AdminPage() {
       console.error('[SHIPPING NOTICE]', err);
     }
 
-    toast.success('บันทึกแล้ว — แจ้งลูกค้าและติดตามสถานะให้อัตโนมัติ');
+    if (subscribed) toast.success('บันทึกแล้ว — แจ้งลูกค้าและติดตามสถานะให้อัตโนมัติ');
   };
 
   // Dashboard stats

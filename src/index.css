@@ -1,4 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
+/* Prompt = เนื้อความและ UI ทั้งแอป (ของเดิม)
+   Chonburi = หัวข้อใหญ่บนหน้าเว็บสาธารณะ ตัวอักษรป้ายร้านแบบไทย ๆ มีบุคลิกของตัวเอง
+   IBM Plex Mono = ชื่อสายพันธุ์กับตัวเลข — ชื่อสายพันธุ์ปลาถูกตั้งแบบชื่อสเปซิเมน
+                   (Full Red Albino / Koi Red Ear) วางด้วยฟอนต์ mono แล้วอ่านเป็น "ป้ายระบุพันธุ์" ทันที
+   ไฟล์ฟอนต์ถูกโหลดเมื่อมีตัวอักษรที่ใช้จริงเท่านั้น หน้าหลังบ้านที่ไม่ได้ใช้สองตัวหลังจึงไม่โดนถ่วง */
+@import url('https://fonts.googleapis.com/css2?family=Chonburi&family=IBM+Plex+Mono:wght@400;500;600&family=Prompt:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -191,5 +196,192 @@
   .animate-bear-shadow,
   .animate-bubble-rise {
     animation: none;
+  }
+}
+
+/* ══ หน้าโชว์ฟาร์ม (/farm) ══════════════════════════════════════════
+   หน้านี้มีระบบสีของตัวเอง ไม่ใช้โทเคนของแอปหลัง
+   เพราะมันคนละงานกัน — หลังบ้านคือเครื่องมือที่คนขายเปิดวันละห้าสิบครั้ง
+   ต้องจืดและนิ่ง ส่วนหน้านี้คือหน้าร้าน ลูกค้าเห็นครั้งเดียวแล้วตัดสินใจ
+   สีทั้งชุดดูดมาจากโลโก้ร้าน: น้ำสีฟ้าอ่อน หลังคาสีครีม และหางปลาสีส้มแดง */
+
+.farm {
+  --f-deep: #0b3a4a;
+  --f-mid: #43707f;
+  --f-soft: #7ba3b0;
+  --f-water: #ddf0f7;
+  --f-water-2: #b3dced;
+  --f-ground: #f4fafc;
+  --f-line: #d3e5ec;
+  /* ครีมของป้ายชื่อ — เทียบเคียงเทปกาวที่ฟาร์มจริงแปะข้างขวดเพาะ */
+  --f-tag: #f8eed9;
+  --f-tag-edge: #e3d2b0;
+  /* ส้มแดงจากหางปลาในโลโก้ ใช้เท่าที่จำเป็นจริง ๆ ไม่งั้นมันกลบสีน้ำทั้งหน้า */
+  --f-coral: #d4522c;
+
+  background: var(--f-ground);
+  color: var(--f-deep);
+  /* กดลิงก์ในเมนูแล้วเลื่อนไปเอง ไม่ใช่กระโดดตัด */
+  scroll-behavior: smooth;
+}
+
+.farm ::selection {
+  background: var(--f-water-2);
+  color: var(--f-deep);
+}
+
+/* หัวข้อใหญ่ — Chonburi มีน้ำหนักเดียว ต้องพึ่งขนาดกับระยะห่างแทนความหนา */
+.farm-display {
+  font-family: 'Chonburi', 'Prompt', serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.28;
+}
+
+/* ชื่อสายพันธุ์ ราคา ตัวเลข ป้ายกำกับ */
+.farm-mono {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-feature-settings: 'ss01';
+}
+
+/* ── ตู้ปลา: การ์ดหนึ่งใบ = ขวดเพาะหนึ่งใบบนชั้น ─────────────────── */
+
+.tank-water {
+  /* ไฮไลต์ผิวน้ำต้องไม่ขาวจัด — ปลาสีอ่อน (อัลบิโน แพลตินัม โคย) หายเข้าไปในไฮไลต์
+     จนเหลือแต่ลำตัว ส่วนหางที่เป็นจุดขายของพันธุ์กลับมองไม่เห็น */
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.62) 0%, transparent 58%),
+    linear-gradient(180deg, var(--f-water) 0%, var(--f-water-2) 100%);
+}
+
+/* ป้ายชื่อเอียงคนละองศา เหมือนคนแปะเทปเองทีละใบ ไม่ใช่เครื่องพิมพ์
+   องศาจริงมาจาก hash ของชื่อพันธุ์ ส่งเข้ามาทาง --tilt */
+.tank-tag {
+  background: var(--f-tag);
+  border: 1px solid var(--f-tag-edge);
+  rotate: var(--tilt, -0.6deg);
+  transition: rotate 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ชี้ค้างแล้วป้ายตั้งตรง + ปลากระดิกหาง */
+.tank:hover .tank-tag,
+.tank:focus-visible .tank-tag {
+  rotate: 0deg;
+}
+
+@keyframes tail-sway {
+  0%,
+  100% { transform: rotate(-2.5deg); }
+  50%  { transform: rotate(2.5deg); }
+}
+
+.guppy-tail {
+  transform-box: fill-box;
+  /* จุดหมุนอยู่ที่โคนหาง ไม่ใช่กลางหาง ไม่งั้นหางจะโยกทั้งแผ่นเหมือนใบพัด */
+  transform-origin: 2% 50%;
+}
+
+.tank:hover .guppy-tail {
+  animation: tail-sway 1.1s ease-in-out infinite;
+}
+
+/* ── จังหวะตอนเปิดหน้า ───────────────────────────────────────────
+   เล่นครั้งเดียวตอนโหลด ไล่ทีละชิ้นจากหัวข้อลงมา
+   ตั้งใจให้เป็น "หนึ่งจังหวะ" ไม่ใช่ทุกอย่างขยับพร้อมกันแล้วจบ */
+@keyframes farm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-farm-rise {
+  animation: farm-rise 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* เส้นใต้ที่ลากเองด้วยมือ — วาดจากซ้ายไปขวาหลังหัวข้อโผล่ครบ */
+@keyframes underline-draw {
+  from { stroke-dashoffset: 260; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.farm-underline path {
+  stroke-dasharray: 260;
+  animation: underline-draw 0.9s cubic-bezier(0.65, 0, 0.35, 1) 0.55s both;
+}
+
+/* ── ฝูงปลาฉากหลัง ────────────────────────────────────────────── */
+@keyframes fish-swim {
+  from { transform: translateX(-30%); }
+  to   { transform: translateX(560%); }
+}
+
+@utility animate-fish-swim {
+  animation: fish-swim linear infinite;
+}
+
+/* ── โผล่ตอนเลื่อนถึง ─────────────────────────────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── เส้นเวลาในหัวข้อ "วิธีรับปลา" ─────────────────────────────
+   เส้นทึบยาวเต็มความสูงคือทางที่ยังไม่ได้เดิน ส่วนที่เข้มขึ้นคือที่อ่านผ่านมาแล้ว
+   --fill ถูกตั้งจาก JS ตามตำแหน่งเลื่อนจอ */
+.care-track::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: 2px;
+  height: var(--fill, 0%);
+  background: var(--f-coral);
+  transition: height 0.15s linear;
+}
+
+/* ── สลับตัวกรองสายพันธุ์ ────────────────────────────────────────
+   View Transition ทำให้การ์ดที่ยังอยู่ "เลื่อนไปตำแหน่งใหม่" แทนที่จะกระพริบแล้วเรียงใหม่
+   สั้น ๆ พอ เพราะตอนกรองจาก 57 เหลือ 6 มีการ์ดหายพร้อมกันหลายสิบใบ */
+::view-transition-group(*) {
+  animation-duration: 0.28s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+::view-transition-old(*) {
+  animation-duration: 0.16s;
+}
+::view-transition-new(*) {
+  animation-duration: 0.24s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fish-swim,
+  .animate-farm-rise,
+  .farm-underline path,
+  .tank:hover .guppy-tail {
+    animation: none;
+  }
+  /* ต้องรีเซ็ตเป็นสถานะปลายทาง ไม่งั้นเนื้อหาจะจางค้างอยู่ทั้งหน้า */
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .farm {
+    scroll-behavior: auto;
+  }
+  .care-track::after {
+    transition: none;
   }
 }

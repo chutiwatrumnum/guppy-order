@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   AlertTriangle,
   ArrowDown,
@@ -7,17 +7,21 @@ import {
   CreditCard,
   Edit2,
   Fish,
+  Globe,
+  ImagePlus,
   Loader2,
   Plus,
   Save,
   Store,
   Trash2,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import type { Breed } from '@/types';
+import { ACCEPTED_PHOTO_TYPES, shrinkPhoto, storagePathFromUrl } from '@/utils/image';
 import Layout from './Layout';
 import FoodProducts from '@/components/FoodProducts';
 import ShippingNoticeCard from '@/components/ShippingNoticeCard';
@@ -171,6 +175,63 @@ function PriceCell({
   );
 }
 
+/** ตัวเลือกสองทางแบบกดสลับ — ใช้แทน switch เพราะทั้งสองฝั่งต้องมีชื่อกำกับ
+ *  "หมด" กับ "มีขาย" ต่างกันคนละเรื่อง ปุ่มเปิด/ปิดเปล่า ๆ ต้องเดาว่าเปิดคืออะไร */
+function Segmented<T extends string | boolean>({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: T;
+  onChange: (next: T) => void;
+  options: Array<{ value: T; label: string; activeClass: string }>;
+  label: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="bg-background inline-flex rounded-lg border p-0.5"
+    >
+      {options.map((o) => (
+        <button
+          key={String(o.value)}
+          type="button"
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+            value === o.value ? o.activeClass : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** ป้ายในตาราง กดแล้วสลับหมด/มีขายทันที ไม่ต้องเปิดหน้าต่างแก้ไข
+ *  ร้านสลับค่านี้ตอนกำลังขายอยู่หน้าตู้ ทุกจังหวะที่ต้องกดเพิ่มคือจังหวะที่จะไม่ได้กด */
+function StockChip({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={on ? 'ตอนนี้มีขาย กดเพื่อเปลี่ยนเป็นหมด' : 'ตอนนี้หมด กดเพื่อเปลี่ยนเป็นมีขาย'}
+      className={cn(
+        'shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors',
+        on
+          ? 'border-success/25 bg-success/10 text-success hover:bg-success/20'
+          : 'border-warning/30 bg-warning/15 text-warning hover:bg-warning/25'
+      )}
+    >
+      {on ? 'มีขาย' : 'หมด'}
+    </button>
+  );
+}
+
 export default function SettingsPage() {
   // State
   const [breeds, setBreeds] = useState<Breed[]>([]);
@@ -187,6 +248,15 @@ export default function SettingsPage() {
   const [isBreedModalOpen, setIsBreedModalOpen] = useState(false);
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [editingBreed, setEditingBreed] = useState<Breed | null>(null);
+  // ── ฟิลด์ของหน้าเว็บที่ต้องเก็บเป็น state (ที่เหลือในฟอร์มเป็น uncontrolled) ──
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [showcase, setShowcase] = useState(true);
+  const [inStock, setInStock] = useState(true);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  // รูปที่ถูกแทนที่ระหว่างแก้ไข — ลบออกจากสตอเรจต่อเมื่อกดบันทึกสำเร็จแล้วเท่านั้น
+  // ถ้าลบทันทีที่เปลี่ยนรูปแล้วคนกดยกเลิก แถวเดิมจะชี้ไปไฟล์ที่ไม่มีอยู่จริง
+  const stalePhotosRef = useRef<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [tab, setTab] = useState<SettingsTab>('products');
   const [sortConfig, setSortConfig] = useState<{ key: string; dir: 'asc' | 'desc' }>({
@@ -249,6 +319,66 @@ export default function SettingsPage() {
     }
   };
 
+  // เปิดหน้าต่างแก้ไข — ต้องยัดค่าเริ่มต้นของ state ทุกตัวเอง ไม่งั้นค่าจากพันธุ์
+  // ที่เปิดดูก่อนหน้าจะค้างมาโผล่ในพันธุ์ถัดไป แล้วเผลอกดบันทึกทับ
+  const openBreedModal = (breed: Breed | null) => {
+    setEditingBreed(breed);
+    setPhotoUrl(breed?.image_url ?? null);
+    setShowcase(breed?.showcase ?? true);
+    setInStock(breed?.in_stock ?? true);
+    stalePhotosRef.current = [];
+    setIsBreedModalOpen(true);
+  };
+
+  const closeBreedModal = () => {
+    // ยกเลิก = ไม่แตะสตอเรจเลย รูปที่อัปไประหว่างนี้ปล่อยค้างไว้ดีกว่าลบผิดตัว
+    stalePhotosRef.current = [];
+    setIsBreedModalOpen(false);
+    setEditingBreed(null);
+  };
+
+  const pickPhoto = async (file: File) => {
+    if (!ACCEPTED_PHOTO_TYPES.includes(file.type)) {
+      toast.error('รองรับเฉพาะไฟล์ JPG, PNG, WebP');
+      return;
+    }
+
+    setPhotoBusy(true);
+    try {
+      // ย่อก่อนอัปเสมอ — บัคเก็ตตั้งเพดานไว้ 600KB แต่ของจริงควรอยู่แถว 150KB
+      // เพราะทุกไบต์ที่อัปคือไบต์ที่ลูกค้าโหลดซ้ำทุกครั้งที่เปิดหน้าเว็บ
+      const small = await shrinkPhoto(file);
+      const ext = small.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = `b/${Date.now()}.${ext}`;
+
+      const { error } = await supabase.storage.from('breeds').upload(path, small, {
+        contentType: small.type,
+        // ชื่อไฟล์ไม่ซ้ำเพราะมีเวลาต่อท้าย รูปเดิมจึงไม่มีวันเปลี่ยนเนื้อใน
+        // แคชยาว ๆ ได้เต็มที่ ลูกค้าที่กลับมาดูซ้ำไม่กิน egress อีกรอบ
+        cacheControl: '31536000',
+        upsert: false,
+      });
+      if (error) throw error;
+
+      const prev = storagePathFromUrl(photoUrl, 'breeds');
+      if (prev) stalePhotosRef.current.push(prev);
+
+      const { data } = supabase.storage.from('breeds').getPublicUrl(path);
+      setPhotoUrl(data.publicUrl);
+      toast.success(`เพิ่มรูปแล้ว (${Math.round(small.size / 1024)} KB)`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ ลองใหม่อีกครั้งครับ');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const removePhoto = () => {
+    const prev = storagePathFromUrl(photoUrl, 'breeds');
+    if (prev) stalePhotosRef.current.push(prev);
+    setPhotoUrl(null);
+  };
+
   const handleAddOrUpdateBreed = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -260,6 +390,11 @@ export default function SettingsPage() {
       premium_cost_piece: Number(formData.get('premium_cost_piece')) || 0,
       premium_cost_pair: Number(formData.get('premium_cost_pair')) || 0,
       premium_cost_set: Number(formData.get('premium_cost_set')) || 0,
+      // ── ของหน้าเว็บลูกค้า ──
+      blurb: (formData.get('blurb') as string)?.trim() || null,
+      image_url: photoUrl,
+      showcase,
+      in_stock: inStock,
     };
 
     try {
@@ -268,8 +403,17 @@ export default function SettingsPage() {
       } else {
         await supabase.from('breeds').insert([breedData]);
       }
+
+      // แถวชี้ไปรูปใหม่แล้ว รูปเก่าถึงจะลบได้ — ลบไม่สำเร็จก็แค่เปลืองพื้นที่
+      // ไม่ใช่เรื่องที่ต้องเด้ง error ใส่หน้าคนที่เพิ่งบันทึกสำเร็จ
+      if (stalePhotosRef.current.length) {
+        await supabase.storage.from('breeds').remove(stalePhotosRef.current);
+        stalePhotosRef.current = [];
+      }
+
       setEditingBreed(null);
       setIsBreedModalOpen(false);
+      setPhotoUrl(null);
       fetchData();
       (e.target as HTMLFormElement).reset();
       toast.success('บันทึกสายพันธุ์เรียบร้อย');
@@ -282,6 +426,15 @@ export default function SettingsPage() {
     if (!confirm('ยืนยันการลบสายพันธุ์นี้?')) return;
     try {
       await supabase.from('breeds').delete().eq('id', id);
+
+      // ลบรูปตามไปด้วย ไม่งั้นไฟล์กำพร้าจะค้างกินพื้นที่ 1GB ของแพลนฟรี
+      // โดยไม่มีอะไรในระบบชี้ไปหามันอีกเลย
+      const orphan = storagePathFromUrl(
+        breeds.find((b) => b.id === id)?.image_url ?? null,
+        'breeds'
+      );
+      if (orphan) await supabase.storage.from('breeds').remove([orphan]);
+
       fetchData();
       toast.success('ลบข้อมูลแล้ว');
     } catch (err) {
@@ -307,6 +460,20 @@ export default function SettingsPage() {
     } else {
       toast.success('อัปเดตแล้ว');
     }
+  };
+
+  // สลับหมด/มีขายจากในตารางเลย อัปเดตหน้าจอก่อนแล้วค่อยยิงขึ้นเซิร์ฟเวอร์
+  const toggleStock = async (breed: Breed) => {
+    const next = !(breed.in_stock ?? true);
+    setBreeds((prev) => prev.map((b) => (b.id === breed.id ? { ...b, in_stock: next } : b)));
+
+    const { error } = await supabase.from('breeds').update({ in_stock: next }).eq('id', breed.id);
+    if (error) {
+      toast.error('บันทึกไม่สำเร็จ');
+      fetchData();
+      return;
+    }
+    toast.success(next ? 'กลับมาขายแล้ว' : 'ขึ้นว่าหมดบนหน้าเว็บแล้ว');
   };
 
   if (isLoading) {
@@ -341,6 +508,7 @@ export default function SettingsPage() {
   const missingCostCount = filteredBreeds.filter((b) =>
     TYPES.some((t) => num(b[priceField(t)]) > 0 && num(b[costField(t)]) === 0)
   ).length;
+  const soldOutCount = filteredBreeds.filter((b) => b.in_stock === false).length;
   const pieceMargins = filteredBreeds
     .filter((b) => num(b.premium_price_piece) > 0)
     .map((b) => (profitOf(b, 'piece') / num(b.premium_price_piece)) * 100);
@@ -385,10 +553,7 @@ export default function SettingsPage() {
             tab === 'products' ? (
               <Button
                 className="flex-1 sm:flex-none"
-                onClick={() => {
-                  setEditingBreed(null);
-                  setIsBreedModalOpen(true);
-                }}
+                onClick={() => openBreedModal(null)}
               >
                 <Plus className="size-4" /> เพิ่มสายพันธุ์
               </Button>
@@ -428,16 +593,21 @@ export default function SettingsPage() {
               {sortedBreeds.map((breed) => (
                 <div key={breed.id} className="px-4 py-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="min-w-0 truncate font-medium">{breed.name}</p>
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <p className="min-w-0 truncate font-medium">{breed.name}</p>
+                      <StockChip on={breed.in_stock ?? true} onClick={() => toggleStock(breed)} />
+                      {breed.showcase === false && (
+                        <Badge variant="muted" className="gap-1">
+                          <Globe className="size-2.5" /> ไม่ขึ้นเว็บ
+                        </Badge>
+                      )}
+                    </div>
                     <div className="flex shrink-0 gap-1">
                       <Button
                         variant="ghost"
                         size="icon-sm"
                         aria-label="แก้ไข"
-                        onClick={() => {
-                          setEditingBreed(breed);
-                          setIsBreedModalOpen(true);
-                        }}
+                        onClick={() => openBreedModal(breed)}
                       >
                         <Edit2 className="size-4" />
                       </Button>
@@ -505,7 +675,17 @@ export default function SettingsPage() {
                 <TableBody>
                   {sortedBreeds.map((breed) => (
                     <TableRow key={breed.id}>
-                      <TableCell className="font-medium whitespace-nowrap">{breed.name}</TableCell>
+                      <TableCell className="font-medium whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {breed.name}
+                          <StockChip on={breed.in_stock ?? true} onClick={() => toggleStock(breed)} />
+                          {breed.showcase === false && (
+                            <Badge variant="muted" className="gap-1 font-normal">
+                              <Globe className="size-2.5" /> ไม่ขึ้นเว็บ
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       {TYPES.map((t) => (
                         <TableCell key={t}>
                           <PriceCell
@@ -521,10 +701,7 @@ export default function SettingsPage() {
                             variant="ghost"
                             size="icon-sm"
                             aria-label="แก้ไข"
-                            onClick={() => {
-                              setEditingBreed(breed);
-                              setIsBreedModalOpen(true);
-                            }}
+                            onClick={() => openBreedModal(breed)}
                           >
                             <Edit2 className="size-4" />
                           </Button>
@@ -553,6 +730,12 @@ export default function SettingsPage() {
               <span>
                 กำไรเฉลี่ย/ตัว <span className="text-success font-medium">{avgPieceMargin}%</span>
               </span>
+              {soldOutCount > 0 && (
+                <span>
+                  ขึ้นว่าหมด <span className="text-warning font-medium">{soldOutCount}</span>{' '}
+                  สายพันธุ์
+                </span>
+              )}
               {missingCostCount > 0 && (
                 <span className="text-warning flex items-center gap-1 font-medium">
                   <AlertTriangle className="size-3" /> ยังไม่ใส่ต้นทุน {missingCostCount} สายพันธุ์
@@ -669,8 +852,8 @@ export default function SettingsPage() {
       <ResponsiveModal
         open={isBreedModalOpen}
         onOpenChange={(open) => {
-          setIsBreedModalOpen(open);
-          if (!open) setEditingBreed(null);
+          if (open) setIsBreedModalOpen(true);
+          else closeBreedModal();
         }}
       >
         <ResponsiveModalContent className="sm:max-w-lg">
@@ -730,6 +913,124 @@ export default function SettingsPage() {
                   </div>
                 ))}
               </div>
+
+              {/* ── ของที่ลูกค้าเห็นบนหน้าเว็บ (/farm) ──────────────────
+                  แยกกรอบออกจากราคา/ต้นทุนชัด ๆ เพราะสองส่วนนี้คนละงานกัน:
+                  ข้างบนคือตัวเลขที่ใช้คีย์บิล ข้างล่างคือหน้าร้าน */}
+              <div className="space-y-4 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <Globe className="text-muted-foreground size-4" />
+                  <p className="text-sm font-medium">หน้าเว็บลูกค้า</p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={photoBusy}
+                    aria-label={photoUrl ? 'เปลี่ยนรูปปลา' : 'เลือกรูปปลา'}
+                    className="bg-muted/40 hover:border-primary/40 relative size-20 shrink-0 overflow-hidden rounded-lg border border-dashed transition-colors"
+                  >
+                    {photoBusy ? (
+                      <Loader2 className="text-muted-foreground mx-auto size-5 animate-spin" />
+                    ) : photoUrl ? (
+                      <img src={photoUrl} alt="" className="size-full object-cover" />
+                    ) : (
+                      <ImagePlus className="text-muted-foreground mx-auto size-5" />
+                    )}
+                  </button>
+
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={photoBusy}
+                        onClick={() => photoInputRef.current?.click()}
+                      >
+                        {photoUrl ? 'เปลี่ยนรูป' : 'เลือกรูป'}
+                      </Button>
+                      {photoUrl && !photoBusy && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={removePhoto}
+                        >
+                          <X className="size-4" /> เอาออก
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      ถ่ายจากมือถือส่งมาได้เลย ระบบย่อให้เหลือ ~150KB เอง
+                      ไม่ใส่ก็ได้ หน้าเว็บจะวาดปลาการ์ตูนตามชื่อพันธุ์ให้แทน
+                    </p>
+                  </div>
+                </div>
+
+                {/* ไม่ใส่ name ไว้ ฟอร์มจะได้ไม่ต้องสน — รูปเดินทางผ่าน state ไม่ใช่ FormData */}
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    // ล้างค่าทิ้งทุกครั้ง ไม่งั้นเลือกไฟล์ชื่อเดิมซ้ำจะไม่เกิด onChange
+                    e.target.value = '';
+                    if (file) pickPhoto(file);
+                  }}
+                />
+
+                <div className="space-y-2">
+                  <Label htmlFor="breed-blurb">คำโปรย</Label>
+                  <Input
+                    id="breed-blurb"
+                    name="blurb"
+                    maxLength={90}
+                    defaultValue={editingBreed?.blurb ?? ''}
+                    placeholder="เช่น ครีบยาว สีเข้มตั้งแต่เล็ก"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">ตอนนี้ยังมีขายไหม</p>
+                    <p className="text-muted-foreground text-xs">
+                      เลือก “หมด” แล้วหน้าเว็บจะขึ้นป้ายให้ แต่ยังเห็นพันธุ์นี้อยู่
+                    </p>
+                  </div>
+                  <Segmented
+                    label="สถานะสินค้า"
+                    value={inStock}
+                    onChange={setInStock}
+                    options={[
+                      { value: true, label: 'มีขาย', activeClass: 'bg-success/15 text-success' },
+                      { value: false, label: 'หมด', activeClass: 'bg-warning/20 text-warning' },
+                    ]}
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">ขึ้นหน้าเว็บ</p>
+                    <p className="text-muted-foreground text-xs">
+                      พันธุ์ที่เลิกขายถาวรเลือก “ซ่อน” ได้ ไม่ต้องลบทิ้งให้บิลเก่าเสีย
+                    </p>
+                  </div>
+                  <Segmented
+                    label="แสดงบนหน้าเว็บ"
+                    value={showcase}
+                    onChange={setShowcase}
+                    options={[
+                      { value: true, label: 'แสดง', activeClass: 'bg-primary text-primary-foreground' },
+                      { value: false, label: 'ซ่อน', activeClass: 'bg-muted text-foreground' },
+                    ]}
+                  />
+                </div>
+              </div>
             </form>
           </ResponsiveModalBody>
 
@@ -738,10 +1039,7 @@ export default function SettingsPage() {
               variant="outline"
               size="lg"
               className="flex-1"
-              onClick={() => {
-                setIsBreedModalOpen(false);
-                setEditingBreed(null);
-              }}
+              onClick={closeBreedModal}
             >
               ยกเลิก
             </Button>

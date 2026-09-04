@@ -68,9 +68,10 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
   // <a download> ไม่ทำงานใน in-app browser ของ LINE ทั้ง iOS และ Android
   // (webview บล็อกการดาวน์โหลด และ iOS ไม่รองรับ download กับ data: URL อยู่แล้ว)
   //
-  // Web Share ใช้ได้บางเครื่อง แต่ "ซ่อนปุ่มเมื่อใช้ไม่ได้" ก็แย่พอกัน —
-  // คนกดหาปุ่มบันทึกแล้วไม่เจอ ย่อมสรุปว่าระบบพัง
-  // ปุ่มจึงโชว์เสมอ กดแล้วได้อย่างใดอย่างหนึ่ง: แชร์จริง หรือบอกวิธีที่ได้ผลแน่
+  // เหลือทางเดียวคือ Web Share ซึ่งบางเครื่องก็ไม่มี — เดิมโชว์ปุ่มไว้เสมอ
+  // เครื่องที่แชร์ไม่ได้กดแล้วเด้ง toast บอกให้ไปกดค้างที่รูปเอา
+  // แต่ปุ่มที่กดแล้วไม่เกิดอะไรนอกจากคำอธิบาย มันคือปุ่มเสีย
+  // ตอนนี้เครื่องไหนแชร์ไม่ได้ก็ไม่ต้องมีปุ่ม เหลือบรรทัด "กดค้างที่รูป" ที่ได้ผลทุกเครื่อง
   useEffect(() => {
     if (!dataUrl) {
       setCanShare(false);
@@ -87,10 +88,6 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
   const longPressHint = 'กดค้างที่รูป QR ด้านบน แล้วเลือก "บันทึกรูปภาพ" ครับ';
 
   const shareQr = async () => {
-    if (!canShare) {
-      toast.info(longPressHint, { duration: 6000 });
-      return;
-    }
     try {
       const file = dataUrlToFile(dataUrl, `promptpay-${reference || Math.round(amount)}.png`);
       await navigator.share({ files: [file], title: `พร้อมเพย์ ฿${amount.toLocaleString()}` });
@@ -144,13 +141,17 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
         ลูกค้าไม่ต้องพิมพ์ยอดเอง
       </p>
 
-      <Button variant="outline" size="sm" className="mt-3" onClick={shareQr}>
-        <Share2 className="size-3.5" /> บันทึกรูป QR
-      </Button>
+      {canShare && (
+        <Button variant="outline" size="sm" className="mt-3" onClick={shareQr}>
+          <Share2 className="size-3.5" /> บันทึกรูป QR
+        </Button>
+      )}
 
       {/* วิธีที่ได้ผลทุกเครื่องจริง ๆ — บอกไว้เสมอ ไม่ใช่แค่ตอนกดปุ่มแล้วไม่ได้ */}
       <p className="text-muted-foreground mt-3 text-center text-xs">
-        หรือกดค้างที่รูป QR เพื่อบันทึกลงเครื่อง
+        {canShare
+          ? 'หรือกดค้างที่รูป QR เพื่อบันทึกลงเครื่อง'
+          : 'กดค้างที่รูป QR แล้วเลือก "บันทึกรูปภาพ" เพื่อเก็บลงเครื่อง'}
       </p>
     </div>
   );

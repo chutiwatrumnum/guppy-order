@@ -58,3 +58,21 @@ export async function getLineProfile(): Promise<LineProfile | null> {
 export async function getLineUserId(): Promise<string | null> {
   return (await getLineProfile())?.userId ?? null;
 }
+
+/**
+ * ปิดหน้าต่าง LIFF กลับไปที่แชท — คืน false ถ้าปิดให้ไม่ได้
+ *
+ * เปิดในเบราว์เซอร์ธรรมดาปิดแท็บแทนลูกค้าไม่ได้ (window.close ใช้ได้เฉพาะแท็บที่สคริปต์เปิดเอง)
+ * คนเรียกต้องมีทางลงให้ลูกค้าเองเมื่อได้ false
+ */
+export async function closeLiffWindow(): Promise<boolean> {
+  try {
+    const liff = await ensureLiffInit();
+    if (!liff.isInClient()) return false;
+    liff.closeWindow();
+    return true;
+  } catch (err) {
+    console.warn('LIFF closeWindow failed:', err);
+    return false;
+  }
+}

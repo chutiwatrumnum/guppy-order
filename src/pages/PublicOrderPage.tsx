@@ -15,8 +15,10 @@ import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
 import PromptPayQR from '@/components/PromptPayQR';
-import { getLineProfile } from '@/utils/liff';
+import { closeLiffWindow, getLineProfile } from '@/utils/liff';
 import { normalizeThaiPhone, validateShippingContact } from '@/utils/address';
+import { cn } from '@/lib/utils';
+import { FARM } from '@/config/farm';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -69,6 +71,15 @@ interface PublicOrder {
 }
 
 type BadgeVariant = React.ComponentProps<typeof Badge>['variant'];
+
+/**
+ * ทางกลับเข้าแอปไลน์สำหรับคนที่เปิดใบสรุปในเบราว์เซอร์ธรรมดา
+ *
+ * ในแอปไลน์ใช้ liff.closeWindow() ปิดกลับไปที่แชทได้ตรง ๆ อยู่แล้ว
+ * นอกแอปปิดแท็บแทนลูกค้าไม่ได้ ต้องส่งกลับเข้าไลน์ด้วยลิงก์แทน
+ * ยังไม่ได้ตั้งลิงก์ร้านใน FARM.lineUrl ก็พากลับไปหน้ารายการแชทของไลน์ไปก่อน
+ */
+const LINE_CHAT_URL = FARM.lineUrl || 'https://line.me/R/nv/chat';
 
 /**
  * ลายนิ้วมือของไฟล์ ไว้ให้ร้านรู้ว่าสลิปใบนี้เคยส่งมาแล้วหรือยัง
@@ -124,7 +135,10 @@ export default function PublicOrderPage() {
   const [linkedToLine, setLinkedToLine] = useState(false);
   const [copiedAccount, setCopiedAccount] = useState(false);
   const [copiedTracking, setCopiedTracking] = useState(false);
+  // กด "เสร็จสิ้น" นอกแอปไลน์ — ปิดแท็บให้ไม่ได้ เลยสลับไปหน้าจบแทน
+  const [finished, setFinished] = useState(false);
   const addressRef = useRef<HTMLDivElement>(null);
+  const finishRef = useRef<HTMLDivElement>(null);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -208,6 +222,20 @@ export default function PublicOrderPage() {
     setSaved(false);
   };
 
+  // กล่องท้ายหน้าเพิ่งเปลี่ยนเป็น "เรียบร้อยแล้ว" — ต้องพาสายตาลูกค้าไปเห็นเอง
+  // ปุ่มที่เพิ่งกดอยู่กลางหน้า ถ้าไม่เลื่อนให้ก็ไม่มีอะไรบอกว่าครบทุกขั้นแล้ว
+  const scrollToFinish = () => {
+    setTimeout(() => finishRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400);
+  };
+
+  // "เสร็จสิ้น" — ในแอปไลน์คือปิดใบสรุปกลับไปที่แชทร้าน
+  // เปิดในเบราว์เซอร์ธรรมดาปิดแท็บให้ไม่ได้ เลยขึ้นหน้าจบแทน จะได้จบเหมือนกัน
+  const finishOrder = async () => {
+    if (await closeLiffWindow()) return;
+    setFinished(true);
+    window.scrollTo({ top: 0 });
+  };
+
   const submitContact = async () => {
     const problem = validateShippingContact({ name, phone, address });
     if (problem) {
@@ -250,6 +278,11 @@ export default function PublicOrderPage() {
         : prev
     );
     toast.success('บันทึกที่อยู่เรียบร้อยแล้ว ขอบคุณครับ');
+
+    // ที่อยู่เป็นขั้นสุดท้ายพอดี (จ่ายเงิน/ส่งสลิปไปแล้ว) — พาไปดูกล่องจบท้ายหน้า
+    if (order?.payment_status === 'paid' || slipStatus === 'pending' || slipStatus === 'confirmed') {
+      scrollToFinish();
+    }
   };
 
   // อัปสลิปจากหน้านี้ — ต่างจากส่งเข้าไลน์ตรงที่รู้อยู่แล้วว่าเป็นบิลไหน
@@ -311,6 +344,9 @@ export default function PublicOrderPage() {
         addressRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         toast.warning('เหลืออีกขั้นเดียว', { description: 'กรอกที่อยู่จัดส่งให้ร้านด้วยนะครับ' });
       }, 600);
+    } else {
+      // ครบทุกขั้นแล้ว — พาไปที่ปุ่ม "เสร็จสิ้น" ท้ายหน้า
+      scrollToFinish();
     }
   };
 
@@ -364,10 +400,45 @@ export default function PublicOrderPage() {
     );
   }
 
+  // หน้าจบ — ปิดแท็บแทนลูกค้าไม่ได้ อย่างน้อยต้องมีจอที่บอกชัด ๆ ว่าจบแล้ว
+  // ไม่ใช่ปล่อยให้ค้างอยู่หน้าใบสรุปแล้วเดาเองว่ายังเหลืออะไรอีกไหม
+  if (finished) {
+    return (
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center px-6 text-center">
+        <div className="bg-success/15 mb-4 flex size-16 items-center justify-center rounded-full">
+          <Check className="text-success size-8" />
+        </div>
+        <h1 className="text-lg font-semibold">ขอบคุณครับ 🙏</h1>
+        <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+          ร้านได้รับข้อมูลของบิล {order.order_number} ครบแล้ว
+          <br />
+          ปิดหน้านี้ได้เลย เมื่อจัดส่งทางร้านจะแจ้งเลขพัสดุให้ครับ
+        </p>
+        <div className="mt-6 flex w-full max-w-xs flex-col gap-2">
+          <Button variant="line" size="lg" asChild>
+            <a href={LINE_CHAT_URL}>
+              <MessageCircle className="size-4" /> กลับไปที่แชทไลน์
+            </a>
+          </Button>
+          <Button variant="ghost" onClick={() => setFinished(false)}>
+            กลับไปดูใบสรุป
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   const canEditAddress = order.status === 'pending';
   const hasSavedAddress = !!order.customer_address?.trim();
   const payment = PAYMENT_TEXT[order.payment_status] || PAYMENT_TEXT.unpaid;
   const status = STATUS_TEXT[order.status] || STATUS_TEXT.pending;
+
+  // ลูกค้าเหลืออะไรต้องทำอีกไหม — ใช้คุมกล่องปิดท้าย
+  // บิลที่จัดส่งแล้วถือว่าที่อยู่ครบแน่นอน ไม่งั้นร้านคงส่งไม่ได้
+  const contactDone = hasSavedAddress || !canEditAddress;
+  const paymentDone =
+    order.payment_status === 'paid' || slipStatus === 'pending' || slipStatus === 'confirmed';
+  const allDone = contactDone && paymentDone;
 
   // ลูกค้าที่ยังไม่มีที่อยู่ต้องเจอช่องกรอกก่อนถึงจะสแกนจ่าย
   // เดิมจ่ายเงินอยู่บน พอโอนกับแนบสลิปเสร็จลูกค้าถือว่าจบแล้วและปิดหน้าไป
@@ -588,6 +659,88 @@ export default function PublicOrderPage() {
   </div>
   );
 
+  // ── กล่องปิดท้าย ──
+  // เดิมพอกรอกที่อยู่กับแนบสลิปครบแล้ว หน้านี้ก็เงียบไปเฉย ๆ ไม่มีอะไรบอกว่าจบแล้ว
+  // ลูกค้าเลยค้างอยู่หน้าใบสรุปแล้วทักมาถามในแชทว่า "ต้องกดอะไรต่อ"
+  // บิลที่ยกเลิกแล้วไม่ต้องมีขั้นตอนอะไรให้ทำ ข้ามไปเลย
+  const steps = [
+    {
+      done: contactDone,
+      label: 'ส่งที่อยู่ให้ร้าน',
+      hint: contactDone ? 'ร้านได้รับที่อยู่แล้ว' : 'กรอกในกล่อง "ที่อยู่จัดส่ง" ด้านบน',
+    },
+    {
+      done: paymentDone,
+      label: 'ชำระเงินและแนบสลิป',
+      hint:
+        order.payment_status === 'paid'
+          ? 'ร้านยืนยันการชำระเงินแล้ว'
+          : slipStatus === 'pending'
+            ? 'ได้รับสลิปแล้ว รอทางร้านตรวจสอบ'
+            : slipStatus === 'rejected'
+              ? 'สลิปใบก่อนตรวจสอบไม่ผ่าน รบกวนแนบใหม่ด้านบน'
+              : 'สแกนจ่ายแล้วกด "แนบสลิปโอนเงิน" ด้านบน',
+    },
+  ];
+
+  const finishCard = order.status !== 'cancelled' && (
+    <div ref={finishRef}>
+      <Card className={allDone ? 'border-success/40 bg-success/5' : undefined}>
+        <CardContent>
+          {allDone ? (
+            <div className="text-center">
+              <div className="bg-success/15 mx-auto mb-3 flex size-12 items-center justify-center rounded-full">
+                <Check className="text-success size-6" />
+              </div>
+              <p className="font-semibold">เรียบร้อยแล้วครับ</p>
+              <p className="text-muted-foreground mt-1 text-sm leading-relaxed">
+                ร้านได้รับข้อมูลครบแล้ว ไม่ต้องทำอะไรต่อ
+              </p>
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm font-medium">
+              เหลืออีก {steps.filter((step) => !step.done).length} ขั้นตอน
+            </p>
+          )}
+
+          <div className={cn('space-y-2.5', allDone ? 'mt-4' : 'mt-3')}>
+            {steps.map((step, i) => (
+              <div key={step.label} className="flex items-start gap-2.5">
+                <span
+                  className={cn(
+                    'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
+                    step.done
+                      ? 'bg-success text-success-foreground'
+                      : 'border-muted-foreground/40 text-muted-foreground border'
+                  )}
+                >
+                  {step.done ? <Check className="size-3" /> : i + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className={cn('text-sm font-medium', !step.done && 'text-muted-foreground')}>
+                    {step.label}
+                  </p>
+                  <p className="text-muted-foreground text-xs leading-relaxed">{step.hint}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {allDone && (
+            <>
+              <Button variant="success" size="lg" className="mt-4 w-full" onClick={finishOrder}>
+                <Check className="size-4" /> เสร็จสิ้น
+              </Button>
+              <p className="text-muted-foreground mt-2 text-center text-xs">
+                เปิดลิงก์นี้กลับมาดูสถานะพัสดุได้ตลอดครับ
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   return (
     <div className="min-h-[100dvh] px-4 pt-safe pb-10">
       <div className="mx-auto max-w-md space-y-3 py-5">
@@ -727,6 +880,8 @@ export default function PublicOrderPage() {
             </CardContent>
           </Card>
         )}
+
+        {finishCard}
 
         <p className="text-muted-foreground/60 py-4 text-center text-xs">บ้านหมีมีปลานะ</p>
       </div>

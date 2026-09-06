@@ -168,7 +168,7 @@ export default function PendingSlips({
 
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('total_amount, order_number, public_token, line_user_id')
+      .select('total_amount, order_number, public_token, line_user_id, paid_at')
       .eq('id', orderId)
       .single();
 
@@ -180,7 +180,13 @@ export default function PendingSlips({
 
     const { error: payError } = await supabase
       .from('orders')
-      .update({ payment_status: 'paid', paid_amount: order.total_amount })
+      .update({
+        payment_status: 'paid',
+        paid_amount: order.total_amount,
+        // เวลาที่ร้านกดยืนยันสลิป = หลักฐานที่ใกล้เคียง "เงินเข้า" ที่สุดที่ระบบมี
+        // บิลที่เคยมีวันที่อยู่แล้ว (ส่งสลิปซ้ำ) ต้องไม่ถูกเลื่อนวัน
+        paid_at: (order as { paid_at?: string | null }).paid_at ?? new Date().toISOString(),
+      })
       .eq('id', orderId);
 
     if (payError) {

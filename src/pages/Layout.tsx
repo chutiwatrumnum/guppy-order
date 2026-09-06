@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingCart, Settings2, ClipboardList, LogOut, Users } from 'lucide-react';
+import { ShoppingCart, Settings2, ClipboardList, LogOut, Users, Wallet } from 'lucide-react';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,7 @@ const NAV = [
   { to: '/', label: 'ขายปลา', icon: ShoppingCart, adminOnly: false },
   { to: '/admin', label: 'บิล', icon: ClipboardList, adminOnly: true },
   { to: '/customers', label: 'ลูกค้า', icon: Users, adminOnly: true },
+  { to: '/accounting', label: 'บัญชี', icon: Wallet, adminOnly: true },
   { to: '/settings', label: 'ตั้งค่า', icon: Settings2, adminOnly: true },
 ];
 

@@ -13,6 +13,7 @@ const HomePage = lazy(() => import('@/pages/HomePage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const AdminPage = lazy(() => import('@/pages/AdminPage'));
 const CustomersPage = lazy(() => import('@/pages/CustomersPage'));
+const AccountingPage = lazy(() => import('@/pages/AccountingPage'));
 const PublicOrderPage = lazy(() => import('@/pages/PublicOrderPage'));
 const FarmPage = lazy(() => import('@/pages/FarmPage'));
 
@@ -71,6 +72,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <CustomersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/accounting"
+            element={
+              <ProtectedRoute>
+                <AccountingPage />
               </ProtectedRoute>
             }
           />

@@ -83,6 +83,8 @@ export interface SavedOrder {
   status?: OrderStatus;
   paymentStatus?: PaymentStatus;
   paidAmount?: number;
+  /** เงินเข้าเมื่อไหร่ — ว่างแปลว่าปิดบิลไว้ก่อนระบบเริ่มเก็บวันที่ หรือปิดเองโดยไม่มีสลิป */
+  paidAt?: string | null;
   trackingNumber?: string;
   customerId?: string | null;
   customerName?: string;

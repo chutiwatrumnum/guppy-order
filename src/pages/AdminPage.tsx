@@ -286,6 +286,7 @@ export default function AdminPage() {
         status: order.status,
         paymentStatus: order.payment_status,
         paidAmount: order.paid_amount || 0,
+        paidAt: order.paid_at ?? null,
         trackingNumber: order.tracking_number,
         customerId: order.customer_id,
         customerName: order.customer_name,
@@ -603,14 +604,20 @@ export default function AdminPage() {
           ? 0
           : order.paidAmount || 0;
 
+    // วันที่เงินเข้า — ใช้ทำงบตามเงินเข้าจริงในหน้าบัญชี
+    // ถ้าบิลนี้เคยมีวันที่แล้วต้องคงไว้ ไม่งั้นกดสลับ จ่ายแล้ว↔มัดจำ ทีเดียว
+    // วันรับเงินจะเลื่อนมาเป็นวันนี้ แล้วงบเดือนเก่าเปลี่ยนย้อนหลังโดยไม่มีใครตั้งใจ
+    const paidAt =
+      paymentStatus === 'unpaid' ? null : (order.paidAt ?? new Date().toISOString());
+
     const previous = allOrders;
     setAllOrders((orders) =>
-      orders.map((o) => (o.id === order.id ? { ...o, paymentStatus, paidAmount } : o))
+      orders.map((o) => (o.id === order.id ? { ...o, paymentStatus, paidAmount, paidAt } : o))
     );
 
     const { error } = await supabase
       .from('orders')
-      .update({ payment_status: paymentStatus, paid_amount: paidAmount })
+      .update({ payment_status: paymentStatus, paid_amount: paidAmount, paid_at: paidAt })
       .eq('id', order.id);
 
     if (error) {
@@ -862,13 +869,15 @@ export default function AdminPage() {
     let totalFoodCost = 0; // แยกต้นทุนอาหารออก เพราะจ่ายคนละเจ้ากับปลา
     let totalFoodSales = 0;
     let totalProfit = 0;
-    const totalShippingIncome = allOrders.reduce((sum, order) => sum + (order.shippingFee || 60), 0);
+    // ?? ไม่ใช่ || — บิลที่ร้านยกค่าส่งให้เป็น 0 ไม่ใช่ "ไม่ได้ตั้งค่า"
+    // ใช้ || จะนับค่าส่งฟรีเป็น 60 ทุกใบ รายได้ค่าส่งกับกำไรในรายงานจะเพี้ยน
+    const totalShippingIncome = allOrders.reduce((sum, order) => sum + (order.shippingFee ?? 60), 0);
     const totalShippingCost = allOrders.reduce(
       (sum, order) =>
         sum +
         (order.actualShippingFee !== undefined && order.actualShippingFee !== null
           ? order.actualShippingFee
-          : order.shippingFee || 60),
+          : order.shippingFee ?? 60),
       0
     );
 
@@ -892,7 +901,7 @@ export default function AdminPage() {
       const shipping =
         order.actualShippingFee !== undefined && order.actualShippingFee !== null
           ? order.actualShippingFee
-          : order.shippingFee || 60;
+          : order.shippingFee ?? 60;
       totalProfit += revenue - orderFishCost - orderFoodCost - shipping;
     });
 
@@ -1362,7 +1371,7 @@ export default function AdminPage() {
                       const cost = resolveItemCost(item);
                       return sum + cost * item.quantity;
                     }, 0) || 0;
-                  const shippingFee = order.shippingFee || 60;
+                  const shippingFee = order.shippingFee ?? 60;
                   const actualShipping =
                     order.actualShippingFee !== undefined && order.actualShippingFee !== null
                       ? order.actualShippingFee

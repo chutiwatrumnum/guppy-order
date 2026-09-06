@@ -166,6 +166,8 @@ export default function AdminPage() {
   // นับแยกจาก PendingSlips เพราะ Radix ถอดคอมโพเนนต์ในแท็บที่ไม่ได้เปิดออกจาก DOM
   // ถ้าไปพึ่งค่าจากในนั้น ตัวเลขจะไม่ขึ้นเลยจนกว่าจะกดเข้าแท็บสลิปก่อน — ซึ่งกลับหัวกลับหาง
   const [pendingSlipCount, setPendingSlipCount] = useState(0);
+  // บัญชีที่ใช้รับเงินอยู่ — ตราลงบิลตอนกดว่าได้รับเงินแล้ว
+  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
   const [copiedAddressId, setCopiedAddressId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [missingAddressOnly, setMissingAddressOnly] = useState(false);
@@ -218,6 +220,14 @@ export default function AdminPage() {
       setBreeds(breedsData || []);
 
       // โหลดข้อมูลบัญชี/ค่าส่ง สำหรับใส่ในข้อความ Copy
+      const { data: accountData } = await supabase
+        .from('payment_accounts')
+        .select('id')
+        .eq('is_active', true)
+        .eq('archived', false)
+        .limit(1);
+      setActiveAccountId(accountData?.[0]?.id ?? null);
+
       const { data: settingsData } = await supabase.from('settings').select('*').limit(1);
       if (settingsData && settingsData.length > 0) {
         setBankInfo(settingsData[0]);
@@ -610,6 +620,13 @@ export default function AdminPage() {
     const paidAt =
       paymentStatus === 'unpaid' ? null : (order.paidAt ?? new Date().toISOString());
 
+    // บิลที่ยังไม่จ่ายโชว์บัญชีที่ใช้รับเงินอยู่ตอนนี้ พอกดว่าได้รับเงินก็ตราอันนั้นลงไป
+    // ยอดแยกรายบัญชีในหน้าบัญชีจะได้ตรงกับบัญชีที่ลูกค้าเห็นตอนโอนจริง
+    const stampAccount =
+      paymentStatus !== 'unpaid' && order.paymentStatus === 'unpaid' && activeAccountId
+        ? { payment_account_id: activeAccountId }
+        : {};
+
     const previous = allOrders;
     setAllOrders((orders) =>
       orders.map((o) => (o.id === order.id ? { ...o, paymentStatus, paidAmount, paidAt } : o))
@@ -617,7 +634,12 @@ export default function AdminPage() {
 
     const { error } = await supabase
       .from('orders')
-      .update({ payment_status: paymentStatus, paid_amount: paidAmount, paid_at: paidAt })
+      .update({
+        payment_status: paymentStatus,
+        paid_amount: paidAmount,
+        paid_at: paidAt,
+        ...stampAccount,
+      })
       .eq('id', order.id);
 
     if (error) {

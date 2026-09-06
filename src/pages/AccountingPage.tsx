@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  CreditCard,
   Download,
   Loader2,
   Pencil,
@@ -64,6 +65,14 @@ interface OrderRow {
   payment_status: string | null;
   paid_amount: number | null;
   paid_at: string | null;
+  payment_account_id: string | null;
+}
+
+interface AccountRef {
+  id: string;
+  label: string | null;
+  bank_name: string;
+  account_number: string | null;
 }
 
 /** หมวดรายจ่าย — อยู่ในโค้ดไม่ใช่ในฐานข้อมูล เพิ่มหมวดใหม่แค่แก้บรรทัดนี้ */
@@ -156,6 +165,7 @@ export default function AccountingPage() {
   const [refund, setRefund] = useState(0);
   // บิลที่ปิดไปแล้วแต่ไม่มีวันที่รับเงิน — โหมดเงินสดมองไม่เห็น ต้องบอกว่าตกไปเท่าไหร่
   const [noPaidDate, setNoPaidDate] = useState({ count: 0, amount: 0 });
+  const [payAccounts, setPayAccounts] = useState<AccountRef[]>([]);
 
   const [editing, setEditing] = useState<Expense | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -181,7 +191,7 @@ export default function AccountingPage() {
     const toIso = new Date(`${end}T23:59:59.999`).toISOString();
 
     const columns =
-      'id, order_number, created_at, customer_name, total_amount, total_cost, shipping_fee, actual_shipping_fee, payment_status, paid_amount, paid_at';
+      'id, order_number, created_at, customer_name, total_amount, total_cost, shipping_fee, actual_shipping_fee, payment_status, paid_amount, paid_at, payment_account_id';
 
     // โหมดเงินสดกรองด้วยวันที่รับเงิน ไม่ใช่วันที่ออกบิล
     // (บิลที่ยังไม่มี paid_at จะหลุดจากผลลัพธ์เอง — ตั้งใจ แล้วนับแยกไว้ข้างล่าง)
@@ -200,7 +210,7 @@ export default function AccountingPage() {
             .lte('created_at', toIso)
             .order('created_at', { ascending: true });
 
-    const [ordersRes, expensesRes, claimsRes, legacyRes] = await Promise.all([
+    const [ordersRes, expensesRes, claimsRes, legacyRes, accountsRes] = await Promise.all([
       ordersQuery,
       supabase
         .from('expenses')
@@ -217,6 +227,7 @@ export default function AccountingPage() {
         .neq('payment_status', 'unpaid')
         .gte('created_at', fromIso)
         .lte('created_at', toIso),
+      supabase.from('payment_accounts').select('id, label, bank_name, account_number'),
     ]);
 
     setLoading(false);
@@ -230,6 +241,7 @@ export default function AccountingPage() {
     setOrders((ordersRes.data || []) as OrderRow[]);
     setExpenses(((expensesRes.data || []) as Expense[]).map((e) => ({ ...e, amount: Number(e.amount) })));
     setRefund((claimsRes.data || []).reduce((sum: number, c: any) => sum + (c.refund_amount || 0), 0));
+    setPayAccounts((accountsRes.data || []) as AccountRef[]);
     const legacy = (legacyRes.data || []) as { total_amount: number | null; paid_amount: number | null }[];
     setNoPaidDate({
       count: legacy.length,
@@ -257,6 +269,18 @@ export default function AccountingPage() {
       0
     );
 
+    // รับเงินแยกตามบัญชี — กี่บิลและรวมเท่าไหร่
+    // โหมดเงินสดนับเงินที่รับจริง โหมดบิลนับยอดหน้าบิล
+    const byAccount = new Map<string, { count: number; amount: number }>();
+    orders.forEach((o) => {
+      const key = o.payment_account_id || '__none__';
+      const cur = byAccount.get(key) || { count: 0, amount: 0 };
+      byAccount.set(key, {
+        count: cur.count + 1,
+        amount: cur.amount + (basis === 'cash' ? o.paid_amount || 0 : o.total_amount || 0),
+      });
+    });
+
     const byCategory = new Map<string, number>();
     expenses.forEach((e) => byCategory.set(e.category, (byCategory.get(e.category) || 0) + e.amount));
 
@@ -274,9 +298,21 @@ export default function AccountingPage() {
           ? cashIn - refund - other
           : sales - goodsCost - shippingCost - refund - other,
       byCategory: [...byCategory.entries()].sort((a, b) => b[1] - a[1]),
+      byAccount: [...byAccount.entries()]
+        .map(([id, v]) => {
+          const acct = payAccounts.find((a) => a.id === id);
+          return {
+            id,
+            name: acct
+              ? acct.label || `${acct.bank_name}${acct.account_number ? ` ${acct.account_number}` : ''}`
+              : 'ไม่ระบุบัญชี (บิลก่อนแยกบัญชี)',
+            ...v,
+          };
+        })
+        .sort((a, b) => b.amount - a.amount),
       orderCount: orders.length,
     };
-  }, [orders, expenses, refund, basis]);
+  }, [orders, expenses, refund, basis, payAccounts]);
 
   const openAdd = () => {
     setEditing(null);
@@ -386,6 +422,10 @@ export default function AccountingPage() {
         String(o.paid_amount || 0),
         PAYMENT_TH[o.payment_status || 'unpaid'] || o.payment_status || '',
       ]),
+      [],
+      ['รับเงินแยกตามบัญชี'],
+      ['บัญชี', 'จำนวนบิล', 'ยอดรวม'],
+      ...stats.byAccount.map((a) => [a.name, String(a.count), String(a.amount)]),
       [],
       ['รายจ่ายที่คีย์ไว้'],
       ['วันที่', 'หมวด', 'รายละเอียด', 'จำนวนเงิน'],
@@ -583,6 +623,41 @@ export default function AccountingPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* ── รับเงินแยกตามบัญชี ── */}
+            {stats.byAccount.length > 0 && (
+              <Card>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="text-primary size-4" />
+                    <span className="font-medium">
+                      {basis === 'cash' ? 'เงินเข้าแยกตามบัญชี' : 'ยอดบิลแยกตามบัญชี'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {stats.byAccount.map((account) => (
+                      <div
+                        key={account.id}
+                        className="flex items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{account.name}</p>
+                          <p className="text-muted-foreground text-xs">{account.count} บิล</p>
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums">
+                          ฿{money(account.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-muted-foreground/70 text-xs leading-relaxed">
+                    นับเฉพาะบิลที่อยู่ในระบบ — ยอดในสมุดบัญชีธนาคารจะมากกว่านี้เสมอถ้าบัญชีนั้นรับเงินอย่างอื่นด้วย
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {/* ── รายจ่าย ── */}
             <Card>

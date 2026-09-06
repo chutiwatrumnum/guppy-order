@@ -24,6 +24,7 @@ import type { Breed } from '@/types';
 import { ACCEPTED_PHOTO_TYPES, shrinkPhoto, storagePathFromUrl } from '@/utils/image';
 import Layout from './Layout';
 import FoodProducts from '@/components/FoodProducts';
+import PaymentAccountsCard from '@/components/PaymentAccountsCard';
 import ShippingNoticeCard from '@/components/ShippingNoticeCard';
 import MessageTemplatesCard from '@/components/MessageTemplatesCard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -757,13 +758,14 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="shop" className="mt-4 space-y-4">
+            {/* บัญชีที่ลูกค้าโอนเข้า — มีได้หลายบัญชี สลับได้ */}
+            <PaymentAccountsCard />
+
             <Card>
               <CardContent className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium">บัญชีรับเงิน / ค่าจัดส่ง</p>
-                  <p className="text-muted-foreground text-sm">
-                    เลขบัญชี พร้อมเพย์ และค่าส่งเริ่มต้นของบิลใหม่
-                  </p>
+                  <p className="font-medium">ค่าจัดส่ง</p>
+                  <p className="text-muted-foreground text-sm">ค่าส่งเริ่มต้นของบิลใหม่</p>
                 </div>
                 <Button variant="outline" onClick={() => setIsBankModalOpen(true)}>
                   <CreditCard className="size-4" /> แก้ไข
@@ -784,48 +786,12 @@ export default function SettingsPage() {
       <ResponsiveModal open={isBankModalOpen} onOpenChange={setIsBankModalOpen}>
         <ResponsiveModalContent className="sm:max-w-md">
           <ResponsiveModalHeader>
-            <ResponsiveModalTitle>บัญชีร้าน & ค่าจัดส่ง</ResponsiveModalTitle>
+            <ResponsiveModalTitle>ค่าจัดส่ง</ResponsiveModalTitle>
           </ResponsiveModalHeader>
 
           <ResponsiveModalBody className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="bank-name">ธนาคาร</Label>
-              <Input
-                id="bank-name"
-                value={bankInfo.bank_name}
-                onChange={(e) => setBankInfo({ ...bankInfo, bank_name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="bank-acc">เลขบัญชี</Label>
-              <Input
-                id="bank-acc"
-                inputMode="numeric"
-                value={bankInfo.account_number}
-                onChange={(e) => setBankInfo({ ...bankInfo, account_number: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="bank-accname">ชื่อบัญชี</Label>
-              <Input
-                id="bank-accname"
-                value={bankInfo.account_name}
-                onChange={(e) => setBankInfo({ ...bankInfo, account_name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="promptpay">เลขพร้อมเพย์ (สำหรับสร้าง QR)</Label>
-              <Input
-                id="promptpay"
-                inputMode="numeric"
-                value={bankInfo.promptpay_id || ''}
-                onChange={(e) => setBankInfo({ ...bankInfo, promptpay_id: e.target.value })}
-                placeholder="เบอร์มือถือ 10 หลัก หรือเลขบัตรประชาชน 13 หลัก"
-              />
-              <p className="text-muted-foreground text-xs">
-                ใส่แล้วระบบจะสร้าง QR พร้อมยอดเงินให้อัตโนมัติในหน้าใบสรุปของลูกค้า
-              </p>
-            </div>
+            {/* เลขบัญชี/พร้อมเพย์ ย้ายไปการ์ด "บัญชีรับเงิน" แล้ว มีได้หลายบัญชี
+                ช่องเดิมในตาราง settings ยังอยู่ ใช้เป็นค่าสำรองของบิลเก่าที่ยังไม่ผูกบัญชี */}
             <div className="space-y-2">
               <Label htmlFor="shipping">ค่าจัดส่ง (บาท)</Label>
               <Input

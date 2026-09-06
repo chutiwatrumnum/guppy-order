@@ -119,6 +119,9 @@ export default function HomePage() {
   // ปกติไม่ต้องกรอกที่อยู่ — เปิดเฉพาะตอนลูกค้าส่งมาในแชท
   const [showAddressFields, setShowAddressFields] = useState(false);
 
+  // บัญชีที่ใช้รับเงินอยู่ตอนนี้ — ผูกไว้กับบิลตอนบันทึก
+  // บิลจึงจำได้ว่าให้ลูกค้าโอนเข้าบัญชีไหน แม้ร้านจะสลับบัญชีไปแล้วก็ตาม
+  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
   const [quickBreedIds, setQuickBreedIds] = useState<string[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   // ลิงก์ใบสรุปของบิลที่เพิ่งบันทึก เอาไว้ส่งให้ลูกค้าในไลน์
@@ -257,6 +260,14 @@ export default function HomePage() {
 
       const { data: customersData } = await supabase.from('customers').select('*').order('name');
       setCustomers(customersData || []);
+
+      const { data: accountData } = await supabase
+        .from('payment_accounts')
+        .select('id')
+        .eq('is_active', true)
+        .eq('archived', false)
+        .limit(1);
+      setActiveAccountId(accountData?.[0]?.id ?? null);
 
       // ปลาขายบ่อยล่าสุด ไว้ปักบนสุดให้กดเพิ่มเร็ว ไม่ต้องเสิร์ช
       const { data: topBreeds } = await supabase.rpc('top_recent_breeds', { p_days: 14, p_limit: 8 });
@@ -488,6 +499,9 @@ export default function HomePage() {
         customer_address: customerAddress || null,
         note: orderNote || null,
         created_by: user?.username || 'unknown',
+        // ใส่เฉพาะตอนมีบัญชีจริง — ถ้ายังไม่ได้รัน migration คอลัมน์นี้ยังไม่มี
+        // ส่งไปจะทำให้บันทึกบิลไม่ผ่านทั้งใบ ซึ่งแลกไม่ได้กับการผูกบัญชี
+        ...(activeAccountId ? { payment_account_id: activeAccountId } : {}),
       };
 
       const { data: saved, error } = await supabase

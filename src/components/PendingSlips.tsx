@@ -168,7 +168,7 @@ export default function PendingSlips({
 
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('total_amount, order_number, public_token, line_user_id, paid_at')
+      .select('total_amount, order_number, public_token, line_user_id, paid_at, payment_status, payment_account_id')
       .eq('id', orderId)
       .single();
 
@@ -178,11 +178,29 @@ export default function PendingSlips({
       return;
     }
 
+    // บัญชีที่เงินเข้า = บัญชีที่ลูกค้าเห็นตอนโอน
+    //
+    // บิลที่ยังไม่จ่ายจะโชว์บัญชีที่ใช้รับเงินอยู่ตอนนี้ (ไม่ใช่บัญชีตอนออกบิล)
+    // ตอนปิดบิลจึงต้องตราอันนั้นลงไป ไม่งั้นยอดแยกรายบัญชีจะไปเข้าบัญชีเก่า
+    // บิลที่ผูกบัญชีไว้แล้วและจ่ายมาแล้ว (ส่งสลิปซ้ำ) ห้ามย้าย
+    const o = order as { payment_status?: string; payment_account_id?: string | null };
+    let accountId = o.payment_account_id ?? null;
+    if ((o.payment_status ?? 'unpaid') === 'unpaid') {
+      const { data: active } = await supabase
+        .from('payment_accounts')
+        .select('id')
+        .eq('is_active', true)
+        .eq('archived', false)
+        .limit(1);
+      accountId = active?.[0]?.id ?? accountId;
+    }
+
     const { error: payError } = await supabase
       .from('orders')
       .update({
         payment_status: 'paid',
         paid_amount: order.total_amount,
+        ...(accountId ? { payment_account_id: accountId } : {}),
         // เวลาที่ร้านกดยืนยันสลิป = หลักฐานที่ใกล้เคียง "เงินเข้า" ที่สุดที่ระบบมี
         // บิลที่เคยมีวันที่อยู่แล้ว (ส่งสลิปซ้ำ) ต้องไม่ถูกเลื่อนวัน
         paid_at: (order as { paid_at?: string | null }).paid_at ?? new Date().toISOString(),

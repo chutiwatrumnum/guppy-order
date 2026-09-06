@@ -539,7 +539,15 @@ export default function HomePage() {
           url,
           orderNumber: saved.order_number,
           // สร้างข้อความตอน orderItems ยังอยู่ (ก่อนถูกล้าง) — มีรายการปลาครบ
-          message: buildOrderLinkMessage(saved.order_number, orderItems, Math.round(grandTotal), url),
+          message: buildOrderLinkMessage({
+            orderNumber: saved.order_number,
+            items: orderItems,
+            totalFish: totalFishCount,
+            shippingFee,
+            billDiscount,
+            total: Math.round(grandTotal),
+            url,
+          }),
         });
       } else {
         // ออเดอร์บันทึกแล้วแต่ไม่ได้ token กลับมา ลิงก์จะเสีย

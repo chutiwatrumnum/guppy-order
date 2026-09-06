@@ -1686,12 +1686,15 @@ export default function AdminPage() {
                                 size="sm"
                                 onClick={async () => {
                                   const url = getLiffOrderUrl(order.publicToken!);
-                                  const msg = buildOrderLinkMessage(
-                                    order.orderNumber || '',
-                                    order.items || [],
-                                    order.totalAmount || 0,
-                                    url
-                                  );
+                                  const msg = buildOrderLinkMessage({
+                                    orderNumber: order.orderNumber || '',
+                                    items: order.items || [],
+                                    totalFish: order.totalFish || 0,
+                                    shippingFee: order.shippingFee ?? 0,
+                                    billDiscount: order.discount || 0,
+                                    total: order.totalAmount || 0,
+                                    url,
+                                  });
                                   try {
                                     await navigator.clipboard.writeText(msg);
                                     toast.success('คัดลอกลิงก์ใบสรุปแล้ว');

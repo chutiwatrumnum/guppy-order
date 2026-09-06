@@ -99,14 +99,30 @@ export const buildOrderMessage = (opts: OrderMessageOptions): string => {
   return text;
 };
 
-// ข้อความสั้นที่แนบไปกับลิงก์ใบสรุปในไลน์
-// ให้ลูกค้าเห็นรายการปลาในแชทเลย ไม่ต้องเปิดลิงก์ก็รู้ว่าสั่งอะไร
-export const buildOrderLinkMessage = (
-  orderNumber: string,
-  items: OrderItem[],
-  total: number,
-  url: string
-): string => {
+// ข้อความที่แนบไปกับลิงก์ใบสรุปในไลน์
+// ให้ลูกค้าเห็นรายการปลาและที่มาของยอดในแชทเลย ไม่ต้องเปิดลิงก์ก็รู้ว่าสั่งอะไร ยอดมาจากไหน
+export interface OrderLinkMessageOptions {
+  orderNumber: string;
+  items: OrderItem[];
+  /** จำนวนปลาที่นับตัวจริง (อาหารไม่นับ) — ผู้เรียกส่งมา */
+  totalFish: number;
+  /** ค่าจัดส่งที่คิดกับบิลนี้ — 0 คือร้านยกให้ จะขึ้นว่า "ฟรี" */
+  shippingFee: number;
+  billDiscount?: number;
+  /** ยอดรวมทั้งสิ้นของบิล — ใช้ค่าที่บันทึกไว้ตรง ๆ จะได้ตรงกับหน้าใบสรุปเสมอ */
+  total: number;
+  url: string;
+}
+
+export const buildOrderLinkMessage = ({
+  orderNumber,
+  items,
+  totalFish,
+  shippingFee,
+  billDiscount = 0,
+  total,
+  url,
+}: OrderLinkMessageOptions): string => {
   const lines = [`🐠 ใบสรุปออเดอร์ ${orderNumber}`, ''];
 
   items.forEach((item) => {
@@ -117,8 +133,19 @@ export const buildOrderLinkMessage = (
     lines.push(`• ${isFood ? '🍤 ' : ''}${item.breedName}${genderLabel ? ' ' + genderLabel : ''} ${item.quantity} ${typeLabel}${free}`);
   });
 
+  // สรุปยอดชุดเดียวกับข้อความเต็ม (buildOrderMessage) — คำและอิโมจิต้องตรงกัน
+  // ลูกค้าที่เคยได้ข้อความแบบเก่าจะได้อ่านเจอที่เดิม
+  const itemsTotal = items.reduce((sum, item) => sum + calculateItemTotal(item), 0);
+
   lines.push('');
-  lines.push(`💰 ยอดรวม ฿${total.toLocaleString()}`);
+  lines.push(`📊 จำนวนปลาทั้งหมด: ${totalFish} ตัว`);
+  lines.push(`💰 ค่าปลา: ${itemsTotal.toLocaleString()} บาท`);
+  if (billDiscount > 0) {
+    lines.push(`🎁 ส่วนลดท้ายบิล: -${billDiscount.toLocaleString()} บาท`);
+  }
+  lines.push(`🚚 ค่าจัดส่ง: ${shippingFee > 0 ? `${shippingFee.toLocaleString()} บาท` : 'ฟรี'}`);
+  lines.push(`🔥 ยอดรวมทั้งสิ้น: ${total.toLocaleString()} บาท`);
+
   lines.push('');
   lines.push('ดูรายการ ชำระเงิน และแจ้งที่อยู่ได้ที่ลิงก์นี้ครับ 👇');
   lines.push(url);

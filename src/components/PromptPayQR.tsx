@@ -117,6 +117,26 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
     );
   }
 
+  // ยอดที่สร้าง QR ไม่ได้ ต้องพูดออกมาตรง ๆ
+  //
+  // เดิม effect ข้างบน return ทิ้งเงียบ ๆ เมื่อ amount <= 0 แล้วตกมาเข้าเงื่อนไข
+  // loading || !dataUrl ข้างล่าง = ลูกค้านั่งดูวงกลมหมุนที่ไม่มีวันหยุด
+  // เกิดกับบิลแถมทั้งใบ/ส่วนลดเต็มจำนวน (ยอด 0) และบิลที่ยอดติดลบจากการแก้บิล
+  if (amount <= 0) {
+    return (
+      <div className="bg-muted/40 rounded-lg border border-dashed p-4 text-center">
+        <p className="text-sm font-medium">
+          {amount === 0 ? 'บิลนี้ยอดรวม ฿0 ไม่ต้องชำระเงินครับ' : 'ยอดบิลไม่ถูกต้อง'}
+        </p>
+        <p className="text-muted-foreground mt-1 text-xs">
+          {amount === 0
+            ? 'ถ้าคิดว่าไม่ถูกต้อง รบกวนทักถามทางร้านได้เลยครับ'
+            : `ยอด ฿${amount.toLocaleString()} สร้าง QR ไม่ได้ รบกวนแจ้งทางร้านให้แก้บิลครับ`}
+        </p>
+      </div>
+    );
+  }
+
   if (loading || !dataUrl) {
     return (
       <div className="flex items-center justify-center rounded-lg border p-8">

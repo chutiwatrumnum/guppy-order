@@ -310,11 +310,19 @@ export default function AdminPage() {
           if (r.order_id) map[r.order_id] = r;
         });
         setOrderSlips(map);
+      } else {
+        // ช่วงนี้ไม่มีบิล — ล้างสลิปของช่วงก่อนทิ้ง ไม่งั้นแมปเก่าค้างอยู่
+        setOrderSlips({});
       }
 
       await loadPendingSlipCount();
     } catch (err) {
       console.error('Load all orders error:', err);
+      // เดิมเงียบสนิท หน้าจะโชว์ "ไม่มีบิล" เหมือนช่วงนั้นขายไม่ได้เลย
+      // ทั้งที่จริงคือโหลดไม่ผ่าน — ต่างกันคนละเรื่องสำหรับคนที่กำลังดูยอด
+      toast.error('โหลดรายการบิลไม่สำเร็จ', {
+        description: 'ตัวเลขที่เห็นอาจไม่ครบ กดปุ่มรีเฟรชอีกครั้งครับ',
+      });
     }
   };
 
@@ -966,10 +974,16 @@ export default function AdminPage() {
 
       // ใช้ calculateItemTotal ตัวเดียวกับตอนออกบิล ไม่งั้นรายการที่ส่วนลดเกินราคา
       // จะกลายเป็นยอดติดลบตอนแก้ไข ทั้งที่ตอนสร้างบิลถูกปัดเป็น 0
-      const newTotalAmount =
+      //
+      // Math.max(0) ครอบทั้งก้อนด้วย ให้ตรงกับตอนออกบิลที่หน้าขาย (grandTotal)
+      // ส่วนลดท้ายบิลที่พิมพ์เกินยอด (1000 ในบิล 900) เคยบันทึกยอดติดลบลงฐานข้อมูลได้
+      // แล้วหน้าลูกค้าจะโชว์ -฿100 พร้อม QR ที่สร้างไม่ได้
+      const newTotalAmount = Math.max(
+        0,
         updatedItems.reduce((sum, item) => sum + calculateItemTotal(item), 0) -
-        updatedDiscount +
-        shippingFee;
+          updatedDiscount +
+          shippingFee
+      );
 
       const newTotalFish = fishCountOf(updatedItems);
       const newTotalCost = updatedItems.reduce((sum, item) => {
@@ -2134,7 +2148,11 @@ export default function AdminPage() {
                   (s, it) => s + (it.price * Math.max(0, it.quantity - (it.freeQty || 0)) - (it.discount || 0)),
                   0
                 );
-                const grand = itemsTotal - (Number(editDiscount) || 0) + (editingOrder.shippingFee ?? 60);
+                // clamp เหมือนตอนบันทึกจริง ตัวเลขที่เห็นก่อนกดต้องตรงกับที่จะถูกเก็บ
+                const grand = Math.max(
+                  0,
+                  itemsTotal - (Number(editDiscount) || 0) + (editingOrder.shippingFee ?? 60)
+                );
                 return (
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground text-sm">

@@ -61,6 +61,7 @@ interface OrderDraft {
   address: string;
   note: string;
   discount: number;
+  freeShipping?: boolean;
 }
 
 function readDraft(): OrderDraft | null {
@@ -111,6 +112,8 @@ export default function HomePage() {
   const [customerAddress, setCustomerAddress] = useState(restoredDraft?.address ?? '');
   const [orderNote, setOrderNote] = useState(restoredDraft?.note ?? '');
   const [billDiscount, setBillDiscount] = useState<number>(restoredDraft?.discount ?? 0);
+  // ฟรีค่าส่งเป็นรายบิล ไม่ใช่การไปแก้ค่าส่งในหน้าตั้งค่าซึ่งมีผลกับทุกบิลถัดไป
+  const [freeShipping, setFreeShipping] = useState(restoredDraft?.freeShipping ?? false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [addressPaste, setAddressPaste] = useState('');
   // ปกติไม่ต้องกรอกที่อยู่ — เปิดเฉพาะตอนลูกค้าส่งมาในแชท
@@ -211,6 +214,7 @@ export default function HomePage() {
         address: customerAddress,
         note: orderNote,
         discount: billDiscount,
+        freeShipping,
       };
       localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     } catch {
@@ -224,6 +228,7 @@ export default function HomePage() {
     customerAddress,
     orderNote,
     billDiscount,
+    freeShipping,
   ]);
 
   // Load Data from Supabase
@@ -436,9 +441,11 @@ export default function HomePage() {
     () => orderItems.reduce((sum, item) => sum + calculateItemTotal(item), 0),
     [orderItems]
   );
+  // ค่าส่งที่คิดกับบิลนี้จริง ๆ — กดฟรีค่าส่งแล้วเป็น 0 ทั้งใบ
+  const shippingFee = freeShipping ? 0 : Number(bankInfo.shipping_fee) || 0;
   const grandTotal = Math.max(
     0,
-    totalFishPrice - billDiscount + (orderItems.length > 0 ? bankInfo.shipping_fee : 0)
+    totalFishPrice - billDiscount + (orderItems.length > 0 ? shippingFee : 0)
   );
 
   const copyOrderLink = async () => {
@@ -472,7 +479,7 @@ export default function HomePage() {
         items: orderItems,
         total_amount: Math.round(grandTotal),
         total_fish: totalFishCount,
-        shipping_fee: Math.round(bankInfo.shipping_fee || 0),
+        shipping_fee: Math.round(shippingFee),
         discount: Math.round(billDiscount || 0),
         total_cost: Math.round(totalCost),
         customer_id: selectedCustomerId || null,
@@ -493,28 +500,36 @@ export default function HomePage() {
 
       // จำลูกค้าไว้ถ้ามีเบอร์แต่ยังไม่ได้ผูกกับลูกค้าเดิม
       // ครั้งหน้าเบอร์นี้สั่ง ชื่อ/ที่อยู่จะขึ้นเอง — ไม่บล็อกการบันทึกออเดอร์ถ้าพลาด
+      //
+      // ⚠️ supabase คืน error ไม่ได้โยน — try/catch ไม่พอ ต้องรับมาเช็กเอง
+      // เดิมพลาดแล้วเงียบสนิท ครั้งหน้าลูกค้าคนนี้ก็ยังต้องพิมพ์ที่อยู่ใหม่
+      // โดยไม่มีใครรู้ว่าทำไม
       if (!selectedCustomerId && customerPhone.replace(/\D/g, '').length >= 9) {
         try {
           const digits = customerPhone.replace(/\D/g, '');
           const { data: existing } = await supabase.rpc('find_customer_by_phone', { p_phone: digits });
           const match = Array.isArray(existing) ? existing[0] : existing;
-          if (match?.id) {
-            await supabase
-              .from('customers')
-              .update({
-                name: customerName || match.name,
-                address: customerAddress || match.address,
-              })
-              .eq('id', match.id);
-          } else {
-            await supabase.from('customers').insert({
-              name: customerName || 'ไม่ระบุชื่อ',
-              phone: customerPhone,
-              address: customerAddress || null,
-            });
-          }
+          const { error: custError } = match?.id
+            ? await supabase
+                .from('customers')
+                .update({
+                  name: customerName || match.name,
+                  address: customerAddress || match.address,
+                })
+                .eq('id', match.id)
+            : await supabase.from('customers').insert({
+                name: customerName || 'ไม่ระบุชื่อ',
+                phone: customerPhone,
+                address: customerAddress || null,
+              });
+
+          if (custError) throw custError;
         } catch (custErr) {
           console.error('Save customer error:', custErr);
+          // บิลบันทึกไปแล้ว ไม่ใช่เรื่องคอขาดบาดตาย แต่ต้องรู้ว่าต้องไปเพิ่มลูกค้าเอง
+          toast.warning('บันทึกออเดอร์แล้ว แต่จำลูกค้ารายนี้ไม่สำเร็จ', {
+            description: 'เพิ่มเองได้ที่หน้าลูกค้า ไม่งั้นครั้งหน้าต้องพิมพ์ที่อยู่ใหม่',
+          });
         }
       }
 
@@ -545,6 +560,7 @@ export default function HomePage() {
       setCustomerAddress('');
       setOrderNote('');
       setBillDiscount(0);
+      setFreeShipping(false);
       setAddressPaste('');
       setShowCart(false);
 
@@ -870,9 +886,32 @@ export default function HomePage() {
                   <span className="text-muted-foreground">จำนวนปลา</span>
                   <span className="font-medium">{totalFishCount} ตัว</span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center justify-between gap-2 text-sm">
                   <span className="text-muted-foreground">ค่าจัดส่ง</span>
-                  <span className="font-medium">฿{Number(bankInfo.shipping_fee).toLocaleString()}</span>
+                  <div className="flex items-center gap-2">
+                    {freeShipping && (
+                      <span className="text-muted-foreground/70 text-xs line-through">
+                        ฿{(Number(bankInfo.shipping_fee) || 0).toLocaleString()}
+                      </span>
+                    )}
+                    <span className={cn('font-medium', freeShipping && 'text-success')}>
+                      {freeShipping ? 'ฟรี' : `฿${(Number(bankInfo.shipping_fee) || 0).toLocaleString()}`}
+                    </span>
+                    {/* กดสลับได้เลยตรงนี้ ไม่ต้องเข้าไปแก้ค่าส่งในหน้าตั้งค่าแล้วกลับมาแก้คืน */}
+                    <button
+                      type="button"
+                      onClick={() => setFreeShipping((v) => !v)}
+                      aria-pressed={freeShipping}
+                      className={cn(
+                        'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors active:scale-[0.98]',
+                        freeShipping
+                          ? 'border-success/40 bg-success/10 text-success'
+                          : 'text-muted-foreground hover:bg-accent'
+                      )}
+                    >
+                      {freeShipping ? '✓ ฟรีค่าส่ง' : 'ฟรีค่าส่ง'}
+                    </button>
+                  </div>
                 </div>
                 {billDiscount > 0 && (
                   <div className="flex items-center justify-between text-sm">

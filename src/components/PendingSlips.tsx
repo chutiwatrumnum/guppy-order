@@ -256,9 +256,14 @@ export default function PendingSlips({
     const slip = rejecting;
     if (!slip) return;
 
+    let notifyError = null;
+
     const note = (rejectNote || presetNote).trim();
     setBusy(slip.id);
-    await supabase
+    // ⚠️ supabase คืน error ไม่ได้โยน — ต้องเช็กเอง
+    // เดิมไม่เช็ก ปฏิเสธไม่ผ่านก็ยังส่งไลน์ไปบอกลูกค้าว่า "สลิปไม่ผ่าน" แล้วเอาใบนั้น
+    // ออกจากรายการ ทั้งที่ในฐานข้อมูลยังค้าง pending — ร้านไม่เห็นแล้ว แต่เรื่องยังไม่จบ
+    const { error: rejectError } = await supabase
       .from('payment_slips')
       .update({
         status: 'rejected',
@@ -267,6 +272,12 @@ export default function PendingSlips({
         reviewed_by: user?.username || null,
       })
       .eq('id', slip.id);
+
+    if (rejectError) {
+      setBusy(null);
+      toast.error('ปฏิเสธสลิปไม่สำเร็จ ลองใหม่อีกครั้งครับ');
+      return;
+    }
 
     // บอกลูกค้าด้วยว่าทำไมไม่ผ่าน ไม่งั้นจะส่งใบเดิมมาซ้ำ หรือหายไปแล้วบิลค้าง
     // ต้องมี LINE จริงถึงจะส่งได้ — อัปจากเบราว์เซอร์ธรรมดาจะเป็น web:<token>
@@ -288,11 +299,11 @@ export default function PendingSlips({
           },
           `⚠️ สลิปที่ส่งมายังตรวจสอบไม่ผ่านครับ\nบิล ${order.order_number}`
         );
-        await supabase.from('line_notifications').insert({
+        ({ error: notifyError } = await supabase.from('line_notifications').insert({
           line_user_id: slip.line_user_id,
           order_id: slip.order_id,
           message,
-        });
+        }));
       }
     }
 
@@ -303,7 +314,12 @@ export default function PendingSlips({
     const remaining = slips.filter((s) => s.id !== slip.id);
     setSlips(remaining);
     onChanged?.(remaining.length);
-    toast.success('ปฏิเสธสลิปแล้ว');
+    // แจ้งเตือนล้มไม่ได้แปลว่าปฏิเสธไม่สำเร็จ แต่ต้องบอกร้าน ไม่งั้นลูกค้ารอเก้อ
+    if (notifyError) {
+      toast.warning('ปฏิเสธสลิปแล้ว แต่ส่งแจ้งเตือนหาลูกค้าไม่สำเร็จ');
+    } else {
+      toast.success('ปฏิเสธสลิปแล้ว');
+    }
   };
 
   if (loading) {

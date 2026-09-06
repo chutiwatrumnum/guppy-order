@@ -829,9 +829,14 @@ export default function PublicOrderPage() {
               </div>
               <div className="text-muted-foreground flex justify-between">
                 <span>ค่าจัดส่ง</span>
-                <span className="text-foreground font-medium tabular-nums">
-                  ฿{(order.shipping_fee || 0).toLocaleString()}
-                </span>
+                {/* ร้านยกค่าส่งให้ — เขียนว่า "ฟรี" ตรง ๆ ดีกว่าโชว์ ฿0 เฉย ๆ */}
+                {order.shipping_fee ? (
+                  <span className="text-foreground font-medium tabular-nums">
+                    ฿{order.shipping_fee.toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="text-success font-medium">ฟรี</span>
+                )}
               </div>
               {order.discount > 0 && (
                 <div className="text-warning flex justify-between">

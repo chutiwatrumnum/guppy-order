@@ -397,49 +397,55 @@ export default function SettingsPage() {
       in_stock: inStock,
     };
 
-    try {
-      if (editingBreed) {
-        await supabase.from('breeds').update(breedData).eq('id', editingBreed.id);
-      } else {
-        await supabase.from('breeds').insert([breedData]);
-      }
+    // ⚠️ supabase "คืน" error ไม่ได้ "โยน" — try/catch ครอบไว้ก็ดักไม่ได้ ต้องเช็กเอง
+    // ถ้าไม่เช็ก บันทึกไม่ผ่านแล้วโค้ดจะวิ่งต่อจนขึ้น "บันทึกเรียบร้อย"
+    // แล้วลบรูปเก่าทิ้งทั้งที่แถวยังชี้ไฟล์เดิมอยู่ = รูปบนหน้าเว็บลูกค้าเสียถาวร
+    const { error } = editingBreed
+      ? await supabase.from('breeds').update(breedData).eq('id', editingBreed.id)
+      : await supabase.from('breeds').insert([breedData]);
 
-      // แถวชี้ไปรูปใหม่แล้ว รูปเก่าถึงจะลบได้ — ลบไม่สำเร็จก็แค่เปลืองพื้นที่
-      // ไม่ใช่เรื่องที่ต้องเด้ง error ใส่หน้าคนที่เพิ่งบันทึกสำเร็จ
-      if (stalePhotosRef.current.length) {
-        await supabase.storage.from('breeds').remove(stalePhotosRef.current);
-        stalePhotosRef.current = [];
-      }
-
-      setEditingBreed(null);
-      setIsBreedModalOpen(false);
-      setPhotoUrl(null);
-      fetchData();
-      (e.target as HTMLFormElement).reset();
-      toast.success('บันทึกสายพันธุ์เรียบร้อย');
-    } catch (err) {
-      toast.error('บันทึกไม่สำเร็จ');
+    if (error) {
+      console.error('Save breed error:', error);
+      toast.error('บันทึกไม่สำเร็จ ลองใหม่อีกครั้งครับ');
+      return;
     }
+
+    // แถวชี้ไปรูปใหม่แล้ว รูปเก่าถึงจะลบได้ — ลบไม่สำเร็จก็แค่เปลืองพื้นที่
+    // ไม่ใช่เรื่องที่ต้องเด้ง error ใส่หน้าคนที่เพิ่งบันทึกสำเร็จ
+    if (stalePhotosRef.current.length) {
+      await supabase.storage.from('breeds').remove(stalePhotosRef.current);
+      stalePhotosRef.current = [];
+    }
+
+    setEditingBreed(null);
+    setIsBreedModalOpen(false);
+    setPhotoUrl(null);
+    fetchData();
+    (e.target as HTMLFormElement).reset();
+    toast.success('บันทึกสายพันธุ์เรียบร้อย');
   };
 
   const deleteBreed = async (id: string) => {
     if (!confirm('ยืนยันการลบสายพันธุ์นี้?')) return;
-    try {
-      await supabase.from('breeds').delete().eq('id', id);
 
-      // ลบรูปตามไปด้วย ไม่งั้นไฟล์กำพร้าจะค้างกินพื้นที่ 1GB ของแพลนฟรี
-      // โดยไม่มีอะไรในระบบชี้ไปหามันอีกเลย
-      const orphan = storagePathFromUrl(
-        breeds.find((b) => b.id === id)?.image_url ?? null,
-        'breeds'
-      );
-      if (orphan) await supabase.storage.from('breeds').remove([orphan]);
-
-      fetchData();
-      toast.success('ลบข้อมูลแล้ว');
-    } catch (err) {
-      toast.error('ลบไม่สำเร็จ');
+    // เช็ก error เองเหมือนตอนบันทึก — ลบไม่ผ่านแล้วลบรูปตามไป จะเหลือแถวที่รูปเสีย
+    const { error } = await supabase.from('breeds').delete().eq('id', id);
+    if (error) {
+      console.error('Delete breed error:', error);
+      toast.error('ลบไม่สำเร็จ ลองใหม่อีกครั้งครับ');
+      return;
     }
+
+    // ลบรูปตามไปด้วย ไม่งั้นไฟล์กำพร้าจะค้างกินพื้นที่ 1GB ของแพลนฟรี
+    // โดยไม่มีอะไรในระบบชี้ไปหามันอีกเลย
+    const orphan = storagePathFromUrl(
+      breeds.find((b) => b.id === id)?.image_url ?? null,
+      'breeds'
+    );
+    if (orphan) await supabase.storage.from('breeds').remove([orphan]);
+
+    fetchData();
+    toast.success('ลบข้อมูลแล้ว');
   };
 
   // Toggle sort: click same column flips direction, new column starts ascending

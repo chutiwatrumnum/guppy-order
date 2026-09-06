@@ -85,6 +85,8 @@ export interface SavedOrder {
   paidAmount?: number;
   /** เงินเข้าเมื่อไหร่ — ว่างแปลว่าปิดบิลไว้ก่อนระบบเริ่มเก็บวันที่ หรือปิดเองโดยไม่มีสลิป */
   paidAt?: string | null;
+  /** บัญชีที่บิลนี้ผูกไว้ — ว่างแปลว่าบิลเก่าก่อนแยกบัญชี */
+  paymentAccountId?: string | null;
   trackingNumber?: string;
   customerId?: string | null;
   customerName?: string;

@@ -168,6 +168,10 @@ export default function AdminPage() {
   const [pendingSlipCount, setPendingSlipCount] = useState(0);
   // บัญชีที่ใช้รับเงินอยู่ — ตราลงบิลตอนกดว่าได้รับเงินแล้ว
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+  // บัญชีทั้งหมด ไว้ใส่เลขบัญชีที่ถูกใบลงในข้อความที่ก๊อปให้ลูกค้า
+  const [payAccounts, setPayAccounts] = useState<
+    { id: string; bank_name: string; account_number: string | null; account_name: string | null }[]
+  >([]);
   const [copiedAddressId, setCopiedAddressId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [missingAddressOnly, setMissingAddressOnly] = useState(false);
@@ -222,11 +226,11 @@ export default function AdminPage() {
       // โหลดข้อมูลบัญชี/ค่าส่ง สำหรับใส่ในข้อความ Copy
       const { data: accountData } = await supabase
         .from('payment_accounts')
-        .select('id')
-        .eq('is_active', true)
-        .eq('archived', false)
-        .limit(1);
-      setActiveAccountId(accountData?.[0]?.id ?? null);
+        .select('id, bank_name, account_number, account_name, is_active, archived');
+      setPayAccounts(accountData || []);
+      setActiveAccountId(
+        (accountData || []).find((a: any) => a.is_active && !a.archived)?.id ?? null
+      );
 
       const { data: settingsData } = await supabase.from('settings').select('*').limit(1);
       if (settingsData && settingsData.length > 0) {
@@ -297,6 +301,7 @@ export default function AdminPage() {
         paymentStatus: order.payment_status,
         paidAmount: order.paid_amount || 0,
         paidAt: order.paid_at ?? null,
+        paymentAccountId: order.payment_account_id ?? null,
         trackingNumber: order.tracking_number,
         customerId: order.customer_id,
         customerName: order.customer_name,
@@ -2204,6 +2209,20 @@ export default function AdminPage() {
                 variant="outline"
                 size="lg"
                 onClick={() => {
+                  const billAccount =
+                    editingOrder?.paymentStatus !== 'unpaid' && editingOrder?.paymentAccountId
+                      ? payAccounts.find((a) => a.id === editingOrder.paymentAccountId)
+                      : payAccounts.find((a) => a.id === activeAccountId);
+                  const messageAccount = billAccount
+                    ? {
+                        id: billAccount.id,
+                        bank_name: billAccount.bank_name,
+                        account_number: billAccount.account_number || '',
+                        account_name: billAccount.account_name || '',
+                        shipping_fee: bankInfo?.shipping_fee ?? 60,
+                      }
+                    : null;
+
                   const message = buildOrderMessage({
                     items: editItems,
                     totalFish: editItems.reduce(
@@ -2213,7 +2232,11 @@ export default function AdminPage() {
                     ),
                     shippingFee: editingOrder?.shippingFee ?? 60,
                     billDiscount: Number(editDiscount) || 0,
-                    bankInfo,
+                    // เลขบัญชีต้องตรงกับที่ลูกค้าเห็นในใบสรุป ไม่งั้นบอกคนละบัญชีกับหน้าเว็บ
+                    //
+                    // กฎเดียวกับ get_public_order: จ่ายแล้วยึดบัญชีที่ผูกกับบิล
+                    // ยังไม่จ่ายใช้บัญชีที่รับเงินอยู่ตอนนี้ — ตกไปที่ settings เฉพาะตอนยังไม่มีบัญชีเลย
+                    bankInfo: messageAccount ?? bankInfo,
                     customerName: editName,
                     customerPhone: editPhone,
                     customerAddress: editAddress,

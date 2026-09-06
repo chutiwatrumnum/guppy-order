@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CreditCard,
   Download,
+  Image as ImageIcon,
   Loader2,
   Pencil,
   Plus,
   Receipt,
   Trash2,
+  Upload,
   Wallet,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { ACCEPTED_PHOTO_TYPES, shrinkPhoto } from '@/utils/image';
 import { cn } from '@/lib/utils';
 import Layout from './Layout';
 import { PageHeader } from '@/components/PageHeader';
@@ -51,6 +55,8 @@ interface Expense {
   category: string;
   amount: number;
   note: string | null;
+  /** path ของรูปใบเสร็จในบัคเก็ต receipts — บัคเก็ตเป็น private ต้องขอ signed URL ก่อนเปิด */
+  receipt_path: string | null;
 }
 
 interface OrderRow {
@@ -177,7 +183,18 @@ export default function AccountingPage() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ spent_on: ymd(new Date()), category: CATEGORIES[0], amount: '', note: '' });
+  const [form, setForm] = useState({
+    spent_on: ymd(new Date()),
+    category: CATEGORIES[0],
+    amount: '',
+    note: '',
+    receipt_path: null as string | null,
+  });
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // ใบเสร็จที่ถูกแทนที่/เอาออก — ลบไฟล์ทิ้งหลังบันทึกสำเร็จเท่านั้น
+  // ลบก่อนแล้วบันทึกพลาด = แถวยังชี้ไฟล์ที่ไม่มีอยู่แล้ว
+  const staleReceipts = useRef<string[]>([]);
   const [toDelete, setToDelete] = useState<Expense | null>(null);
 
   const [start, end] = rangeOf(period, customStart, customEnd);
@@ -221,7 +238,7 @@ export default function AccountingPage() {
       ordersQuery,
       supabase
         .from('expenses')
-        .select('id, spent_on, category, amount, note')
+        .select('id, spent_on, category, amount, note, receipt_path')
         .gte('spent_on', start)
         .lte('spent_on', end)
         .order('spent_on', { ascending: false }),
@@ -358,19 +375,73 @@ export default function AccountingPage() {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ spent_on: ymd(new Date()), category: CATEGORIES[0], amount: '', note: '' });
+    staleReceipts.current = [];
+    setForm({
+      spent_on: ymd(new Date()),
+      category: CATEGORIES[0],
+      amount: '',
+      note: '',
+      receipt_path: null,
+    });
     setModalOpen(true);
   };
 
   const openEdit = (expense: Expense) => {
     setEditing(expense);
+    staleReceipts.current = [];
     setForm({
       spent_on: expense.spent_on,
       category: expense.category,
       amount: String(expense.amount),
       note: expense.note || '',
+      receipt_path: expense.receipt_path,
     });
     setModalOpen(true);
+  };
+
+  /** อัปรูปใบเสร็จ — ย่อก่อนเสมอ ตัวเดียวกับที่ใช้กับรูปปลา */
+  const uploadReceipt = async (file: File) => {
+    if (!ACCEPTED_PHOTO_TYPES.includes(file.type)) {
+      toast.error('รองรับเฉพาะไฟล์ JPG, PNG, WebP');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const small = await shrinkPhoto(file);
+      const ext = small.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = `r/${Date.now()}.${ext}`;
+
+      const { error } = await supabase.storage.from('receipts').upload(path, small, {
+        contentType: small.type,
+        cacheControl: '31536000',
+        upsert: false,
+      });
+      if (error) throw error;
+
+      if (form.receipt_path) staleReceipts.current.push(form.receipt_path);
+      setForm((f) => ({ ...f, receipt_path: path }));
+      toast.success(`แนบใบเสร็จแล้ว (${Math.round(small.size / 1024)} KB)`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ ลองใหม่อีกครั้งครับ');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeReceipt = () => {
+    if (form.receipt_path) staleReceipts.current.push(form.receipt_path);
+    setForm((f) => ({ ...f, receipt_path: null }));
+  };
+
+  /** บัคเก็ตเป็น private เปิดดูต้องขอลิงก์ชั่วคราวทุกครั้ง */
+  const openReceipt = async (path: string) => {
+    const { data, error } = await supabase.storage.from('receipts').createSignedUrl(path, 3600);
+    if (error || !data?.signedUrl) {
+      toast.error('เปิดใบเสร็จไม่สำเร็จ');
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener');
   };
 
   const saveExpense = async () => {
@@ -390,6 +461,7 @@ export default function AccountingPage() {
       category: form.category,
       amount,
       note: form.note.trim() || null,
+      receipt_path: form.receipt_path,
       created_by: user?.username || null,
     };
 
@@ -405,6 +477,12 @@ export default function AccountingPage() {
       return;
     }
 
+    // แถวชี้ไฟล์ใหม่แล้ว ไฟล์เก่าถึงจะลบได้ — ลบพลาดก็แค่เปลืองพื้นที่ ไม่ต้องเด้ง error
+    if (staleReceipts.current.length) {
+      await supabase.storage.from('receipts').remove(staleReceipts.current);
+      staleReceipts.current = [];
+    }
+
     setModalOpen(false);
     setEditing(null);
     load();
@@ -418,6 +496,11 @@ export default function AccountingPage() {
       toast.error('ลบไม่สำเร็จ');
       return;
     }
+    // ลบรูปตามไปด้วย ไม่งั้นไฟล์กำพร้าค้างกินพื้นที่โดยไม่มีอะไรชี้ไปหา
+    if (toDelete.receipt_path) {
+      await supabase.storage.from('receipts').remove([toDelete.receipt_path]);
+    }
+
     setExpenses((prev) => prev.filter((e) => e.id !== toDelete.id));
     setToDelete(null);
     toast.success('ลบรายจ่ายแล้ว');
@@ -740,6 +823,16 @@ export default function AccountingPage() {
                           ฿{money(expense.amount)}
                         </span>
                         <div className="flex shrink-0 gap-1">
+                          {expense.receipt_path && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="ดูใบเสร็จ"
+                              onClick={() => openReceipt(expense.receipt_path!)}
+                            >
+                              <ImageIcon className="size-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon-sm"
@@ -838,6 +931,50 @@ export default function AccountingPage() {
               />
               <p className="text-muted-foreground text-xs">
                 ค่าส่งพัสดุรายบิลไม่ต้องใส่ที่นี่ กรอกในบิลแล้วระบบหักให้เอง
+              </p>
+            </div>
+
+            {/* ใบเสร็จ — ตัวเลขที่พิมพ์เองไม่ใช่หลักฐาน รูปคู่กับยอดถึงจะใช้ยืนยันได้ */}
+            <div className="space-y-1.5">
+              <Label>ใบเสร็จ</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  // เคลียร์ทุกครั้ง ไม่งั้นเลือกไฟล์เดิมซ้ำแล้ว onChange ไม่ยิง
+                  e.target.value = '';
+                  if (file) uploadReceipt(file);
+                }}
+              />
+
+              {form.receipt_path ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => openReceipt(form.receipt_path!)}>
+                    <ImageIcon className="size-4" /> ดูรูปที่แนบ
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={removeReceipt}>
+                    <X className="size-4" /> เอาออก
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={uploading}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                  {uploading ? 'กำลังอัป…' : 'ถ่าย/เลือกรูปใบเสร็จ'}
+                </Button>
+              )}
+
+              <p className="text-muted-foreground text-xs">
+                ถ่ายจากมือถือได้เลย ระบบย่อให้เหลือ ~150KB ก่อนอัปเสมอ · เก็บเป็นส่วนตัว
+                เปิดดูได้เฉพาะคนที่ล็อกอิน
               </p>
             </div>
           </ResponsiveModalBody>

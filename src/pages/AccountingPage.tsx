@@ -68,6 +68,11 @@ interface OrderRow {
   payment_account_id: string | null;
 }
 
+/** บิลที่ฝังมากับแถวสลิป — เอาแค่ว่าเป็นของบัญชีไหน */
+interface SlipOrder {
+  payment_account_id: string | null;
+}
+
 interface AccountRef {
   id: string;
   label: string | null;
@@ -166,6 +171,8 @@ export default function AccountingPage() {
   // บิลที่ปิดไปแล้วแต่ไม่มีวันที่รับเงิน — โหมดเงินสดมองไม่เห็น ต้องบอกว่าตกไปเท่าไหร่
   const [noPaidDate, setNoPaidDate] = useState({ count: 0, amount: 0 });
   const [payAccounts, setPayAccounts] = useState<AccountRef[]>([]);
+  // สลิปที่ร้านยืนยันแล้วในช่วงนี้ = จำนวนครั้งที่มีเงินโอนเข้าจริงพร้อมหลักฐาน
+  const [confirmedSlips, setConfirmedSlips] = useState<{ accountId: string | null }[]>([]);
 
   const [editing, setEditing] = useState<Expense | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -210,7 +217,7 @@ export default function AccountingPage() {
             .lte('created_at', toIso)
             .order('created_at', { ascending: true });
 
-    const [ordersRes, expensesRes, claimsRes, legacyRes, accountsRes] = await Promise.all([
+    const [ordersRes, expensesRes, claimsRes, legacyRes, accountsRes, slipsRes] = await Promise.all([
       ordersQuery,
       supabase
         .from('expenses')
@@ -228,6 +235,21 @@ export default function AccountingPage() {
         .gte('created_at', fromIso)
         .lte('created_at', toIso),
       supabase.from('payment_accounts').select('id, label, bank_name, account_number'),
+      // นับสลิปโดยกรองจากบิลที่ผูกอยู่ (!inner) ช่วงเดียวกับตารางบิลด้านบนเป๊ะ ๆ
+      // ไม่ส่ง id บิลทั้งช่วงไปเป็นเงื่อนไข in() เพราะพอเลือก "ปีนี้" URL จะยาวเกินจนคิวรีพัง
+      (basis === 'cash'
+        ? supabase
+            .from('payment_slips')
+            .select('id, orders!inner(payment_account_id, paid_at)')
+            .eq('status', 'confirmed')
+            .gte('orders.paid_at', fromIso)
+            .lte('orders.paid_at', toIso)
+        : supabase
+            .from('payment_slips')
+            .select('id, orders!inner(payment_account_id, created_at)')
+            .eq('status', 'confirmed')
+            .gte('orders.created_at', fromIso)
+            .lte('orders.created_at', toIso)),
     ]);
 
     setLoading(false);
@@ -242,6 +264,14 @@ export default function AccountingPage() {
     setExpenses(((expensesRes.data || []) as Expense[]).map((e) => ({ ...e, amount: Number(e.amount) })));
     setRefund((claimsRes.data || []).reduce((sum: number, c: any) => sum + (c.refund_amount || 0), 0));
     setPayAccounts((accountsRes.data || []) as AccountRef[]);
+    // ตารางที่ฝังมา (orders) บางเวอร์ชันคืนเป็นอ็อบเจกต์ บางเวอร์ชันเป็นอาร์เรย์ รับไว้ทั้งสองแบบ
+    type SlipRow = { orders?: SlipOrder | SlipOrder[] | null };
+    setConfirmedSlips(
+      ((slipsRes.data || []) as unknown as SlipRow[]).map((row) => {
+        const rel = Array.isArray(row.orders) ? row.orders[0] : row.orders;
+        return { accountId: rel?.payment_account_id ?? null };
+      })
+    );
     const legacy = (legacyRes.data || []) as { total_amount: number | null; paid_amount: number | null }[];
     setNoPaidDate({
       count: legacy.length,
@@ -271,14 +301,26 @@ export default function AccountingPage() {
 
     // รับเงินแยกตามบัญชี — กี่บิลและรวมเท่าไหร่
     // โหมดเงินสดนับเงินที่รับจริง โหมดบิลนับยอดหน้าบิล
-    const byAccount = new Map<string, { count: number; amount: number }>();
+    const byAccount = new Map<string, { count: number; amount: number; slips: number }>();
+    const bucket = (key: string) =>
+      byAccount.get(key) || { count: 0, amount: 0, slips: 0 };
+
     orders.forEach((o) => {
       const key = o.payment_account_id || '__none__';
-      const cur = byAccount.get(key) || { count: 0, amount: 0 };
+      const cur = bucket(key);
       byAccount.set(key, {
+        ...cur,
         count: cur.count + 1,
         amount: cur.amount + (basis === 'cash' ? o.paid_amount || 0 : o.total_amount || 0),
       });
+    });
+
+    // สลิปที่ยืนยันแล้ว — หนึ่งใบคือเงินโอนเข้าหนึ่งครั้งที่มีหลักฐานภาพ
+    // ต่างจากจำนวนบิล เพราะบิลที่ปิดด้วยการกดสถานะเอง (โอนสด/นัดรับ) ไม่มีสลิป
+    confirmedSlips.forEach((slip) => {
+      const key = slip.accountId || '__none__';
+      const cur = bucket(key);
+      byAccount.set(key, { ...cur, slips: cur.slips + 1 });
     });
 
     const byCategory = new Map<string, number>();
@@ -312,7 +354,7 @@ export default function AccountingPage() {
         .sort((a, b) => b.amount - a.amount),
       orderCount: orders.length,
     };
-  }, [orders, expenses, refund, basis, payAccounts]);
+  }, [orders, expenses, refund, basis, payAccounts, confirmedSlips]);
 
   const openAdd = () => {
     setEditing(null);
@@ -424,8 +466,8 @@ export default function AccountingPage() {
       ]),
       [],
       ['รับเงินแยกตามบัญชี'],
-      ['บัญชี', 'จำนวนบิล', 'ยอดรวม'],
-      ...stats.byAccount.map((a) => [a.name, String(a.count), String(a.amount)]),
+      ['บัญชี', 'จำนวนบิล', 'สลิปที่ยืนยันแล้ว', 'ยอดรวม'],
+      ...stats.byAccount.map((a) => [a.name, String(a.count), String(a.slips), String(a.amount)]),
       [],
       ['รายจ่ายที่คีย์ไว้'],
       ['วันที่', 'หมวด', 'รายละเอียด', 'จำนวนเงิน'],
@@ -643,7 +685,9 @@ export default function AccountingPage() {
                       >
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">{account.name}</p>
-                          <p className="text-muted-foreground text-xs">{account.count} บิล</p>
+                          <p className="text-muted-foreground text-xs">
+                            {account.count} บิล · สลิปยืนยันแล้ว {account.slips} ใบ
+                          </p>
                         </div>
                         <span className="shrink-0 text-sm font-semibold tabular-nums">
                           ฿{money(account.amount)}
@@ -653,7 +697,10 @@ export default function AccountingPage() {
                   </div>
 
                   <p className="text-muted-foreground/70 text-xs leading-relaxed">
-                    นับเฉพาะบิลที่อยู่ในระบบ — ยอดในสมุดบัญชีธนาคารจะมากกว่านี้เสมอถ้าบัญชีนั้นรับเงินอย่างอื่นด้วย
+                    "สลิปยืนยันแล้ว" คือจำนวนครั้งที่มีเงินโอนเข้าพร้อมหลักฐานภาพ
+                    บิลที่ปิดโดยกดสถานะเอง (รับสด/นัดรับ) จะมีบิลแต่ไม่มีสลิป ตัวเลขสองช่องนี้จึงไม่เท่ากันเป็นเรื่องปกติ
+                    <br />
+                    ทั้งหมดนับเฉพาะบิลที่อยู่ในระบบ — ยอดในสมุดบัญชีธนาคารจะมากกว่านี้เสมอถ้าบัญชีนั้นรับเงินอย่างอื่นด้วย
                   </p>
                 </CardContent>
               </Card>

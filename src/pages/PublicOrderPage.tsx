@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Bell,
   Check,
   Copy,
   Loader2,
@@ -436,15 +435,30 @@ export default function PublicOrderPage() {
   // ลูกค้าเหลืออะไรต้องทำอีกไหม — ใช้คุมกล่องปิดท้าย
   // บิลที่จัดส่งแล้วถือว่าที่อยู่ครบแน่นอน ไม่งั้นร้านคงส่งไม่ได้
   const contactDone = hasSavedAddress || !canEditAddress;
-  const paymentDone =
-    order.payment_status === 'paid' || slipStatus === 'pending' || slipStatus === 'confirmed';
+  const slipSubmitted = slipStatus === 'pending' || slipStatus === 'confirmed';
+  const slipPending = order.payment_status !== 'paid' && slipSubmitted;
+  const paymentDone = order.payment_status === 'paid' || slipSubmitted;
   const allDone = contactDone && paymentDone;
 
   // ลูกค้าที่ยังไม่มีที่อยู่ต้องเจอช่องกรอกก่อนถึงจะสแกนจ่าย
   // เดิมจ่ายเงินอยู่บน พอโอนกับแนบสลิปเสร็จลูกค้าถือว่าจบแล้วและปิดหน้าไป
   // ร้านเลยได้เงินมาโดยไม่มีที่อยู่ส่ง ต้องไปตามทวงในแชท ซึ่งคือเรื่องที่หน้านี้ตั้งใจจะเลิกทำ
   // ลูกค้าเก่าที่มีที่อยู่แล้วไม่มีอะไรต้องกรอก จ่ายเงินขึ้นก่อนตามเดิม
-  const paymentCard = order.payment_status !== 'paid' && (
+  // สลิปถึงร้านแล้วไม่ต้องโชว์ QR กับเลขบัญชีอีก เหลือแค่บรรทัดยืนยัน
+  // ของเดิมต้องเลื่อนผ่าน QR เต็มจอทุกครั้งที่เปิดใบสรุปกลับมาดูสถานะ
+  const slipReceivedNote = (
+    <div className="bg-success/10 flex items-start gap-2 rounded-xl px-4 py-3">
+      <Receipt className="text-success mt-0.5 size-4 shrink-0" />
+      <div>
+        <p className="text-success text-sm font-medium">ได้รับสลิปแล้วครับ</p>
+        <p className="text-success/80 text-xs">
+          ทางร้านกำลังตรวจสอบ เมื่อยืนยันแล้วสถานะจะเปลี่ยนเป็น "ชำระเงินแล้ว"
+        </p>
+      </div>
+    </div>
+  );
+
+  const paymentCard = order.payment_status !== 'paid' && (slipSubmitted ? slipReceivedNote : (
     <Card>
       <CardContent>
         <p className="text-muted-foreground mb-3 text-sm font-medium">ชำระเงิน</p>
@@ -479,67 +493,53 @@ export default function PublicOrderPage() {
         <Separator className="my-4" />
 
         {/* แจ้งสลิป — ทำได้ 2 ทาง ตรงนี้กับส่งเข้าไลน์ ลงที่เดียวกัน */}
-        {slipStatus === 'pending' ? (
-          <div className="bg-success/10 flex items-start gap-2 rounded-xl px-4 py-3">
-            <Receipt className="text-success mt-0.5 size-4 shrink-0" />
-            <div>
-              <p className="text-success text-sm font-medium">ได้รับสลิปแล้วครับ</p>
-              <p className="text-success/80 text-xs">
-                ทางร้านกำลังตรวจสอบ เมื่อยืนยันแล้วสถานะจะเปลี่ยนเป็น "ชำระเงินแล้ว"
-              </p>
-            </div>
-          </div>
-        ) : (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                // เคลียร์ค่าทิ้งทุกครั้ง ไม่งั้นเลือกไฟล์เดิมซ้ำแล้ว onChange ไม่ยิง
-                e.target.value = '';
-                if (file) uploadSlip(file);
-              }}
-            />
-            <Button
-              size="lg"
-              className="w-full"
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" /> กำลังส่งสลิป...
-                </>
-              ) : (
-                <>
-                  <Upload className="size-4" />
-                  {slipStatus === 'rejected' ? 'ส่งสลิปใหม่อีกครั้ง' : 'แนบสลิปโอนเงิน'}
-                </>
-              )}
-            </Button>
-            {slipStatus === 'rejected' && (
-              <div className="bg-warning/10 mt-3 rounded-xl px-3 py-2.5">
-                <p className="text-warning text-xs font-medium">
-                  สลิปที่ส่งมาก่อนหน้านี้ตรวจสอบไม่ผ่าน
-                </p>
-                {/* บอกเหตุผลด้วย ไม่งั้นลูกค้าก็ส่งใบเดิมกลับมาอีก */}
-                {order.slip_note && (
-                  <p className="text-warning/90 mt-0.5 text-xs">เหตุผล: {order.slip_note}</p>
-                )}
-                <p className="text-warning/90 mt-0.5 text-xs">รบกวนแนบใหม่อีกครั้งครับ 🙏</p>
-              </div>
-            )}
-            <p className="text-muted-foreground mt-3 text-center text-xs">
-              แนบที่นี่ทางเดียวนะครับ ระบบจะได้รู้ว่าเป็นของบิลไหนทันที 🙏
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            // เคลียร์ค่าทิ้งทุกครั้ง ไม่งั้นเลือกไฟล์เดิมซ้ำแล้ว onChange ไม่ยิง
+            e.target.value = '';
+            if (file) uploadSlip(file);
+          }}
+        />
+        <Button
+          size="lg"
+          className="w-full"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="size-4 animate-spin" /> กำลังส่งสลิป...
+            </>
+          ) : (
+            <>
+              <Upload className="size-4" />
+              {slipStatus === 'rejected' ? 'ส่งสลิปใหม่อีกครั้ง' : 'แนบสลิปโอนเงิน'}
+            </>
+          )}
+        </Button>
+        {slipStatus === 'rejected' && (
+          <div className="bg-warning/10 mt-3 rounded-xl px-3 py-2.5">
+            <p className="text-warning text-xs font-medium">
+              สลิปที่ส่งมาก่อนหน้านี้ตรวจสอบไม่ผ่าน
             </p>
-          </>
+            {/* บอกเหตุผลด้วย ไม่งั้นลูกค้าก็ส่งใบเดิมกลับมาอีก */}
+            {order.slip_note && (
+              <p className="text-warning/90 mt-0.5 text-xs">เหตุผล: {order.slip_note}</p>
+            )}
+            <p className="text-warning/90 mt-0.5 text-xs">รบกวนแนบใหม่อีกครั้งครับ 🙏</p>
+          </div>
         )}
+        <p className="text-muted-foreground mt-3 text-center text-xs">
+          แนบที่นี่ทางเดียวนะครับ ระบบจะได้รู้ว่าเป็นของบิลไหนทันที 🙏
+        </p>
       </CardContent>
     </Card>
-  );
+  ));
 
   const addressCard = (
   <div ref={addressRef}>
@@ -579,12 +579,7 @@ export default function PublicOrderPage() {
 
           <div className="bg-success/10 flex items-start gap-2 rounded-xl px-3 py-2.5">
             <Check className="text-success mt-0.5 size-4 shrink-0" />
-            <p className="text-success text-xs leading-relaxed">
-              ร้านได้รับที่อยู่แล้ว ไม่ต้องส่งซ้ำครับ
-              {order.payment_status !== 'paid' && slipStatus !== 'pending' && (
-                <> เหลือแค่แนบสลิปโอนเงินด้านบน</>
-              )}
-            </p>
+            <p className="text-success text-xs leading-relaxed">ร้านได้รับที่อยู่แล้ว ไม่ต้องส่งซ้ำครับ</p>
           </div>
 
           <Button variant="outline" className="w-full" onClick={() => setEditingAddress(true)}>
@@ -659,15 +654,21 @@ export default function PublicOrderPage() {
   </div>
   );
 
-  // ── กล่องปิดท้าย ──
+  // ── กล่องสถานะ อยู่ใต้บิล เหนือกล่องที่ต้องลงมือทำ ──
   // เดิมพอกรอกที่อยู่กับแนบสลิปครบแล้ว หน้านี้ก็เงียบไปเฉย ๆ ไม่มีอะไรบอกว่าจบแล้ว
   // ลูกค้าเลยค้างอยู่หน้าใบสรุปแล้วทักมาถามในแชทว่า "ต้องกดอะไรต่อ"
+  //
+  // ต้องอยู่เหนืองาน ไม่ใช่ท้ายหน้า — คนที่ยังไม่รู้ว่าต้องทำอะไรจะได้เห็นตั้งแต่แรก
+  // ไม่ต้องเลื่อนผ่าน QR กับฟอร์มไปจนสุดหน้าถึงจะรู้ว่าตัวเองเหลืออะไร
+  // ด้วยเหตุผลเดียวกัน คำใบ้แต่ละขั้นห้ามอ้าง "ด้านบน/ด้านล่าง" เพราะกล่องที่อยู่
+  // กับกล่องจ่ายเงินสลับที่กันได้ ตามว่าบิลนั้นมีที่อยู่มาแล้วหรือยัง
+  //
   // บิลที่ยกเลิกแล้วไม่ต้องมีขั้นตอนอะไรให้ทำ ข้ามไปเลย
   const steps = [
     {
       done: contactDone,
       label: 'ส่งที่อยู่ให้ร้าน',
-      hint: contactDone ? 'ร้านได้รับที่อยู่แล้ว' : 'กรอกในกล่อง "ที่อยู่จัดส่ง" ด้านบน',
+      hint: contactDone ? 'ร้านได้รับที่อยู่แล้ว' : 'กรอกชื่อ เบอร์ และที่อยู่ให้ร้าน',
     },
     {
       done: paymentDone,
@@ -678,8 +679,8 @@ export default function PublicOrderPage() {
           : slipStatus === 'pending'
             ? 'ได้รับสลิปแล้ว รอทางร้านตรวจสอบ'
             : slipStatus === 'rejected'
-              ? 'สลิปใบก่อนตรวจสอบไม่ผ่าน รบกวนแนบใหม่ด้านบน'
-              : 'สแกนจ่ายแล้วกด "แนบสลิปโอนเงิน" ด้านบน',
+              ? 'สลิปใบก่อนตรวจสอบไม่ผ่าน รบกวนแนบใหม่'
+              : 'สแกน QR จ่ายเงิน แล้วกดแนบสลิป',
     },
   ];
 
@@ -688,52 +689,53 @@ export default function PublicOrderPage() {
       <Card className={allDone ? 'border-success/40 bg-success/5' : undefined}>
         <CardContent>
           {allDone ? (
+            // จบแล้วไม่ต้องไล่เช็กลิสต์ให้อ่านซ้ำ เหลือประโยคเดียวกับปุ่มก็พอ
             <div className="text-center">
               <div className="bg-success/15 mx-auto mb-3 flex size-12 items-center justify-center rounded-full">
                 <Check className="text-success size-6" />
               </div>
               <p className="font-semibold">เรียบร้อยแล้วครับ</p>
               <p className="text-muted-foreground mt-1 text-sm leading-relaxed">
-                ร้านได้รับข้อมูลครบแล้ว ไม่ต้องทำอะไรต่อ
+                {order.payment_status === 'paid'
+                  ? 'ร้านยืนยันการชำระเงินแล้ว ไม่ต้องทำอะไรต่อ'
+                  : 'ร้านได้รับที่อยู่และสลิปแล้ว ไม่ต้องทำอะไรต่อ'}
               </p>
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-sm font-medium">
-              เหลืออีก {steps.filter((step) => !step.done).length} ขั้นตอน
-            </p>
-          )}
-
-          <div className={cn('space-y-2.5', allDone ? 'mt-4' : 'mt-3')}>
-            {steps.map((step, i) => (
-              <div key={step.label} className="flex items-start gap-2.5">
-                <span
-                  className={cn(
-                    'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
-                    step.done
-                      ? 'bg-success text-success-foreground'
-                      : 'border-muted-foreground/40 text-muted-foreground border'
-                  )}
-                >
-                  {step.done ? <Check className="size-3" /> : i + 1}
-                </span>
-                <div className="min-w-0">
-                  <p className={cn('text-sm font-medium', !step.done && 'text-muted-foreground')}>
-                    {step.label}
-                  </p>
-                  <p className="text-muted-foreground text-xs leading-relaxed">{step.hint}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {allDone && (
-            <>
               <Button variant="success" size="lg" className="mt-4 w-full" onClick={finishOrder}>
                 <Check className="size-4" /> เสร็จสิ้น
               </Button>
-              <p className="text-muted-foreground mt-2 text-center text-xs">
-                เปิดลิงก์นี้กลับมาดูสถานะพัสดุได้ตลอดครับ
+              <p className="text-muted-foreground mt-2 text-xs">
+                {linkedToLine
+                  ? 'เมื่อจัดส่ง ระบบจะแจ้งเลขพัสดุให้ทางไลน์อัตโนมัติ'
+                  : 'เปิดลิงก์นี้กลับมาดูสถานะพัสดุได้ตลอดครับ'}
               </p>
+            </div>
+          ) : (
+            <>
+              <p className="text-muted-foreground text-sm font-medium">
+                เหลืออีก {steps.filter((step) => !step.done).length} ขั้นตอน
+              </p>
+              <div className="mt-3 space-y-2.5">
+                {steps.map((step, i) => (
+                  <div key={step.label} className="flex items-start gap-2.5">
+                    <span
+                      className={cn(
+                        'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
+                        step.done
+                          ? 'bg-success text-success-foreground'
+                          : 'border-muted-foreground/40 text-muted-foreground border'
+                      )}
+                    >
+                      {step.done ? <Check className="size-3" /> : i + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <p className={cn('text-sm font-medium', !step.done && 'text-muted-foreground')}>
+                        {step.label}
+                      </p>
+                      <p className="text-muted-foreground text-xs leading-relaxed">{step.hint}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </>
           )}
         </CardContent>
@@ -765,12 +767,12 @@ export default function PublicOrderPage() {
               })}
             </p>
             <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              <Badge variant={payment.variant}>{payment.text}</Badge>
+              {/* สถานะกลางระหว่างรอชำระกับชำระแล้ว — ขึ้นแทนป้าย "รอชำระเงิน" ไปเลย
+                  สองป้ายพร้อมกันอ่านแล้วขัดกันเอง ทั้งที่พูดเรื่องเดียวกัน */}
+              <Badge variant={slipPending ? 'soft' : payment.variant}>
+                {slipPending ? 'ได้รับสลิปแล้ว · รอตรวจสอบ' : payment.text}
+              </Badge>
               <Badge variant={status.variant}>{status.text}</Badge>
-              {/* สถานะกลางระหว่างรอชำระกับชำระแล้ว ลูกค้าจะได้รู้ว่าสลิปถึงร้านแล้ว */}
-              {order.payment_status !== 'paid' && slipStatus === 'pending' && (
-                <Badge variant="soft">ได้รับสลิปแล้ว · รอตรวจสอบ</Badge>
-              )}
             </div>
             {order.tracking_number && (
               <button
@@ -848,6 +850,8 @@ export default function PublicOrderPage() {
           </CardContent>
         </Card>
 
+        {finishCard}
+
         {hasSavedAddress ? (
           <>
             {paymentCard}
@@ -860,18 +864,6 @@ export default function PublicOrderPage() {
           </>
         )}
 
-        {linkedToLine && (
-          <div className="bg-success/10 flex items-start gap-2 rounded-xl px-4 py-3">
-            <Bell className="text-success mt-0.5 size-4 shrink-0" />
-            <div>
-              <p className="text-success text-sm font-medium">เชื่อมบัญชี LINE แล้ว</p>
-              <p className="text-success/80 text-xs">
-                เมื่อร้านจัดส่ง ระบบจะแจ้งสถานะพัสดุให้อัตโนมัติ
-              </p>
-            </div>
-          </div>
-        )}
-
         {order.note && (
           <Card>
             <CardContent>
@@ -880,8 +872,6 @@ export default function PublicOrderPage() {
             </CardContent>
           </Card>
         )}
-
-        {finishCard}
 
         <p className="text-muted-foreground/60 py-4 text-center text-xs">บ้านหมีมีปลานะ</p>
       </div>

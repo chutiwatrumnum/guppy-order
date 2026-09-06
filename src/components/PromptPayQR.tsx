@@ -135,11 +135,7 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
         className="my-3 size-48 max-w-full"
       />
 
-      <p className="text-muted-foreground text-center text-xs leading-relaxed">
-        ยอดเงินฝังอยู่ใน QR แล้ว
-        <br />
-        ลูกค้าไม่ต้องพิมพ์ยอดเอง
-      </p>
+      <p className="text-muted-foreground text-center text-xs">ยอดเงินอยู่ใน QR แล้ว ไม่ต้องพิมพ์เอง</p>
 
       {canShare && (
         <Button variant="outline" size="sm" className="mt-3" onClick={shareQr}>
@@ -148,10 +144,8 @@ export default function PromptPayQR({ promptPayId, amount, reference }: PromptPa
       )}
 
       {/* วิธีที่ได้ผลทุกเครื่องจริง ๆ — บอกไว้เสมอ ไม่ใช่แค่ตอนกดปุ่มแล้วไม่ได้ */}
-      <p className="text-muted-foreground mt-3 text-center text-xs">
-        {canShare
-          ? 'หรือกดค้างที่รูป QR เพื่อบันทึกลงเครื่อง'
-          : 'กดค้างที่รูป QR แล้วเลือก "บันทึกรูปภาพ" เพื่อเก็บลงเครื่อง'}
+      <p className="text-muted-foreground mt-2 text-center text-xs">
+        {canShare ? 'หรือกดค้างที่รูป QR เพื่อบันทึก' : 'กดค้างที่รูป QR เพื่อบันทึกลงเครื่อง'}
       </p>
     </div>
   );

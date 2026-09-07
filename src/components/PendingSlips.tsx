@@ -243,6 +243,7 @@ export default function PendingSlips({
         : null;
 
     let notifyError = null;
+    let notified = false;
     if (notifyUserId) {
       const summaryUrl = `https://liff.line.me/2010766267-xz9flUvC/o/${order.public_token}`;
       const message = await renderTemplate(
@@ -254,11 +255,15 @@ export default function PendingSlips({
         },
         `✅ ยืนยันการชำระเงินแล้วครับ\nบิล ${order.order_number}`
       );
-      ({ error: notifyError } = await supabase.from('line_notifications').insert({
-        line_user_id: notifyUserId,
-        order_id: orderId,
-        message,
-      }));
+      // null = ร้านปิดข้อความนี้ไว้ในหน้าตั้งค่า ตั้งใจไม่ส่ง ไม่ใช่ความผิดพลาด
+      if (message) {
+        ({ error: notifyError } = await supabase.from('line_notifications').insert({
+          line_user_id: notifyUserId,
+          order_id: orderId,
+          message,
+        }));
+        notified = !notifyError;
+      }
     }
 
     setBusy(null);
@@ -267,6 +272,8 @@ export default function PendingSlips({
       toast.warning('ยืนยันรับเงินแล้ว — ลูกค้ายังไม่ได้เปิดใบสรุปในไลน์ ต้องแจ้งเอง');
     } else if (notifyError) {
       toast.warning('ยืนยันรับเงินแล้ว แต่ส่งแจ้งเตือนหาลูกค้าไม่สำเร็จ');
+    } else if (!notified) {
+      toast.info('ยืนยันรับเงินแล้ว — ข้อความแจ้งลูกค้าถูกปิดไว้ในหน้าตั้งค่า');
     } else {
       toast.success('ยืนยันรับเงินแล้ว — แจ้งลูกค้าในไลน์ให้อัตโนมัติ');
     }
@@ -323,11 +330,13 @@ export default function PendingSlips({
           },
           `⚠️ สลิปที่ส่งมายังตรวจสอบไม่ผ่านครับ\nบิล ${order.order_number}`
         );
-        ({ error: notifyError } = await supabase.from('line_notifications').insert({
-          line_user_id: slip.line_user_id,
-          order_id: slip.order_id,
-          message,
-        }));
+        if (message) {
+          ({ error: notifyError } = await supabase.from('line_notifications').insert({
+            line_user_id: slip.line_user_id,
+            order_id: slip.order_id,
+            message,
+          }));
+        }
       }
     }
 

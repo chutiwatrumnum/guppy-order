@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ChevronDown, Loader2, MessageSquareText, RotateCcw, Save } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bell,
+  BellOff,
+  ChevronDown,
+  Loader2,
+  MessageSquareText,
+  RotateCcw,
+  Save,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/lib/supabase';
@@ -89,6 +98,32 @@ export default function MessageTemplatesCard() {
     toast.success('บันทึกแล้ว', { description: 'บอทจะใช้คำใหม่ภายใน 1 นาที' });
   };
 
+  // ปิดข้อความรายตัวเพื่อประหยัดโควต้า LINE
+  //
+  // มีเฉพาะกลุ่ม push — ปิดข้อความกลุ่ม chat ไม่ได้ประหยัดอะไร (reply ฟรีอยู่แล้ว)
+  // แต่จะทำให้บอทเงียบใส่ลูกค้าที่กดปุ่มริชเมนู ซึ่งดูเหมือนระบบพัง
+  const toggle = async (row: MessageTemplate) => {
+    const next = row.enabled === false;
+
+    setSaving(row.key);
+    const { error } = await supabase
+      .from('message_templates')
+      .update({ enabled: next, updated_at: new Date().toISOString() })
+      .eq('key', row.key);
+    setSaving(null);
+
+    if (error) {
+      toast.error('เปลี่ยนไม่สำเร็จ');
+      return;
+    }
+    setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, enabled: next } : r)));
+    toast.success(next ? 'เปิดข้อความนี้แล้ว' : 'ปิดแล้ว — ประหยัดโควต้า LINE', {
+      description: next
+        ? 'ระบบจะส่งให้ลูกค้าตามเหตุการณ์'
+        : 'ลูกค้าจะไม่ได้รับข้อความนี้อีก',
+    });
+  };
+
   if (loading) {
     return (
       <Card>
@@ -129,7 +164,11 @@ export default function MessageTemplatesCard() {
                 <div key={g.key} className="space-y-3">
                   <div>
                     <p className="text-sm font-medium">{g.title}</p>
-                    <p className="text-muted-foreground text-xs">{g.hint}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {g.hint}
+                      {g.key === 'push' &&
+                        ` — เปิดอยู่ ${list.filter((r) => r.enabled !== false).length}/${list.length}`}
+                    </p>
                   </div>
 
                   {list.map((row) => {
@@ -139,10 +178,27 @@ export default function MessageTemplatesCard() {
 
                     return (
                       <div key={row.key} className="bg-muted/40 space-y-2 rounded-lg p-3">
-                        <div>
-                          <p className="text-sm font-medium">{row.label}</p>
-                          {row.description && (
-                            <p className="text-muted-foreground text-xs">{row.description}</p>
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{row.label}</p>
+                            {row.description && (
+                              <p className="text-muted-foreground text-xs">{row.description}</p>
+                            )}
+                          </div>
+
+                          {g.key === 'push' && (
+                            <button
+                              type="button"
+                              onClick={() => toggle(row)}
+                              disabled={saving === row.key}
+                              className={cn(
+                                'flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs',
+                                row.enabled !== false ? 'bg-background' : 'text-muted-foreground bg-muted',
+                              )}
+                            >
+                              {row.enabled !== false ? <Bell className="size-3" /> : <BellOff className="size-3" />}
+                              {row.enabled !== false ? 'เปิด' : 'ปิด'}
+                            </button>
                           )}
                         </div>
 
@@ -150,7 +206,10 @@ export default function MessageTemplatesCard() {
                           rows={Math.min(10, Math.max(3, draft.split('\n').length + 1))}
                           value={draft}
                           onChange={(e) => setDrafts((p) => ({ ...p, [row.key]: e.target.value }))}
-                          className="bg-background font-mono text-xs"
+                          className={cn(
+                            'bg-background font-mono text-xs',
+                            row.enabled === false && 'opacity-50',
+                          )}
                         />
 
                         {row.variables.length > 0 && (

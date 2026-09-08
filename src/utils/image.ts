@@ -17,8 +17,6 @@ const MAX_BYTES = 150 * 1024;
 /** ไล่จากคุณภาพดีสุดลงมา ใช้ตัวแรกที่ไฟล์ไม่เกินเพดาน */
 const QUALITY_STEPS = [0.82, 0.72, 0.62, 0.5];
 
-export const PHOTO_MAX_EDGE = MAX_EDGE;
-export const PHOTO_MAX_BYTES = MAX_BYTES;
 
 /** ชนิดไฟล์ที่รับจากผู้ใช้ — HEIC จากไอโฟนเบราว์เซอร์ส่วนใหญ่ถอดรหัสไม่ได้
  *  แต่ iOS แปลงเป็น JPEG ให้เองตอนเลือกจากคลังรูป จึงไม่ต้องรับ HEIC ตรง ๆ */

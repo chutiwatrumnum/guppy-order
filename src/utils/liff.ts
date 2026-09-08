@@ -54,10 +54,6 @@ export async function getLineProfile(): Promise<LineProfile | null> {
   }
 }
 
-/** คืนแค่ userId — เก็บไว้ให้โค้ดเดิมที่ไม่ต้องใช้ชื่อเรียกได้เหมือนเดิม */
-export async function getLineUserId(): Promise<string | null> {
-  return (await getLineProfile())?.userId ?? null;
-}
 
 /**
  * ปิดหน้าต่าง LIFF กลับไปที่แชท — คืน false ถ้าปิดให้ไม่ได้

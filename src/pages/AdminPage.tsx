@@ -33,6 +33,12 @@ import ClaimsPanel, { fetchClaims } from '@/components/ClaimsPanel';
 import FailedNotifications from '@/components/FailedNotifications';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -868,7 +874,7 @@ export default function AdminPage() {
   // หรือเลขเคยถูกบิลอื่นยึดไป (บิลทดสอบที่กรอกเลขเดียวกัน)
   //
   // ซิงก์การติดตามก่อนส่งเสมอ ไม่งั้นข้อความไปถึงแต่บอทยังไม่ตามให้ = สัญญาลอย ๆ
-  const resendTracking = async (order: SavedOrder) => {
+  const resendTracking = async (order: SavedOrder, mode: 'card' | 'full' = 'card') => {
     const tracking = order.trackingNumber?.trim().toUpperCase();
     if (!tracking || resendingId) return;
 
@@ -902,7 +908,12 @@ export default function AdminPage() {
         return;
       }
 
-      if (!(await queueParcelCard(order, tracking))) {
+      const sent =
+        mode === 'full'
+          ? await queueShippingNotice(order, tracking, subscribed)
+          : await queueParcelCard(order, tracking);
+
+      if (!sent) {
         toast.error('ส่งเลขพัสดุไม่สำเร็จ');
         return;
       }
@@ -916,9 +927,12 @@ export default function AdminPage() {
         return;
       }
 
-      toast.success('ส่งการ์ดสถานะพัสดุให้ลูกค้าแล้ว', {
+      toast.success(
+        mode === 'full' ? 'ส่งข้อความแจ้งจัดส่งให้ลูกค้าแล้ว' : 'ส่งการ์ดสถานะพัสดุให้ลูกค้าแล้ว',
+        {
         description: 'ติดตามสถานะให้อัตโนมัติเรียบร้อย',
-      });
+        }
+      );
     } finally {
       setResendingId(null);
     }
@@ -1551,21 +1565,45 @@ export default function AdminPage() {
                               ชื่อปุ่มเดิมคือ "ส่งซ้ำ" ซึ่งอ่านแล้วเหมือนส่งของเดิมซ้ำ
                               พอเปลี่ยนมาส่งการ์ดแล้วชื่อนั้นจะพาให้เข้าใจผิด */}
                           {order.trackingNumber && order.lineUserId && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-9 shrink-0 px-2.5"
-                              disabled={resendingId === order.id}
-                              onClick={() => resendTracking(order)}
-                              title="ส่งการ์ดสถานะพัสดุล่าสุดให้ลูกค้าใน LINE พร้อมซ่อมการติดตามให้ด้วย"
-                            >
-                              {resendingId === order.id ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <Send className="size-3.5" />
-                              )}
-                              แจ้งสถานะ
-                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-9 shrink-0 px-2.5"
+                                  disabled={resendingId === order.id}
+                                  title="เลือกว่าจะแจ้งลูกค้าแบบไหน"
+                                >
+                                  {resendingId === order.id ? (
+                                    <Loader2 className="size-3.5 animate-spin" />
+                                  ) : (
+                                    <Send className="size-3.5" />
+                                  )}
+                                  แจ้งลูกค้า
+                                  <ChevronDown className="size-3.5 opacity-60" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-64">
+                                <DropdownMenuItem
+                                  className="flex-col items-start gap-0.5"
+                                  onClick={() => resendTracking(order, 'card')}
+                                >
+                                  <span className="font-medium">การ์ดสถานะอย่างเดียว</span>
+                                  <span className="text-muted-foreground text-xs">
+                                    สั้น ไม่รกแชท — ใช้ตอนแก้เลขหรือแจ้งซ้ำ
+                                  </span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="flex-col items-start gap-0.5"
+                                  onClick={() => resendTracking(order, 'full')}
+                                >
+                                  <span className="font-medium">ข้อความแจ้งจัดส่งเต็ม</span>
+                                  <span className="text-muted-foreground text-xs">
+                                    มีเลขบิล คำทักทาย และคำชวนรีวิวของร้าน
+                                  </span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           )}
                           {order.lineUserId ? (
                             <Badge

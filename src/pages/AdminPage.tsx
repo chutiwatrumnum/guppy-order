@@ -3,6 +3,8 @@ import {
   Bell,
   BellOff,
   Check,
+  AlertTriangle,
+  Users,
   ChevronDown,
   PackageCheck,
   ClipboardList,
@@ -197,6 +199,7 @@ export default function AdminPage() {
   const [orderToUnlink, setOrderToUnlink] = useState<SavedOrder | null>(null);
   // ปุ่มส่งเลขพัสดุซ้ำของบิลไหนกำลังทำงานอยู่
   const [resendingId, setResendingId] = useState<string | null>(null);
+  const [mergingId, setMergingId] = useState<string | null>(null);
   // เวลาที่เพิ่งส่งข้อความ "จัดส่งแล้ว" ของแต่ละบิล
   //
   // กดปุ่ม "ส่งซ้ำ" ตอนที่เพิ่งพิมพ์เลขในช่องข้าง ๆ จะเกิด blur → บันทึก+ส่ง ก่อนหนึ่งที
@@ -319,6 +322,8 @@ export default function AdminPage() {
         paymentStatus: order.payment_status,
         paidAmount: order.paid_amount || 0,
         paidAt: order.paid_at ?? null,
+        shippedAt: order.shipped_at ?? null,
+        deliveredAt: order.delivered_at ?? null,
         paymentAccountId: order.payment_account_id ?? null,
         trackingNumber: order.tracking_number,
         customerId: order.customer_id,
@@ -699,6 +704,57 @@ export default function AdminPage() {
     return { unreadable: false, orderNumber: (holder?.order_number as string | undefined) ?? null };
   };
 
+  /**
+   * แพ็ครวมกล่อง — ยัดเลขพัสดุของบิลนี้ให้บิลอื่นของลูกค้าคนเดียวกัน
+   *
+   * ฐานข้อมูลรองรับอยู่แล้ว: sync_parcel_subscription เจอเลขซ้ำที่เป็นบัญชี LINE
+   * เดียวกันจะคืน 'shared' ไม่ใช่ error แล้วปล่อยให้บิลแรกถือการติดตามไว้คนเดียว
+   * ลูกค้าจึงได้แจ้งเตือนครั้งเดียวต่อกล่อง ไม่ใช่ครั้งละบิล
+   *
+   * ไม่ส่งข้อความหาลูกค้าจากตรงนี้ — บิลที่ถือเลขส่งไปแล้วตอนคีย์เลข
+   * ยิงซ้ำอีกใบก็ได้ข้อความซ้ำเรื่องกล่องเดียวกัน
+   */
+  const mergeIntoOneBox = async (order: SavedOrder, mates: SavedOrder[]) => {
+    const tracking = order.trackingNumber?.trim().toUpperCase();
+    if (!tracking || mergingId) return;
+
+    setMergingId(order.id);
+    const ids = mates.map((m) => m.id);
+    const { error } = await supabase
+      .from('orders')
+      .update({ tracking_number: tracking, status: 'shipped' })
+      .in('id', ids);
+    setMergingId(null);
+
+    if (error) {
+      toast.error('รวมกล่องไม่สำเร็จ');
+      return;
+    }
+
+    setAllOrders((prev) =>
+      prev.map((o) =>
+        ids.includes(o.id)
+          ? {
+              ...o,
+              trackingNumber: tracking,
+              status: 'shipped' as OrderStatus,
+              shippedAt: o.shippedAt ?? order.shippedAt ?? new Date().toISOString(),
+            }
+          : o
+      )
+    );
+
+    // ผูกการติดตามให้บิลที่เพิ่งรวมเข้ามาด้วย เผื่อบิลเดิมไม่มีบัญชี LINE
+    // แต่ใบใหม่มี — จะได้ไม่มีกล่องไหนหลุดจากการติดตาม
+    for (const id of ids) {
+      await supabase.rpc('sync_parcel_subscription', { p_order_id: id });
+    }
+
+    toast.success(`รวมกล่องแล้ว ${mates.length + 1} บิล`, {
+      description: `ทุกใบใช้เลข ${tracking} — ลูกค้าได้แจ้งเตือนครั้งเดียว`,
+    });
+  };
+
   // ปุ่ม "ส่งซ้ำ" ส่งการ์ดสถานะพัสดุใบเดียว ไม่ใช่ข้อความจัดส่งทั้งชุดอีกรอบ
   //
   // ข้อความจัดส่งมีคำทักทาย เลขบิล คำอธิบายการแจ้งเตือน และคำชวนรีวิวของร้าน
@@ -804,7 +860,13 @@ export default function AdminPage() {
 
     const { error } = await supabase
       .from('orders')
-      .update({ tracking_number: tracking, status: 'shipped' })
+      // shipped_at เฉพาะครั้งแรก — แก้เลขที่กรอกผิดไม่ใช่การส่งใหม่
+      // ถ้าเขียนทับ จำนวนวันขนส่งจะรีเซ็ตทุกครั้งที่แก้เลข
+      .update({
+        tracking_number: tracking,
+        status: 'shipped',
+        ...(order.shippedAt ? {} : { shipped_at: new Date().toISOString() }),
+      })
       .eq('id', order.id);
 
     if (error) {
@@ -814,7 +876,14 @@ export default function AdminPage() {
 
     setAllOrders((orders) =>
       orders.map((o) =>
-        o.id === order.id ? { ...o, trackingNumber: tracking, status: 'shipped' as OrderStatus } : o
+        o.id === order.id
+          ? {
+              ...o,
+              trackingNumber: tracking,
+              status: 'shipped' as OrderStatus,
+              shippedAt: o.shippedAt ?? new Date().toISOString(),
+            }
+          : o
       )
     );
 
@@ -1293,6 +1362,63 @@ export default function AdminPage() {
       })
     : byShipping;
 
+  // ── ภาพรวมการจัดส่ง ──
+  //
+  // ตอบสามคำถามที่ร้านถามทุกวันโดยไม่ต้องเลื่อนดูทีละใบ:
+  // เหลือกี่กล่องต้องแพ็ค · อะไรกำลังวิ่งอยู่ · อะไรค้างนานผิดปกติ
+  //
+  // ข้อสุดท้ายสำคัญสุดกับปลาเป็น — ยิ่งค้างนานยิ่งเสี่ยงตายกลางทาง
+  // และเป็นข้อเดียวที่ต้องลงมือทำอะไรต่อ ไม่ใช่แค่รู้ไว้
+  const STUCK_DAYS = 3;
+  const now = Date.now();
+  const daysSince = (iso?: string | null) =>
+    iso ? Math.floor((now - new Date(iso).getTime()) / 86_400_000) : null;
+
+  const shipOverview = {
+    pending: allOrders.filter((o) => o.status === 'pending').length,
+    shipped: allOrders.filter((o) => o.status === 'shipped').length,
+    delivered: allOrders.filter((o) => o.status === 'delivered').length,
+    cancelled: allOrders.filter((o) => o.status === 'cancelled').length,
+  };
+
+  // ส่งไปแล้วแต่ยังไม่ถึง และผ่านมานานเกินปกติ
+  // ใบที่ยังไม่มี shipped_at (บิลก่อนเพิ่มคอลัมน์) ไม่นับ — เดาเวลาไม่ได้
+  const stuckOrders = allOrders
+    .filter((o) => o.status === 'shipped' && (daysSince(o.shippedAt) ?? 0) >= STUCK_DAYS)
+    .map((o) => ({ ...o, days: daysSince(o.shippedAt) ?? 0 }))
+    .sort((a, b) => b.days - a.days);
+
+  // ใช้เวลาส่งเฉลี่ย — นับเฉพาะใบที่มีทั้งสองเวลาจริง
+  const transitDays = allOrders
+    .filter((o) => o.shippedAt && o.deliveredAt)
+    .map((o) => (new Date(o.deliveredAt!).getTime() - new Date(o.shippedAt!).getTime()) / 86_400_000);
+  const avgTransit =
+    transitDays.length > 0 ? transitDays.reduce((a, b) => a + b, 0) / transitDays.length : null;
+
+  // บิลของลูกค้าคนเดียวกันที่ยังไม่ได้ส่ง
+  //
+  // ตัวนับกล่องข้างล่างดูจากเลขพัสดุ ซึ่งรู้ได้ก็ต่อเมื่อใส่เลขไปแล้ว
+  // แต่จังหวะที่ต้องรู้จริง ๆ คือตอนกำลังแพ็ค — ยังไม่มีเลขสักใบ
+  // ตรงนั้นแหละที่ต้องบอกว่า "คนนี้มีอีกใบ อย่าแพ็คแยก"
+  //
+  // ระบุตัวลูกค้าด้วย customerId ก่อน ตกไปใช้เบอร์เมื่อบิลยังไม่ผูกลูกค้า
+  // ไม่ใช้ชื่อ เพราะคนละคนใช้ชื่อซ้ำกันได้
+  const personKey = (o: SavedOrder) =>
+    o.customerId || (o.customerPhone ? `p:${o.customerPhone.replace(/\D/g, '')}` : null);
+
+  const openBillsByPerson = new Map<string, SavedOrder[]>();
+  for (const o of allOrders) {
+    if (o.status === 'delivered' || o.status === 'cancelled') continue;
+    const k = personKey(o);
+    if (!k) continue;
+    openBillsByPerson.set(k, [...(openBillsByPerson.get(k) ?? []), o]);
+  }
+
+  // จำนวนคนที่สั่งจริง — เทียบกับจำนวนบิลได้ทันทีว่าต่างกันกี่ใบ
+  const peopleCount = new Set(
+    allOrders.filter((o) => o.status !== 'cancelled').map(personKey).filter(Boolean)
+  ).size;
+
   // เลขพัสดุหนึ่งเลข = หนึ่งกล่อง ไม่ว่าจะมีกี่บิลอยู่ในนั้น
   //
   // ร้านนับกล่องตอนแพ็คแล้วมาเทียบกับจำนวนบิล ซึ่งไม่เท่ากันเมื่อลูกค้า
@@ -1690,15 +1816,54 @@ export default function AdminPage() {
                             ซึ่งเป็นตอนที่จำนวนกล่องกับจำนวนบิลไม่ตรงกันพอดี */}
                         {(() => {
                           const t = order.trackingNumber?.trim().toUpperCase();
-                          const mates = t
+                          const boxMates = t
                             ? (sharedBoxes.get(t) ?? []).filter((n) => n !== order.orderNumber)
                             : [];
-                          if (mates.length === 0) return null;
+
+                          // ใส่เลขเดียวกันแล้ว = รวมกล่องเรียบร้อย
+                          if (boxMates.length > 0) {
+                            return (
+                              <p className="text-primary flex items-center gap-1.5 text-xs">
+                                <PackageCheck className="size-3.5 shrink-0" />
+                                รวมกล่องเดียวกับ {boxMates.join(', ')}
+                              </p>
+                            );
+                          }
+
+                          // ยังไม่ได้รวม แต่ลูกค้าคนนี้มีบิลอื่นที่ยังไม่ถึงมือ
+                          // นี่คือจังหวะที่ต้องตัดสินใจว่าจะแพ็ครวมกล่องไหม
+                          const k = personKey(order);
+                          const openMates = k
+                            ? (openBillsByPerson.get(k) ?? []).filter((o) => o.id !== order.id)
+                            : [];
+                          if (openMates.length === 0) return null;
+
                           return (
-                            <p className="text-primary flex items-center gap-1.5 text-xs">
-                              <PackageCheck className="size-3.5 shrink-0" />
-                              รวมกล่องเดียวกับ {mates.join(', ')}
-                            </p>
+                            <div className="bg-primary/5 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2">
+                              <Users className="text-primary size-3.5 shrink-0" />
+                              <span className="text-primary text-xs">
+                                ลูกค้าคนนี้มีอีก {openMates.length} บิลที่ยังไม่ถึงมือ:{' '}
+                                {openMates.map((o) => o.orderNumber).join(', ')}
+                              </span>
+                              {/* กดแล้วยัดเลขพัสดุใบนี้ให้บิลที่เหลือ = ประกาศว่าแพ็ครวมกล่อง
+                                  โผล่เฉพาะตอนที่ใบนี้มีเลขแล้ว ไม่งั้นไม่มีอะไรให้คัดลอก */}
+                              {order.trackingNumber && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 shrink-0 px-2 text-xs"
+                                  disabled={mergingId === order.id}
+                                  onClick={() => mergeIntoOneBox(order, openMates)}
+                                >
+                                  {mergingId === order.id ? (
+                                    <Loader2 className="size-3 animate-spin" />
+                                  ) : (
+                                    <PackageCheck className="size-3" />
+                                  )}
+                                  รวมกล่อง
+                                </Button>
+                              )}
+                            </div>
                           );
                         })()}
 
@@ -1973,6 +2138,66 @@ export default function AdminPage() {
 
           {/* ───────── สรุปยอด ───────── */}
           <TabsContent value="dashboard" className="mt-4 space-y-6">
+            {/* ภาพรวมการจัดส่ง — วางบนสุดเพราะเป็นเรื่องที่ต้องลงมือทำวันนี้
+                ส่วนตัวเลขเงินข้างล่างเป็นเรื่องที่ดูย้อนหลัง */}
+            <section className="space-y-2.5">
+              <h3 className="text-sm font-medium">การจัดส่ง</h3>
+              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+                <Stat label="📦 รอส่ง" value={shipOverview.pending} />
+                <Stat label="🚚 กำลังส่ง" value={shipOverview.shipped} />
+                <Stat label="✅ ถึงแล้ว" value={shipOverview.delivered} />
+                <Stat
+                  label="กล่องที่ส่งจริง"
+                  value={boxes.size}
+                  hint={sharedBoxes.size > 0 ? `รวมกล่อง ${sharedBoxes.size} เลข` : undefined}
+                />
+              </div>
+              {/* บิล ≠ คน ≠ กล่อง — สามตัวนี้ต่างกันได้ และร้านต้องกระทบยอดเองทุกรอบ
+                  ("สั่ง 21 คน แต่บิลมี 24") วางเรียงกันเลยจะได้ไม่ต้องนับเอง */}
+              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+                <Stat label="จำนวนบิล" value={allOrders.length} />
+                <Stat
+                  label="จำนวนลูกค้า"
+                  value={peopleCount}
+                  hint={
+                    allOrders.length > peopleCount
+                      ? `${allOrders.length - peopleCount} บิลเป็นคนซ้ำ`
+                      : undefined
+                  }
+                />
+              </div>
+
+              {stuckOrders.length > 0 && (
+                <Card className="border-warning/40 bg-warning/5 p-3">
+                  <p className="text-warning flex items-center gap-1.5 text-sm font-medium">
+                    <AlertTriangle className="size-4 shrink-0" />
+                    ส่งไปเกิน {STUCK_DAYS} วันแล้วยังไม่ถึง ({stuckOrders.length})
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    {stuckOrders.slice(0, 6).map((o) => (
+                      <div key={o.id} className="flex items-baseline justify-between gap-2 text-sm">
+                        <span className="truncate">
+                          {o.orderNumber} · {o.customerName || '—'}
+                        </span>
+                        <span className="text-warning shrink-0 font-medium">{o.days} วัน</span>
+                      </div>
+                    ))}
+                    {stuckOrders.length > 6 && (
+                      <p className="text-muted-foreground text-xs">
+                        และอีก {stuckOrders.length - 6} ใบ
+                      </p>
+                    )}
+                  </div>
+                </Card>
+              )}
+
+              {avgTransit !== null && (
+                <p className="text-muted-foreground text-xs">
+                  ส่งถึงมือเฉลี่ย {avgTransit.toFixed(1)} วัน (จาก {transitDays.length} บิลที่ถึงแล้ว)
+                </p>
+              )}
+            </section>
+
             <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-5">
               <Stat label="จำนวนบิล" value={dashboardStats.totalOrders} />
               <Stat

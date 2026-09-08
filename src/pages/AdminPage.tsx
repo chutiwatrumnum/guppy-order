@@ -4,6 +4,7 @@ import {
   BellOff,
   Check,
   ChevronDown,
+  PackageCheck,
   ClipboardList,
   Copy,
   Edit2,
@@ -115,6 +116,16 @@ const PAYMENT_FILTERS = [
   { key: 'paid', label: '💰 จ่ายแล้ว' },
 ] as const;
 
+// สถานะการส่ง — แยกแถวจากสถานะเงิน เพราะเป็นคนละคำถาม
+// ("ใครยังไม่จ่าย" กับ "อะไรยังไม่ถึง" ตอบคนละเรื่อง และมักดูพร้อมกัน)
+const SHIP_FILTERS = [
+  { key: 'all', label: 'ทุกสถานะ' },
+  { key: 'pending', label: '📦 รอส่ง' },
+  { key: 'shipped', label: '🚚 ส่งแล้ว' },
+  { key: 'delivered', label: '✅ ถึงแล้ว' },
+  { key: 'cancelled', label: '✖ ยกเลิก' },
+] as const;
+
 /** ตัวเลขสรุปหนึ่งช่องบนหน้าแดชบอร์ด */
 function Stat({
   label,
@@ -163,6 +174,7 @@ export default function AdminPage() {
   const [endDate, setEndDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
+  const [shipFilter, setShipFilter] = useState<'all' | OrderStatus>('all');
   // สลิปที่ยืนยันแล้ว แมปด้วย order_id เพื่อโชว์ปุ่มดูสลิปในบิล
   const [orderSlips, setOrderSlips] = useState<
     Record<string, { image_path: string; reviewed_by: string | null; reviewed_at: string | null }>
@@ -1256,8 +1268,11 @@ export default function AdminPage() {
       ? allOrders
       : allOrders.filter((o) => (o.paymentStatus || 'unpaid') === paymentFilter);
 
+  const byShipping =
+    shipFilter === 'all' ? byPayment : byPayment.filter((o) => o.status === shipFilter);
+
   const searched = searchTerm.trim()
-    ? byPayment.filter((order) => {
+    ? byShipping.filter((order) => {
         const term = searchTerm.toLowerCase();
         // เบอร์โทรเทียบเฉพาะตัวเลข จะได้ค้น "081-234" กับ "081234" เจอเหมือนกัน
         // แต่เทียบต่อเมื่อคำค้นไม่มีตัวอักษรปนเลย ไม่งั้นค้น "EX9876" จะไปโดนเบอร์
@@ -1276,7 +1291,19 @@ export default function AdminPage() {
           order.id?.toLowerCase().includes(term)
         );
       })
-    : byPayment;
+    : byShipping;
+
+  // เลขพัสดุหนึ่งเลข = หนึ่งกล่อง ไม่ว่าจะมีกี่บิลอยู่ในนั้น
+  //
+  // ร้านนับกล่องตอนแพ็คแล้วมาเทียบกับจำนวนบิล ซึ่งไม่เท่ากันเมื่อลูกค้า
+  // สั่งหลายบิลแล้วขอรวมส่งกล่องเดียว — เดิมต้องไล่ดูเองว่าใบไหนซ้ำกับใบไหน
+  const boxes = new Map<string, string[]>();
+  for (const o of allOrders) {
+    const t = o.trackingNumber?.trim().toUpperCase();
+    if (!t) continue;
+    boxes.set(t, [...(boxes.get(t) ?? []), o.orderNumber ?? '—']);
+  }
+  const sharedBoxes = new Map([...boxes].filter(([, v]) => v.length > 1));
 
   // ── 3. บิลที่ลูกค้ายังไม่ส่งที่อยู่มา — ตัวที่ค้างแพ็คของอยู่จริง ๆ
   const filteredOrders = missingAddressOnly
@@ -1428,10 +1455,46 @@ export default function AdminPage() {
               </button>
             </div>
 
+            {/* สถานะการส่ง — มีตัวเลขกำกับเพราะใช้ตอนนับของก่อนแพ็ค
+                "รอส่ง 6" บอกได้เลยว่าเหลือกี่กล่องต้องเตรียม โดยไม่ต้องกดเข้าไปนับ */}
+            <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+              {SHIP_FILTERS.map((f) => {
+                const n =
+                  f.key === 'all'
+                    ? byPayment.length
+                    : byPayment.filter((o) => o.status === f.key).length;
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => setShipFilter(f.key as 'all' | OrderStatus)}
+                    className={cn(
+                      'h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors',
+                      shipFilter === f.key
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-card text-muted-foreground hover:bg-accent',
+                      // ไม่มีสักใบก็ยังโชว์ปุ่มไว้ ตำแหน่งปุ่มจะได้ไม่ขยับไปมาระหว่างวัน
+                      n === 0 && shipFilter !== f.key && 'opacity-50'
+                    )}
+                  >
+                    {f.label} {n}
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-muted-foreground text-sm">
                 พบ {filteredOrders.length} รายการ
                 {searchTerm && ` (จาก ${allOrders.length})`}
+                {boxes.size > 0 && (
+                  <>
+                    {' · '}
+                    <span className={cn(sharedBoxes.size > 0 && 'text-primary font-medium')}>
+                      {boxes.size} กล่อง
+                    </span>
+                    {sharedBoxes.size > 0 && ` (รวมกล่อง ${sharedBoxes.size})`}
+                  </>
+                )}
               </span>
               <div className="flex items-center gap-2">
                 {outstanding > 0 && (
@@ -1621,6 +1684,23 @@ export default function AdminPage() {
                             </Badge>
                           )}
                         </div>
+
+                        {/* บิลนี้ใช้เลขพัสดุร่วมกับบิลอื่น = แพ็ครวมกล่องเดียว
+                            เดิมดูจากหน้านี้ไม่ออก ต้องไล่หาเองว่าเลขซ้ำกับใบไหน
+                            ซึ่งเป็นตอนที่จำนวนกล่องกับจำนวนบิลไม่ตรงกันพอดี */}
+                        {(() => {
+                          const t = order.trackingNumber?.trim().toUpperCase();
+                          const mates = t
+                            ? (sharedBoxes.get(t) ?? []).filter((n) => n !== order.orderNumber)
+                            : [];
+                          if (mates.length === 0) return null;
+                          return (
+                            <p className="text-primary flex items-center gap-1.5 text-xs">
+                              <PackageCheck className="size-3.5 shrink-0" />
+                              รวมกล่องเดียวกับ {mates.join(', ')}
+                            </p>
+                          );
+                        })()}
 
                         {/* เคลมของบิลนี้ — เห็นจากรายการได้เลยว่าใบไหนมีปลาตาย */}
                         {orderClaims[order.id] && (

@@ -681,6 +681,34 @@ export default function AdminPage() {
     return { unreadable: false, orderNumber: (holder?.order_number as string | undefined) ?? null };
   };
 
+  // ปุ่ม "ส่งซ้ำ" ส่งการ์ดสถานะพัสดุใบเดียว ไม่ใช่ข้อความจัดส่งทั้งชุดอีกรอบ
+  //
+  // ข้อความจัดส่งมีคำทักทาย เลขบิล คำอธิบายการแจ้งเตือน และคำชวนรีวิวของร้าน
+  // พ่วงมาด้วย เหมาะกับตอนส่งครั้งแรก แต่ปุ่มนี้ใช้ตอนกู้เคสที่การติดตามหลุด
+  // สิ่งที่อยากบอกคือ "ของอยู่ตรงนี้แล้ว" ไม่ใช่ทักทายใหม่ทั้งชุด
+  //
+  // หน้าแอดมินสร้างการ์ดเองไม่ได้ (ต้องดึงสถานะสดจากไปรษณีย์ก่อน)
+  // จึงหยอดเลขพัสดุลงคิว แล้วให้บอทไปประกอบการ์ดตอนส่ง — ได้ของสดเสมอ
+  //
+  // message ที่ใส่ไปเป็นตัวสำรอง บอทใช้เมื่อไปรษณีย์ล่มหรือเลขยังไม่เข้าระบบ
+  const queueParcelCard = async (order: SavedOrder, tracking: string) => {
+    try {
+      const { error } = await supabase.from('line_notifications').insert({
+        line_user_id: order.lineUserId,
+        order_id: order.id,
+        tracking_number: tracking,
+        message: `📦 พัสดุ ${tracking}\nบิล ${order.orderNumber}`,
+      });
+
+      if (error) throw error;
+      lastNoticeRef.current[order.id] = Date.now();
+      return true;
+    } catch (err) {
+      console.error('[PARCEL CARD]', err);
+      return false;
+    }
+  };
+
   // ข้อความ "จัดส่งแล้ว" ลงคิว LINE พร้อมข้อความ/รูปที่ร้านตั้งไว้ในหน้าตั้งค่า
   //
   // ล้มเหลวตรงนี้ไม่ควรทำให้การบันทึกเลขพัสดุพัง — เลขบันทึกไปแล้วและติดตามได้แล้ว
@@ -857,7 +885,7 @@ export default function AdminPage() {
         return;
       }
 
-      if (!(await queueShippingNotice(order, tracking, subscribed))) {
+      if (!(await queueParcelCard(order, tracking))) {
         toast.error('ส่งเลขพัสดุไม่สำเร็จ');
         return;
       }
@@ -871,7 +899,7 @@ export default function AdminPage() {
         return;
       }
 
-      toast.success('ส่งเลขพัสดุให้ลูกค้าอีกรอบแล้ว', {
+      toast.success('ส่งการ์ดสถานะพัสดุให้ลูกค้าแล้ว', {
         description: 'ติดตามสถานะให้อัตโนมัติเรียบร้อย',
       });
     } finally {

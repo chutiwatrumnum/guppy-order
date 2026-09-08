@@ -142,8 +142,12 @@ export default function PublicOrderPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
-  // ที่อยู่ที่ลูกค้าคนนี้เคยใช้ — ให้กดเลือกแทนพิมพ์ใหม่
-  const [pastAddresses, setPastAddresses] = useState<string[]>([]);
+  // ผู้รับที่เคยส่งไปแล้ว — กดเลือกทีเดียวได้ทั้งชื่อ เบอร์ ที่อยู่
+  //
+  // สามอย่างนี้เปลี่ยนพร้อมกันเสมอ (สั่งให้ตัวเอง vs สั่งให้แม่)
+  // แยกให้เลือกทีละช่องจะได้ที่อยู่แม่คู่กับเบอร์ตัวเอง ซึ่งไม่มีใครต้องการ
+  type PastRecipient = { name: string | null; phone: string | null; address: string };
+  const [pastRecipients, setPastRecipients] = useState<PastRecipient[]>([]);
 
   const [uploading, setUploading] = useState(false);
   const [slipStatus, setSlipStatus] = useState<PublicOrder['slip_status']>(null);
@@ -211,9 +215,9 @@ export default function PublicOrderPage() {
         // โหลดแยกและไม่ await รวมกับตัวหลัก — ล้มก็แค่ไม่มีปุ่มให้กด
         // ไม่ควรทำให้หน้าใบสรุปทั้งหน้าโหลดช้าหรือพัง
         supabase
-          .rpc('get_past_addresses', { p_token: token })
+          .rpc('get_past_recipients', { p_token: token })
           .then(({ data: past }) => {
-            if (active && Array.isArray(past)) setPastAddresses(past as string[]);
+            if (active && Array.isArray(past)) setPastRecipients(past as PastRecipient[]);
           });
       }
     })();
@@ -628,20 +632,30 @@ export default function PublicOrderPage() {
             <Label htmlFor="p-address">ที่อยู่</Label>
             {/* ที่อยู่ที่เคยใช้ — ซ่อนตัวที่ตรงกับในช่องอยู่แล้ว จะได้ไม่มีปุ่มที่กดแล้วไม่เกิดอะไร
                 เคสหลักคือคนที่สลับส่งบ้านตัวเองกับบ้านแม่ ต้องพิมพ์ใหม่ทุกรอบ */}
-            {pastAddresses.filter((a) => a !== address.trim()).length > 0 && (
+            {pastRecipients.filter((r) => r.address !== address.trim()).length > 0 && (
               <div className="space-y-1.5">
-                <p className="text-muted-foreground text-xs">ที่อยู่ที่เคยใช้ — กดเพื่อเลือก</p>
+                <p className="text-muted-foreground text-xs">เคยส่งไปที่ — กดเพื่อใส่ทั้งชุด</p>
                 <div className="flex flex-col gap-1.5">
-                  {pastAddresses
-                    .filter((a) => a !== address.trim())
-                    .map((a) => (
+                  {pastRecipients
+                    .filter((r) => r.address !== address.trim())
+                    .map((r) => (
                       <button
-                        key={a}
+                        key={r.address}
                         type="button"
-                        onClick={() => editField(setAddress, a)}
-                        className="bg-muted/50 hover:bg-accent rounded-lg border px-3 py-2 text-left text-sm leading-relaxed"
+                        onClick={() => {
+                          // เติมทั้งชุด แต่ไม่ล้างของเดิมทิ้งถ้าชุดเก่าไม่มีค่านั้น
+                          if (r.name) editField(setName, r.name);
+                          if (r.phone) editField(setPhone, r.phone);
+                          editField(setAddress, r.address);
+                        }}
+                        className="bg-muted/50 hover:bg-accent rounded-lg border px-3 py-2 text-left"
                       >
-                        {a}
+                        {(r.name || r.phone) && (
+                          <p className="text-sm font-medium">
+                            {[r.name, r.phone].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                        <p className="text-muted-foreground text-sm leading-relaxed">{r.address}</p>
                       </button>
                     ))}
                 </div>

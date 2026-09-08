@@ -142,6 +142,8 @@ export default function PublicOrderPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  // ที่อยู่ที่ลูกค้าคนนี้เคยใช้ — ให้กดเลือกแทนพิมพ์ใหม่
+  const [pastAddresses, setPastAddresses] = useState<string[]>([]);
 
   const [uploading, setUploading] = useState(false);
   const [slipStatus, setSlipStatus] = useState<PublicOrder['slip_status']>(null);
@@ -205,6 +207,14 @@ export default function PublicOrderPage() {
         setName((prev) => prev || nameSuggestion(r, profile.displayName));
         setPhone((prev) => prev || r.customer_phone || '');
         setAddress((prev) => prev || r.customer_address || '');
+
+        // โหลดแยกและไม่ await รวมกับตัวหลัก — ล้มก็แค่ไม่มีปุ่มให้กด
+        // ไม่ควรทำให้หน้าใบสรุปทั้งหน้าโหลดช้าหรือพัง
+        supabase
+          .rpc('get_past_addresses', { p_token: token })
+          .then(({ data: past }) => {
+            if (active && Array.isArray(past)) setPastAddresses(past as string[]);
+          });
       }
     })();
 
@@ -616,6 +626,28 @@ export default function PublicOrderPage() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="p-address">ที่อยู่</Label>
+            {/* ที่อยู่ที่เคยใช้ — ซ่อนตัวที่ตรงกับในช่องอยู่แล้ว จะได้ไม่มีปุ่มที่กดแล้วไม่เกิดอะไร
+                เคสหลักคือคนที่สลับส่งบ้านตัวเองกับบ้านแม่ ต้องพิมพ์ใหม่ทุกรอบ */}
+            {pastAddresses.filter((a) => a !== address.trim()).length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-muted-foreground text-xs">ที่อยู่ที่เคยใช้ — กดเพื่อเลือก</p>
+                <div className="flex flex-col gap-1.5">
+                  {pastAddresses
+                    .filter((a) => a !== address.trim())
+                    .map((a) => (
+                      <button
+                        key={a}
+                        type="button"
+                        onClick={() => editField(setAddress, a)}
+                        className="bg-muted/50 hover:bg-accent rounded-lg border px-3 py-2 text-left text-sm leading-relaxed"
+                      >
+                        {a}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
             <Textarea
               id="p-address"
               rows={4}

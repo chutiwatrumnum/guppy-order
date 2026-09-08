@@ -840,9 +840,26 @@ export default function AdminPage() {
     //
     // บอทที่ poll สถานะพัสดุจะเงียบจนกว่าไปรษณีย์จะสแกนครั้งแรก ซึ่งกินเวลาเป็นชั่วโมง
     // ลูกค้าที่เพิ่งคุยกับร้านอยู่ควรได้รู้ตั้งแต่ตอนนี้ว่าของออกไปแล้ว
-    await queueShippingNotice(order, tracking, subscribed);
+    //
+    // ครั้งแรกส่งข้อความเต็ม (ทักทาย เลขบิล คำชวนรีวิว) — เป็นการบอกว่าของออกแล้ว
+    // แต่ถ้าช่องนี้เคยมีเลขอยู่ก่อน แปลว่ากำลัง "แก้เลขที่กรอกผิด" ไม่ใช่แจ้งส่งใหม่
+    // ส่งข้อความเต็มซ้ำจะได้คำทักทายกับลิงก์รีวิวซ้ำอีกก้อนในแชทเดิม
+    // ทั้งที่สิ่งเดียวที่เปลี่ยนคือเลขพัสดุ — ส่งการ์ดสถานะใบเดียวพอ
+    const isCorrection = !!order.trackingNumber?.trim();
 
-    if (subscribed) toast.success('บันทึกแล้ว — แจ้งลูกค้าและติดตามสถานะให้อัตโนมัติ');
+    if (isCorrection) {
+      await queueParcelCard(order, tracking);
+    } else {
+      await queueShippingNotice(order, tracking, subscribed);
+    }
+
+    if (subscribed) {
+      toast.success(
+        isCorrection
+          ? 'แก้เลขพัสดุแล้ว — ส่งการ์ดสถานะใบใหม่ให้ลูกค้า'
+          : 'บันทึกแล้ว — แจ้งลูกค้าและติดตามสถานะให้อัตโนมัติ'
+      );
+    }
   };
 
   // ส่งเลขพัสดุให้ลูกค้าใน LINE อีกรอบ
@@ -1529,7 +1546,10 @@ export default function AdminPage() {
                             }}
                             className="h-9 flex-1 uppercase"
                           />
-                          {/* ส่งเลขซ้ำ — ลูกค้าหาข้อความเก่าไม่เจอ หรือการติดตามหลุดไปแล้ว */}
+          {/* แจ้งสถานะซ้ำ — ลูกค้าหาข้อความเก่าไม่เจอ หรือการติดตามหลุดไปแล้ว
+                              ส่งการ์ดสถานะใบเดียว ไม่ใช่ข้อความจัดส่งทั้งชุดอีกรอบ
+                              ชื่อปุ่มเดิมคือ "ส่งซ้ำ" ซึ่งอ่านแล้วเหมือนส่งของเดิมซ้ำ
+                              พอเปลี่ยนมาส่งการ์ดแล้วชื่อนั้นจะพาให้เข้าใจผิด */}
                           {order.trackingNumber && order.lineUserId && (
                             <Button
                               variant="outline"
@@ -1537,14 +1557,14 @@ export default function AdminPage() {
                               className="h-9 shrink-0 px-2.5"
                               disabled={resendingId === order.id}
                               onClick={() => resendTracking(order)}
-                              title="ส่งเลขพัสดุให้ลูกค้าใน LINE อีกรอบ พร้อมซ่อมการติดตามให้ด้วย"
+                              title="ส่งการ์ดสถานะพัสดุล่าสุดให้ลูกค้าใน LINE พร้อมซ่อมการติดตามให้ด้วย"
                             >
                               {resendingId === order.id ? (
                                 <Loader2 className="size-3.5 animate-spin" />
                               ) : (
                                 <Send className="size-3.5" />
                               )}
-                              ส่งซ้ำ
+                              แจ้งสถานะ
                             </Button>
                           )}
                           {order.lineUserId ? (

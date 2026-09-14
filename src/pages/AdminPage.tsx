@@ -959,7 +959,7 @@ export default function AdminPage() {
         // ไม่สัญญาว่าจะแจ้งอัตโนมัติ ถ้าสมัครติดตามไม่ผ่าน
         // ประกอบใน utils เพราะกล่องแจ้งเตือนที่ส่งไม่สำเร็จต้องอ่านข้อความนี้กลับไปประกอบใหม่
         message: buildShippingNotice({
-          orderNumber: order.orderNumber,
+          orderNumber: order.orderNumber ?? '',
           tracking,
           promiseAlerts: subscribed,
           extra: cfg?.shipping_message,

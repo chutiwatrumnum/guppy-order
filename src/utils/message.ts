@@ -152,3 +152,63 @@ export const buildOrderLinkMessage = ({
 
   return lines.join('\n');
 };
+
+// ── ข้อความ "จัดส่งแล้ว" ตอนกรอกเลขพัสดุ ──
+// ประกอบที่เดียว เพราะมีสองทางที่ต้องได้หน้าตาเดียวกัน: หน้าบิลหยอดคิวให้บอท push
+// กับกล่อง "ไม่ได้รับข้อความแจ้งเตือน" ที่ร้านคัดลอกไปส่งเองในแชทตอน push ไม่ออก
+// ซึ่งต้องอ่านเลขบิล/เลขพัสดุกลับจากข้อความที่ค้างอยู่ — หัวข้อความสองที่เพี้ยนกันเมื่อไหร่ อ่านไม่ออกทันที
+const SHIPPING_TITLE = '🚚 จัดส่งแล้วครับ';
+const SHIPPING_BILL = 'บิล ';
+const SHIPPING_TRACKING = 'เลขพัสดุ ';
+
+export interface ShippingNoticeOptions {
+  orderNumber: string;
+  tracking: string;
+  /**
+   * บอกลูกค้าว่าจะเด้งแจ้งเตือนอัตโนมัติ
+   *
+   * ใส่เฉพาะตอนบอทเป็นคนส่งและสมัครติดตามผ่าน — ข้อความที่ร้านต้องส่งเองแปลว่า push
+   * ไม่ออกอยู่แล้ว (โควต้าหมด / ลูกค้าไม่ได้แอดร้าน) แจ้งเตือนต่อจากนี้ก็ไม่ถึงเหมือนกัน
+   */
+  promiseAlerts: boolean;
+  /** ข้อความที่ร้านตั้งไว้ในหน้าตั้งค่า ต่อท้าย */
+  extra?: string | null;
+}
+
+export const buildShippingNotice = ({
+  orderNumber,
+  tracking,
+  promiseAlerts,
+  extra,
+}: ShippingNoticeOptions): string => {
+  const blocks = [`${SHIPPING_TITLE}\n${SHIPPING_BILL}${orderNumber}\n${SHIPPING_TRACKING}${tracking}`];
+
+  // บอกไปเลยว่าจะแจ้งกี่ครั้งและตอนไหน ที่เดียวจบ — ข้อความนี้ลูกค้าได้
+  // ใบละครั้งตอนเริ่มรอของพอดี ซึ่งเป็นจังหวะที่สงสัยเรื่องนี้อยู่แล้ว
+  // ของเดิมบอกแค่ "จะแจ้งความคืบหน้า" ซึ่งอ่านได้ว่าจะแจ้งทุกครั้งที่ขยับ
+  // แล้วลูกค้าจะรอข้อความตอนของเข้าศูนย์คัดแยกที่ไม่มีวันมา
+  if (promiseAlerts) {
+    blocks.push(
+      '🔔 จะแจ้งให้ตอนไปรษณีย์รับเข้าระบบ ตอนออกไปนำจ่าย และตอนส่งถึง\n' +
+        'ถ้านำจ่ายไม่สำเร็จหรือตีกลับ จะแจ้งทันทีเหมือนกันครับ'
+    );
+  }
+
+  const tail = (extra || '').trim();
+  if (tail) blocks.push(tail);
+
+  return blocks.join('\n\n');
+};
+
+// อ่านเลขบิลกับเลขพัสดุกลับจากข้อความจัดส่งที่ประกอบไว้แล้ว
+// ข้อความแบบอื่น (ยืนยันชำระเงิน, การ์ดพัสดุจากปุ่มส่งซ้ำ ฯลฯ) คืน null
+export const parseShippingNotice = (message: string): { orderNumber: string; tracking: string } | null => {
+  const [title, bill, parcel] = message.split('\n');
+  if (title !== SHIPPING_TITLE || !bill?.startsWith(SHIPPING_BILL) || !parcel?.startsWith(SHIPPING_TRACKING)) {
+    return null;
+  }
+  return {
+    orderNumber: bill.slice(SHIPPING_BILL.length),
+    tracking: parcel.slice(SHIPPING_TRACKING.length),
+  };
+};

@@ -13,7 +13,7 @@ import { pathToFileURL } from 'url';
 
 const out = join(tmpdir(), `message-${Date.now()}.mjs`);
 await build({ entryPoints: ['src/utils/message.ts'], outfile: out, format: 'esm', logLevel: 'error' });
-const { buildOrderLinkMessage } = await import(pathToFileURL(out).href);
+const { buildOrderLinkMessage, buildShippingNotice, parseShippingNotice } = await import(pathToFileURL(out).href);
 unlinkSync(out);
 
 let failed = 0;
@@ -79,6 +79,43 @@ const mixed = buildOrderLinkMessage({
 has('ปลาแถมขึ้นในรายการ', mixed, '• Koi ♂ 3 ตัว (แถม 1)');
 has('อาหารแยกหน่วยเป็นชิ้น', mixed, '• 🍤 อาหารลูกปลา 1 ชิ้น');
 has('ค่าปลาหักของแถมแล้ว', mixed, '💰 ค่าปลา: 320 บาท');
+
+console.log('\n── ข้อความจัดส่ง (บอท push)');
+const pushed = buildShippingNotice({
+  orderNumber: 'B20260914-0514',
+  tracking: 'JD059556938TH',
+  promiseAlerts: true,
+  extra: '  บ้านหมีฝากรีวิวด้วยนะค้าบ\n',
+});
+check(
+  'หน้าตาเท่าเดิมทุกบรรทัด',
+  pushed,
+  '🚚 จัดส่งแล้วครับ\nบิล B20260914-0514\nเลขพัสดุ JD059556938TH\n\n' +
+    '🔔 จะแจ้งให้ตอนไปรษณีย์รับเข้าระบบ ตอนออกไปนำจ่าย และตอนส่งถึง\nถ้านำจ่ายไม่สำเร็จหรือตีกลับ จะแจ้งทันทีเหมือนกันครับ\n\n' +
+    'บ้านหมีฝากรีวิวด้วยนะค้าบ'
+);
+check(
+  'สมัครติดตามไม่ผ่าน: ไม่สัญญาว่าจะแจ้ง และไม่มีบรรทัดว่างห้อยท้าย',
+  buildShippingNotice({ orderNumber: 'B1', tracking: 'JD000000001TH', promiseAlerts: false, extra: '   ' }),
+  '🚚 จัดส่งแล้วครับ\nบิล B1\nเลขพัสดุ JD000000001TH'
+);
+
+console.log('\n── ข้อความจัดส่งที่ร้านคัดลอกไปส่งเอง');
+check(
+  'อ่านเลขบิล/เลขพัสดุกลับได้',
+  JSON.stringify(parseShippingNotice(pushed)),
+  JSON.stringify({ orderNumber: 'B20260914-0514', tracking: 'JD059556938TH' })
+);
+const manual = buildShippingNotice({
+  ...parseShippingNotice(pushed),
+  promiseAlerts: false,
+  extra: '📦 กดปุ่ม "พัสดุของฉัน"',
+});
+check('ตัดบรรทัดสัญญาแจ้งเตือนอัตโนมัติ', manual.includes('🔔'), false);
+has('ใช้คำล่าสุดจากหน้าตั้งค่า', manual, '📦 กดปุ่ม "พัสดุของฉัน"');
+check('ไม่เอาคำเก่าที่ค้างในคิวมาด้วย', manual.includes('บ้านหมีฝากรีวิวด้วยนะค้าบ'), false);
+check('ข้อความยืนยันชำระเงินไม่ใช่ข้อความจัดส่ง', parseShippingNotice('✅ ยืนยันการชำระเงินแล้วครับ\nบิล B1 · ฿380'), null);
+check('การ์ดพัสดุจากปุ่มส่งซ้ำไม่ใช่ข้อความจัดส่ง', parseShippingNotice('📦 พัสดุ JD000000001TH\nบิล B1'), null);
 
 console.log(failed === 0 ? '\nผ่านทั้งหมด' : `\nไม่ผ่าน ${failed} ข้อ`);
 process.exit(failed === 0 ? 0 : 1);

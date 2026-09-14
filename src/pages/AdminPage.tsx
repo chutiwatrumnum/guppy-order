@@ -27,7 +27,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
-import { buildOrderMessage, buildOrderLinkMessage, calculateItemTotal } from '@/utils/message';
+import { buildOrderMessage, buildOrderLinkMessage, buildShippingNotice, calculateItemTotal } from '@/utils/message';
 import { getLiffOrderUrl } from '@/utils/liff';
 import { getPublicOrderUrl } from '@/utils/publicUrl';
 import { groupByPerson } from '@/utils/person';
@@ -953,24 +953,17 @@ export default function AdminPage() {
         .limit(1)
         .maybeSingle();
 
-      const extra = (cfg?.shipping_message || '').trim();
       const { error } = await supabase.from('line_notifications').insert({
         line_user_id: order.lineUserId,
         order_id: order.id,
-        message:
-          `🚚 จัดส่งแล้วครับ\n` +
-          `บิล ${order.orderNumber}\n` +
-          `เลขพัสดุ ${tracking}` +
-          // ไม่สัญญาว่าจะแจ้งอัตโนมัติ ถ้าสมัครติดตามไม่ผ่าน
-          //
-          // บอกไปเลยว่าจะแจ้งกี่ครั้งและตอนไหน ที่เดียวจบ — ข้อความนี้ลูกค้าได้
-          // ใบละครั้งตอนเริ่มรอของพอดี ซึ่งเป็นจังหวะที่สงสัยเรื่องนี้อยู่แล้ว
-          // ของเดิมบอกแค่ "จะแจ้งความคืบหน้า" ซึ่งอ่านได้ว่าจะแจ้งทุกครั้งที่ขยับ
-          // แล้วลูกค้าจะรอข้อความตอนของเข้าศูนย์คัดแยกที่ไม่มีวันมา
-          (subscribed
-            ? `\n\n🔔 จะแจ้งให้ตอนไปรษณีย์รับเข้าระบบ ตอนออกไปนำจ่าย และตอนส่งถึง\nถ้านำจ่ายไม่สำเร็จหรือตีกลับ จะแจ้งทันทีเหมือนกันครับ`
-            : '') +
-          (extra ? `\n\n${extra}` : ''),
+        // ไม่สัญญาว่าจะแจ้งอัตโนมัติ ถ้าสมัครติดตามไม่ผ่าน
+        // ประกอบใน utils เพราะกล่องแจ้งเตือนที่ส่งไม่สำเร็จต้องอ่านข้อความนี้กลับไปประกอบใหม่
+        message: buildShippingNotice({
+          orderNumber: order.orderNumber,
+          tracking,
+          promiseAlerts: subscribed,
+          extra: cfg?.shipping_message,
+        }),
         images: cfg?.shipping_images || [],
       });
 

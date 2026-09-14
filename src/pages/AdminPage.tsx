@@ -7,6 +7,7 @@ import {
   Users,
   ChevronDown,
   PackageCheck,
+  Merge,
   ClipboardList,
   Copy,
   Edit2,
@@ -172,6 +173,39 @@ type OpenBill = Pick<
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
 
+/** ผลจาก merge_orders — ตัวเลขชุดเดียวกันทั้งตอนดูก่อนกดและตอนบันทึกจริง */
+type MergeResult = {
+  ok: boolean;
+  reason?: string;
+  order_number?: string;
+  merged?: string[];
+  items?: number;
+  total_fish?: number;
+  shipping_fee?: number;
+  discount?: number;
+  total_amount?: number;
+  paid_amount?: number;
+  payment_status?: PaymentStatus;
+  overpaid?: number;
+};
+
+// เหตุผลที่ฐานข้อมูลไม่ยอมรวม — บอกเป็นสิ่งที่ร้านต้องทำต่อ ไม่ใช่รหัส error
+const MERGE_BLOCKED: Record<string, string> = {
+  not_pending: 'รวมได้เฉพาะบิลที่ยังรอส่งและยังไม่มีเลขพัสดุ',
+  pending_slips: 'มีสลิปรอตรวจอยู่ — ยืนยันหรือปฏิเสธในแท็บสลิปก่อน แล้วค่อยรวม',
+  different_accounts: 'บิลเหล่านี้รับเงินเข้าคนละบัญชี รวมแล้วยอดแยกรายบัญชีจะผิด',
+  not_found: 'ไม่พบบิล — กดรีเฟรชแล้วลองใหม่',
+  bad_input: 'เลือกบิลที่จะรวมไม่ถูกต้อง — กดรีเฟรชแล้วลองใหม่',
+};
+
+const mergeErrorText = (error: { code?: string } | null, result: MergeResult | null) =>
+  // ยังไม่ได้รัน SQL ฟังก์ชันจะไม่มีอยู่ — บอกให้ชัด ไม่งั้นดูเหมือนปุ่มพังเฉย ๆ
+  error?.code === 'PGRST202'
+    ? 'ยังไม่ได้รัน SQL ของปุ่มรวมบิล (20260914120000_merge_orders.sql)'
+    : error
+      ? 'เช็คบิลไม่สำเร็จ ลองใหม่อีกครั้ง'
+      : (MERGE_BLOCKED[result?.reason ?? ''] ?? 'รวมบิลนี้ไม่ได้');
+
 export default function AdminPage() {
   const { user } = useAuth();
   // State
@@ -213,6 +247,14 @@ export default function AdminPage() {
   // ปุ่มส่งเลขพัสดุซ้ำของบิลไหนกำลังทำงานอยู่
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [mergingId, setMergingId] = useState<string | null>(null);
+  // รวมบิล — ใบที่จะเหลืออยู่ ใบที่จะถูกรวมเข้ามา และตัวเลขที่ฐานข้อมูลคำนวณให้ดูก่อนกดยืนยัน
+  const [mergeBills, setMergeBills] = useState<{
+    order: SavedOrder;
+    mates: OpenBill[];
+    preview: MergeResult | null;
+    error: string | null;
+  } | null>(null);
+  const [mergingBills, setMergingBills] = useState(false);
   // เวลาที่เพิ่งส่งข้อความ "จัดส่งแล้ว" ของแต่ละบิล
   //
   // กดปุ่ม "ส่งซ้ำ" ตอนที่เพิ่งพิมพ์เลขในช่องข้าง ๆ จะเกิด blur → บันทึก+ส่ง ก่อนหนึ่งที
@@ -806,6 +848,64 @@ export default function AdminPage() {
 
     toast.success(`รวมกล่องแล้ว ${mates.length + 1} บิล`, {
       description: `ทุกใบใช้เลข ${tracking} — ลูกค้าได้แจ้งเตือนครั้งเดียว`,
+    });
+  };
+
+  /**
+   * รวมบิล — ย้ายรายการ ยอดที่จ่ายแล้ว และสลิปของบิลอื่นเข้ามาในบิลนี้ แล้วยกเลิกบิลเหล่านั้น
+   *
+   * เปิดกล่องยืนยันพร้อมถามฐานข้อมูลก่อนว่าจะได้ตัวเลขเท่าไหร่ (p_apply = false)
+   * ร้านเห็นยอดใหม่ ค่าส่ง และยอดค้าง/จ่ายเกิน ก่อนกด เพราะรวมแล้วย้อนกลับไม่ได้
+   */
+  const openMergeBills = async (order: SavedOrder, mates: OpenBill[]) => {
+    setMergeBills({ order, mates, preview: null, error: null });
+
+    const { data, error } = await supabase.rpc('merge_orders', {
+      p_target: order.id,
+      p_sources: mates.map((m) => m.id),
+      p_apply: false,
+    });
+    const result = data as MergeResult | null;
+
+    // ปิดกล่องไปแล้ว หรือเปิดของบิลอื่นแทนระหว่างรอ — ทิ้งผลนี้
+    setMergeBills((prev) =>
+      !prev || prev.order.id !== order.id
+        ? prev
+        : error || !result?.ok
+          ? { ...prev, error: mergeErrorText(error, result) }
+          : { ...prev, preview: result }
+    );
+  };
+
+  const confirmMergeBills = async () => {
+    if (!mergeBills?.preview || mergingBills) return;
+    const { order, mates } = mergeBills;
+
+    setMergingBills(true);
+    const { data, error } = await supabase.rpc('merge_orders', {
+      p_target: order.id,
+      p_sources: mates.map((m) => m.id),
+      p_apply: true,
+    });
+    setMergingBills(false);
+
+    const result = data as MergeResult | null;
+    if (error || !result?.ok) {
+      // ระหว่างเปิดกล่องค้างไว้ อาจมีสลิปเข้ามาหรือบิลถูกแก้ — บอกเหตุผลล่าสุดในกล่องเลย
+      setMergeBills({ ...mergeBills, preview: null, error: mergeErrorText(error, result) });
+      return;
+    }
+
+    setMergeBills(null);
+    await loadAllOrders(reportPeriod, startDate, endDate);
+
+    const overpaid = result.overpaid ?? 0;
+    toast.success(`รวมเป็นบิล ${result.order_number} แล้ว`, {
+      description:
+        overpaid > 0
+          ? `ลูกค้าจ่ายเกินมา ฿${overpaid.toLocaleString()} — คืนเงินหรือหักรอบหน้า`
+          : `ยอดใหม่ ฿${(result.total_amount ?? 0).toLocaleString()} — ส่งลิงก์ใบสรุปของบิลนี้ให้ลูกค้าได้เลย`,
+      duration: overpaid > 0 ? 12000 : 6000,
     });
   };
 
@@ -1907,6 +2007,13 @@ export default function AdminPage() {
                           // กดรวมไปจะเขียนทับเลขจริงของกล่องนั้น ลูกค้าตามพัสดุใบนั้นไม่ได้อีก
                           const packable = openMates.filter((o) => !o.trackingNumber?.trim());
 
+                          // รวมบิลได้เฉพาะตอนที่ยังไม่มีใบไหนส่งออกไป ทั้งใบนี้และใบที่จะรวมเข้ามา
+                          // ต้องยังรอส่งและไม่มีเลขพัสดุ — ใบที่ส่งแล้วใช้ "รวมกล่อง" แทน
+                          const mergeable =
+                            order.status === 'pending' && !order.trackingNumber?.trim()
+                              ? packable.filter((o) => o.status === 'pending')
+                              : [];
+
                           return (
                             <div className="bg-primary/5 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2">
                               <Users className="text-primary size-3.5 shrink-0" />
@@ -1933,6 +2040,17 @@ export default function AdminPage() {
                                     <PackageCheck className="size-3" />
                                   )}
                                   รวมกล่อง
+                                </Button>
+                              )}
+                              {mergeable.length > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 shrink-0 px-2 text-xs"
+                                  onClick={() => openMergeBills(order, mergeable)}
+                                >
+                                  <Merge className="size-3" />
+                                  รวมบิล
                                 </Button>
                               )}
                             </div>
@@ -2904,6 +3022,113 @@ export default function AdminPage() {
             <Button variant="destructive" onClick={deleteOrder} disabled={deleting}>
               {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
               ลบบิล
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───────── รวมบิล ───────── */}
+      <Dialog open={!!mergeBills} onOpenChange={(open) => !open && !mergingBills && setMergeBills(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>รวมเป็นบิลเดียว?</DialogTitle>
+            <DialogDescription>
+              รายการปลา ยอดที่จ่ายแล้ว และสลิป ย้ายเข้าบิล {mergeBills?.order.orderNumber} ส่วนบิลที่รวมเข้ามาจะถูกยกเลิก
+              ย้อนกลับไม่ได้
+            </DialogDescription>
+          </DialogHeader>
+
+          {mergeBills && (
+            <div className="space-y-3 text-sm">
+              <div className="bg-muted/50 space-y-1 rounded-lg px-3 py-2.5">
+                <p className="text-muted-foreground text-xs">บิลที่จะรวมเข้ามา</p>
+                {mergeBills.mates.map((m) => (
+                  <p key={m.id} className="font-medium">
+                    {m.orderNumber ?? '—'}{' '}
+                    <span className="text-muted-foreground font-normal">({shortDate(m.created_at)})</span>
+                  </p>
+                ))}
+              </div>
+
+              {mergeBills.error ? (
+                <p className="bg-warning/10 text-warning rounded-lg px-3 py-2 text-xs">{mergeBills.error}</p>
+              ) : !mergeBills.preview ? (
+                <div className="flex justify-center py-3">
+                  <Loader2 className="text-muted-foreground size-5 animate-spin" />
+                </div>
+              ) : (
+                (() => {
+                  const p = mergeBills.preview;
+                  const total = p.total_amount ?? 0;
+                  const paid = p.paid_amount ?? 0;
+                  const overpaid = p.overpaid ?? 0;
+                  return (
+                    <div className="space-y-1.5">
+                      <div className="text-muted-foreground flex justify-between">
+                        <span>รายการ</span>
+                        <span className="text-foreground">
+                          {p.items} รายการ · {p.total_fish} ตัว
+                        </span>
+                      </div>
+                      <div className="text-muted-foreground flex justify-between">
+                        <span>ค่าส่ง (คิดครั้งเดียว)</span>
+                        <span className="text-foreground tabular-nums">
+                          {p.shipping_fee ? `฿${p.shipping_fee.toLocaleString()}` : 'ฟรี'}
+                        </span>
+                      </div>
+                      {(p.discount ?? 0) > 0 && (
+                        <div className="text-muted-foreground flex justify-between">
+                          <span>ส่วนลด</span>
+                          <span className="text-foreground tabular-nums">
+                            -฿{(p.discount ?? 0).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      <Separator className="my-2" />
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">ยอดรวมใหม่</span>
+                        <span className="text-primary text-lg font-semibold tabular-nums">
+                          ฿{total.toLocaleString()}
+                        </span>
+                      </div>
+                      {paid > 0 && (
+                        <div className="text-muted-foreground flex justify-between">
+                          <span>จ่ายแล้ว</span>
+                          <span className="text-foreground tabular-nums">฿{paid.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {/* จ่ายแยกมาแล้วทั้งสองใบ ค่าส่งที่ตัดออกกลายเป็นเงินเกิน — ต้องเห็นก่อนกด */}
+                      {overpaid > 0 ? (
+                        <p className="bg-warning/10 text-warning rounded-lg px-3 py-2 text-xs">
+                          ลูกค้าจ่ายเกินมา ฿{overpaid.toLocaleString()} — คืนเงินหรือหักรอบหน้า
+                        </p>
+                      ) : (
+                        paid > 0 &&
+                        total > paid && (
+                          <div className="text-warning flex justify-between font-medium">
+                            <span>ค้างจ่าย</span>
+                            <span className="tabular-nums">฿{(total - paid).toLocaleString()}</span>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+
+              <p className="text-muted-foreground text-xs">
+                ไม่ส่งข้อความหาลูกค้า — กดคัดลอกลิงก์ใบสรุปของบิลนี้ส่งให้ลูกค้าเองได้
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setMergeBills(null)} disabled={mergingBills}>
+              ยกเลิก
+            </Button>
+            <Button onClick={confirmMergeBills} disabled={mergingBills || !mergeBills?.preview}>
+              {mergingBills ? <Loader2 className="size-4 animate-spin" /> : <Merge className="size-4" />}
+              รวมบิล
             </Button>
           </DialogFooter>
         </DialogContent>

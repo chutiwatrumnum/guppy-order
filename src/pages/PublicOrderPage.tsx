@@ -49,6 +49,7 @@ interface PublicOrder {
   discount: number;
   status: string;
   payment_status: string;
+  paid_amount?: number;
   tracking_number?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
@@ -472,14 +473,26 @@ export default function PublicOrderPage() {
     </div>
   );
 
+  // บิลมัดจำ — รวมถึงบิลที่รวมจากใบที่จ่ายแล้วกับใบที่ยังไม่จ่าย — ต้องโอนแค่ส่วนที่เหลือ
+  // เดิม QR ใส่ยอดเต็มทั้งบิล ลูกค้าที่สแกนตามจะโอนซ้ำส่วนที่จ่ายไปแล้ว
+  const paidSoFar = order.paid_amount || 0;
+  const amountDue = Math.max(0, (order.total_amount || 0) - paidSoFar);
+
   const paymentCard = order.payment_status !== 'paid' && (slipSubmitted ? slipReceivedNote : (
     <Card>
       <CardContent>
         <p className="text-muted-foreground mb-3 text-sm font-medium">ชำระเงิน</p>
 
+        {paidSoFar > 0 && (
+          <p className="text-muted-foreground mb-3 text-center text-sm">
+            จ่ายแล้ว ฿{paidSoFar.toLocaleString()} · เหลือโอน{' '}
+            <span className="text-foreground font-semibold">฿{amountDue.toLocaleString()}</span>
+          </p>
+        )}
+
         <PromptPayQR
           promptPayId={order.payment.promptpay_id}
-          amount={order.total_amount || 0}
+          amount={amountDue}
           reference={order.order_number}
         />
 
@@ -903,7 +916,16 @@ export default function PublicOrderPage() {
 
         {finishCard}
 
-        {hasSavedAddress ? (
+        {order.status === 'cancelled' ? (
+          // บิลที่ยกเลิก (รวมถึงใบที่ถูกรวมเข้าบิลอื่น) ไม่มีอะไรต้องทำ
+          // เดิมยังโชว์ QR ให้โอน กับกล่องที่อยู่ที่เขียนว่า "ออเดอร์จัดส่งแล้ว" ซึ่งไม่จริงทั้งคู่
+          // ลูกค้าที่เปิดลิงก์เก่าอาจโอนเงินเข้าบิลที่ไม่มีแล้ว — ใบที่ถูกรวม หมายเหตุด้านล่างบอกเลขบิลใหม่
+          <Card>
+            <CardContent>
+              <p className="text-sm font-medium">บิลนี้ถูกยกเลิกแล้ว ไม่ต้องชำระเงิน</p>
+            </CardContent>
+          </Card>
+        ) : hasSavedAddress ? (
           <>
             {paymentCard}
             {addressCard}

@@ -67,6 +67,17 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'not_pending');
   end if;
 
+  -- รวมได้เฉพาะบิลที่ออกภายใน 7 วันที่ผ่านมา (ร้านกำหนด)
+  --
+  -- รวมแล้วยอดขายของทุกใบไปอยู่วันของใบที่เหลือ บิลยิ่งเก่า ยอดยิ่งย้ายข้ามวันข้ามเดือนไปไกล
+  -- เปลี่ยนเลขนี้เมื่อไหร่ ต้องแก้ MERGE_WINDOW_DAYS ในหน้าแอดมินให้ตรงกันด้วย
+  if exists (
+    select 1 from public.orders
+    where id = any(v_ids) and created_at < now() - interval '7 days'
+  ) then
+    return jsonb_build_object('ok', false, 'reason', 'too_old');
+  end if;
+
   -- สลิปที่ยังรอตรวจ: ปุ่มยืนยันสลิปตั้งบิลเป็น "จ่ายแล้ว" ด้วยยอดทั้งบิล
   -- ถ้าย้ายสลิปของใบเล็กมาอยู่ใบรวมแล้วกดยืนยัน ใบรวมทั้งใบจะกลายเป็นจ่ายครบ
   if exists (

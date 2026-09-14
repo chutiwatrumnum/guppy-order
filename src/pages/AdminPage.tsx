@@ -173,6 +173,10 @@ type OpenBill = Pick<
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
 
+// รวมบิลได้เฉพาะบิลที่ออกภายในกี่วัน — ร้านกำหนดไว้ 7 วัน
+// ต้องตรงกับ interval ใน merge_orders ไม่งั้นปุ่มขึ้นแต่กดแล้วฐานข้อมูลไม่ยอม
+const MERGE_WINDOW_DAYS = 7;
+
 /** ผลจาก merge_orders — ตัวเลขชุดเดียวกันทั้งตอนดูก่อนกดและตอนบันทึกจริง */
 type MergeResult = {
   ok: boolean;
@@ -192,6 +196,7 @@ type MergeResult = {
 // เหตุผลที่ฐานข้อมูลไม่ยอมรวม — บอกเป็นสิ่งที่ร้านต้องทำต่อ ไม่ใช่รหัส error
 const MERGE_BLOCKED: Record<string, string> = {
   not_pending: 'รวมได้เฉพาะบิลที่ยังรอส่งและยังไม่มีเลขพัสดุ',
+  too_old: `รวมได้เฉพาะบิลที่ออกภายใน ${MERGE_WINDOW_DAYS} วัน`,
   pending_slips: 'มีสลิปรอตรวจอยู่ — ยืนยันหรือปฏิเสธในแท็บสลิปก่อน แล้วค่อยรวม',
   different_accounts: 'บิลเหล่านี้รับเงินเข้าคนละบัญชี รวมแล้วยอดแยกรายบัญชีจะผิด',
   not_found: 'ไม่พบบิล — กดรีเฟรชแล้วลองใหม่',
@@ -1576,6 +1581,10 @@ export default function AdminPage() {
     billsByTracking.set(t, [...(billsByTracking.get(t) ?? []), o]);
   }
 
+  // ใบที่เก่ากว่านี้ยังขึ้นในแถบให้รู้ว่ามี แต่ไม่มีปุ่มรวมบิล — เกณฑ์เดียวกับ merge_orders
+  const inMergeWindow = (o: OpenBill) =>
+    now - new Date(o.created_at).getTime() <= MERGE_WINDOW_DAYS * 86_400_000;
+
   // จำนวนคนที่สั่งจริง — เทียบกับจำนวนบิลได้ทันทีว่าต่างกันกี่ใบ
   // บิลที่ไม่รู้ว่าเป็นใครนับเป็นหนึ่งคน ไม่งั้นจะไปโผล่เป็น "บิลคนซ้ำ" ทั้งที่ไม่มีอะไรบอกว่าซ้ำ
   const peopleCount = new Set(
@@ -2008,10 +2017,10 @@ export default function AdminPage() {
                           const packable = openMates.filter((o) => !o.trackingNumber?.trim());
 
                           // รวมบิลได้เฉพาะตอนที่ยังไม่มีใบไหนส่งออกไป ทั้งใบนี้และใบที่จะรวมเข้ามา
-                          // ต้องยังรอส่งและไม่มีเลขพัสดุ — ใบที่ส่งแล้วใช้ "รวมกล่อง" แทน
+                          // ต้องยังรอส่ง ไม่มีเลขพัสดุ และออกภายใน 7 วัน — ใบที่ส่งแล้วใช้ "รวมกล่อง" แทน
                           const mergeable =
-                            order.status === 'pending' && !order.trackingNumber?.trim()
-                              ? packable.filter((o) => o.status === 'pending')
+                            order.status === 'pending' && !order.trackingNumber?.trim() && inMergeWindow(order)
+                              ? packable.filter((o) => o.status === 'pending' && inMergeWindow(o))
                               : [];
 
                           return (

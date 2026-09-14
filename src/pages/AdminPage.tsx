@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 import { buildOrderMessage, buildOrderLinkMessage, calculateItemTotal } from '@/utils/message';
 import { getLiffOrderUrl } from '@/utils/liff';
 import { getPublicOrderUrl } from '@/utils/publicUrl';
+import { groupByPerson } from '@/utils/person';
 import type { OrderItem, SavedOrder, Breed, OrderStatus, PaymentStatus } from '@/types';
 import Layout from './Layout';
 import PendingSlips from '@/components/PendingSlips';
@@ -161,10 +162,22 @@ function Stat({
   );
 }
 
+// บิลที่ยังไม่ถึงมือแต่อยู่นอกช่วงวันที่ที่เลือก — เก็บแค่พอจับคู่ลูกค้าและรวมกล่อง
+type OpenBill = Pick<
+  SavedOrder,
+  'id' | 'created_at' | 'orderNumber' | 'status' | 'trackingNumber' | 'customerId' | 'customerPhone' | 'lineUserId'
+>;
+
+/** "8 ก.ย." — พอให้รู้ว่าบิลอยู่วันไหน โดยไม่กินที่บนการ์ด */
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+
 export default function AdminPage() {
   const { user } = useAuth();
   // State
   const [allOrders, setAllOrders] = useState<SavedOrder[]>([]);
+  // บิลที่ยังไม่ถึงมือนอกช่วงวันที่ — ดู "วันนี้" อยู่ก็ยังต้องรู้ว่าลูกค้ามีบิลค้างจากเมื่อวาน
+  const [openBillsElsewhere, setOpenBillsElsewhere] = useState<OpenBill[]>([]);
   const [breeds, setBreeds] = useState<Breed[]>([]);
   const [bankInfo, setBankInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -301,7 +314,20 @@ export default function AdminPage() {
           .lte('created_at', new Date(`${customEnd}T23:59:59.999`).toISOString());
       }
 
-      const { data, error } = await query;
+      // บิลที่ยังไม่ถึงมือของทุกวัน ยิงไปพร้อมรายการหลัก
+      //
+      // แถบ "ลูกค้าคนนี้มีอีก N บิล" เดิมเทียบแค่บิลในช่วงที่เลือก และหน้านี้เปิดมาที่ "วันนี้"
+      // ทุกครั้ง ลูกค้าสั่งเมื่อวานใบหนึ่ง วันนี้อีกใบ แถบก็ไม่ขึ้น — ทั้งที่บิลค้างจากวันก่อน ๆ
+      // คือตัวที่ต้องรู้ตอนแพ็คที่สุด
+      //
+      // เอาเฉพาะคอลัมน์ที่ใช้จับคู่ ไม่ลาก items ของบิลเก่ามาทั้งก้อน
+      const openQuery = supabase
+        .from('orders')
+        .select('id, created_at, order_number, status, tracking_number, customer_id, customer_phone, line_user_id')
+        .in('status', ['pending', 'shipped'])
+        .order('created_at', { ascending: false });
+
+      const [{ data, error }, open] = await Promise.all([query, openQuery]);
 
       if (error) throw error;
 
@@ -335,6 +361,27 @@ export default function AdminPage() {
       }));
 
       setAllOrders(transformedData);
+
+      // เก็บเฉพาะใบที่ไม่อยู่ในช่วง — ใบในช่วงถูกกดถึงแล้ว/ยกเลิก/ลบผ่าน allOrders
+      // ถ้าเก็บซ้ำไว้สองที่ ใบที่เพิ่งลบหรือกดถึงแล้วจะยังค้างอยู่ในแถบบิลค้าง
+      //
+      // โหลดส่วนนี้ไม่ขึ้นก็แค่กลับไปเทียบเฉพาะในช่วงเหมือนเดิม ไม่ลากรายการหลักพังไปด้วย
+      if (open.error) console.error('Load open bills error:', open.error);
+      const loadedIds = new Set(transformedData.map((o) => o.id));
+      setOpenBillsElsewhere(
+        (open.data || [])
+          .filter((r: any) => !loadedIds.has(r.id))
+          .map((r: any) => ({
+            id: r.id,
+            created_at: r.created_at,
+            orderNumber: r.order_number,
+            status: r.status,
+            trackingNumber: r.tracking_number,
+            customerId: r.customer_id,
+            customerPhone: r.customer_phone,
+            lineUserId: r.line_user_id,
+          }))
+      );
 
       // แมปสลิปที่ยืนยันแล้วเข้ากับบิล ไว้โชว์ปุ่ม "ดูสลิป"
       const orderIds = transformedData.map((o: any) => o.id);
@@ -714,7 +761,7 @@ export default function AdminPage() {
    * ไม่ส่งข้อความหาลูกค้าจากตรงนี้ — บิลที่ถือเลขส่งไปแล้วตอนคีย์เลข
    * ยิงซ้ำอีกใบก็ได้ข้อความซ้ำเรื่องกล่องเดียวกัน
    */
-  const mergeIntoOneBox = async (order: SavedOrder, mates: SavedOrder[]) => {
+  const mergeIntoOneBox = async (order: SavedOrder, mates: OpenBill[]) => {
     const tracking = order.trackingNumber?.trim().toUpperCase();
     if (!tracking || mergingId) return;
 
@@ -741,6 +788,13 @@ export default function AdminPage() {
               shippedAt: o.shippedAt ?? order.shippedAt ?? new Date().toISOString(),
             }
           : o
+      )
+    );
+
+    // ใบที่อยู่นอกช่วงวันที่ก็ต้องเห็นว่ารวมแล้ว ไม่งั้นการ์ดจะชวนให้กดรวมกล่องซ้ำอีกรอบ
+    setOpenBillsElsewhere((prev) =>
+      prev.map((o) =>
+        ids.includes(o.id) ? { ...o, trackingNumber: tracking, status: 'shipped' as OrderStatus } : o
       )
     );
 
@@ -1401,22 +1455,31 @@ export default function AdminPage() {
   // แต่จังหวะที่ต้องรู้จริง ๆ คือตอนกำลังแพ็ค — ยังไม่มีเลขสักใบ
   // ตรงนั้นแหละที่ต้องบอกว่า "คนนี้มีอีกใบ อย่าแพ็คแยก"
   //
-  // ระบุตัวลูกค้าด้วย customerId ก่อน ตกไปใช้เบอร์เมื่อบิลยังไม่ผูกลูกค้า
-  // ไม่ใช้ชื่อ เพราะคนละคนใช้ชื่อซ้ำกันได้
-  const personKey = (o: SavedOrder) =>
-    o.customerId || (o.customerPhone ? `p:${o.customerPhone.replace(/\D/g, '')}` : null);
+  // เทียบกับบิลค้างนอกช่วงวันที่ด้วย และนับเป็นคนเดียวกันเมื่อ customer_id / เบอร์ / LINE
+  // ตรงกันดอกไหนก็ได้ (เหตุผลอยู่ใน utils/person.ts) — ไม่ใช้ชื่อ เพราะคนละคนใช้ชื่อซ้ำกันได้
+  const knownBills: OpenBill[] = [...allOrders, ...openBillsElsewhere];
+  const personOf = groupByPerson(knownBills);
 
-  const openBillsByPerson = new Map<string, SavedOrder[]>();
-  for (const o of allOrders) {
+  const openBillsByPerson = new Map<string, OpenBill[]>();
+  for (const o of knownBills) {
     if (o.status === 'delivered' || o.status === 'cancelled') continue;
-    const k = personKey(o);
-    if (!k) continue;
-    openBillsByPerson.set(k, [...(openBillsByPerson.get(k) ?? []), o]);
+    const p = personOf.get(o.id)!;
+    openBillsByPerson.set(p, [...(openBillsByPerson.get(p) ?? []), o]);
+  }
+
+  // กล่องเดียวกันข้ามช่วงวันที่ — ไว้บอกบนการ์ดว่าใบนี้รวมกล่องไปกับใบไหนแล้ว
+  // แยกจาก boxes ข้างล่างซึ่งนับกล่องเฉพาะในช่วงที่เลือก
+  const billsByTracking = new Map<string, OpenBill[]>();
+  for (const o of knownBills) {
+    const t = o.trackingNumber?.trim().toUpperCase();
+    if (!t) continue;
+    billsByTracking.set(t, [...(billsByTracking.get(t) ?? []), o]);
   }
 
   // จำนวนคนที่สั่งจริง — เทียบกับจำนวนบิลได้ทันทีว่าต่างกันกี่ใบ
+  // บิลที่ไม่รู้ว่าเป็นใครนับเป็นหนึ่งคน ไม่งั้นจะไปโผล่เป็น "บิลคนซ้ำ" ทั้งที่ไม่มีอะไรบอกว่าซ้ำ
   const peopleCount = new Set(
-    allOrders.filter((o) => o.status !== 'cancelled').map(personKey).filter(Boolean)
+    allOrders.filter((o) => o.status !== 'cancelled').map((o) => personOf.get(o.id))
   ).size;
 
   // เลขพัสดุหนึ่งเลข = หนึ่งกล่อง ไม่ว่าจะมีกี่บิลอยู่ในนั้น
@@ -1816,8 +1879,11 @@ export default function AdminPage() {
                             ซึ่งเป็นตอนที่จำนวนกล่องกับจำนวนบิลไม่ตรงกันพอดี */}
                         {(() => {
                           const t = order.trackingNumber?.trim().toUpperCase();
+                          // ดูจากทุกบิลที่รู้ ไม่ใช่แค่ในช่วง — รวมกับใบเมื่อวานไปแล้ว การ์ดก็ต้องบอกว่ารวมแล้ว
                           const boxMates = t
-                            ? (sharedBoxes.get(t) ?? []).filter((n) => n !== order.orderNumber)
+                            ? (billsByTracking.get(t) ?? [])
+                                .filter((o) => o.id !== order.id)
+                                .map((o) => o.orderNumber ?? '—')
                             : [];
 
                           // ใส่เลขเดียวกันแล้ว = รวมกล่องเรียบร้อย
@@ -1832,28 +1898,34 @@ export default function AdminPage() {
 
                           // ยังไม่ได้รวม แต่ลูกค้าคนนี้มีบิลอื่นที่ยังไม่ถึงมือ
                           // นี่คือจังหวะที่ต้องตัดสินใจว่าจะแพ็ครวมกล่องไหม
-                          const k = personKey(order);
-                          const openMates = k
-                            ? (openBillsByPerson.get(k) ?? []).filter((o) => o.id !== order.id)
-                            : [];
+                          const openMates = (
+                            openBillsByPerson.get(personOf.get(order.id)!) ?? []
+                          ).filter((o) => o.id !== order.id);
                           if (openMates.length === 0) return null;
+
+                          // รวมได้เฉพาะใบที่ยังไม่มีเลขพัสดุ — ใบที่มีเลขอื่นอยู่แล้วคือกล่องที่ส่งออกไปแล้ว
+                          // กดรวมไปจะเขียนทับเลขจริงของกล่องนั้น ลูกค้าตามพัสดุใบนั้นไม่ได้อีก
+                          const packable = openMates.filter((o) => !o.trackingNumber?.trim());
 
                           return (
                             <div className="bg-primary/5 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2">
                               <Users className="text-primary size-3.5 shrink-0" />
                               <span className="text-primary text-xs">
                                 ลูกค้าคนนี้มีอีก {openMates.length} บิลที่ยังไม่ถึงมือ:{' '}
-                                {openMates.map((o) => o.orderNumber).join(', ')}
+                                {/* ใส่วันที่ด้วย — ใบที่อยู่นอกช่วงที่เลือกไม่มีในรายการนี้ ต้องรู้ว่าไปหาวันไหน */}
+                                {openMates
+                                  .map((o) => `${o.orderNumber ?? '—'} (${shortDate(o.created_at)})`)
+                                  .join(', ')}
                               </span>
                               {/* กดแล้วยัดเลขพัสดุใบนี้ให้บิลที่เหลือ = ประกาศว่าแพ็ครวมกล่อง
                                   โผล่เฉพาะตอนที่ใบนี้มีเลขแล้ว ไม่งั้นไม่มีอะไรให้คัดลอก */}
-                              {order.trackingNumber && (
+                              {order.trackingNumber && packable.length > 0 && (
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   className="h-7 shrink-0 px-2 text-xs"
                                   disabled={mergingId === order.id}
-                                  onClick={() => mergeIntoOneBox(order, openMates)}
+                                  onClick={() => mergeIntoOneBox(order, packable)}
                                 >
                                   {mergingId === order.id ? (
                                     <Loader2 className="size-3 animate-spin" />

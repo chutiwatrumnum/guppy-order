@@ -117,5 +117,29 @@ check('ไม่เอาคำเก่าที่ค้างในคิว�
 check('ข้อความยืนยันชำระเงินไม่ใช่ข้อความจัดส่ง', parseShippingNotice('✅ ยืนยันการชำระเงินแล้วครับ\nบิล B1 · ฿380'), null);
 check('การ์ดพัสดุจากปุ่มส่งซ้ำไม่ใช่ข้อความจัดส่ง', parseShippingNotice('📦 พัสดุ JD000000001TH\nบิล B1'), null);
 
+console.log('\n── ข้อความตอนต้องส่งเอง');
+check(
+  'อยู่ตรงที่บรรทัด 🔔 เคยอยู่ คั่นก่อนข้อความปกติ',
+  buildShippingNotice({
+    ...parseShippingNotice(pushed),
+    promiseAlerts: false,
+    manualNote: '⚠️ ระบบแจ้งเตือนมีปัญหา กดเช็คเองไปก่อนนะครับ\n',
+    extra: 'บ้านหมีฝากรีวิวด้วยนะค้าบ',
+  }),
+  '🚚 จัดส่งแล้วครับ\nบิล B20260914-0514\nเลขพัสดุ JD059556938TH\n\n' +
+    '⚠️ ระบบแจ้งเตือนมีปัญหา กดเช็คเองไปก่อนนะครับ\n\n' +
+    'บ้านหมีฝากรีวิวด้วยนะค้าบ'
+);
+check(
+  'บอทส่งเองยังสัญญาแจ้งเตือนตามเดิม ไม่เอาข้อความตอนส่งเองมาปน',
+  buildShippingNotice({ orderNumber: 'B1', tracking: 'JD000000001TH', promiseAlerts: true, manualNote: '⚠️ มีปัญหา' }).includes('⚠️'),
+  false
+);
+check(
+  'ช่องว่างก็ไม่มีบรรทัดว่างเกินมา',
+  buildShippingNotice({ orderNumber: 'B1', tracking: 'JD000000001TH', promiseAlerts: false, manualNote: '  ', extra: 'ท้าย' }),
+  '🚚 จัดส่งแล้วครับ\nบิล B1\nเลขพัสดุ JD000000001TH\n\nท้าย'
+);
+
 console.log(failed === 0 ? '\nผ่านทั้งหมด' : `\nไม่ผ่าน ${failed} ข้อ`);
 process.exit(failed === 0 ? 0 : 1);

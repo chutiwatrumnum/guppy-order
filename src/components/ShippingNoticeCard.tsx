@@ -19,8 +19,15 @@ import { Textarea } from '@/components/ui/textarea';
 const MAX_IMAGES = 4; // LINE ส่งได้ 5 ชิ้นต่อคำขอ กันไว้ 1 ให้ข้อความ
 const MAX_BYTES = 5 * 1024 * 1024;
 
+// ตัวอย่างในช่อง "ข้อความตอนต้องส่งเอง" ตอนยังว่าง
+const MANUAL_PLACEHOLDER =
+  '⚠️ ช่วงนี้ระบบแจ้งเตือนสถานะพัสดุมีปัญหาครับ\nรบกวนกดปุ่ม "พัสดุของฉัน" ที่เมนูด้านล่างแชทนี้ เพื่อเช็คสถานะเองไปก่อนนะครับ';
+
 export default function ShippingNoticeCard({ settingsId }: { settingsId: string | null }) {
   const [message, setMessage] = useState('');
+  const [manualMessage, setManualMessage] = useState('');
+  // false = ฐานข้อมูลยังไม่มีคอลัมน์ shipping_manual_message (ยังไม่ได้รัน SQL)
+  const [hasManualColumn, setHasManualColumn] = useState(true);
   const [images, setImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,12 +36,12 @@ export default function ShippingNoticeCard({ settingsId }: { settingsId: string 
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from('settings')
-        .select('shipping_message, shipping_images')
-        .limit(1)
-        .maybeSingle();
+      // * ไม่ใช่ชื่อคอลัมน์ — ร้านรัน SQL เพิ่มคอลัมน์เองใน Dashboard ถ้าเว็บขึ้นก่อนรัน
+      // ระบุ shipping_manual_message ตรง ๆ จะพังทั้งคำขอ แล้วการ์ดทั้งใบโหลดไม่ขึ้น
+      const { data } = await supabase.from('settings').select('*').limit(1).maybeSingle();
       setMessage(data?.shipping_message || '');
+      setManualMessage(data?.shipping_manual_message || '');
+      setHasManualColumn(!data || 'shipping_manual_message' in data);
       setImages(data?.shipping_images || []);
       setLoading(false);
     })();
@@ -83,7 +90,11 @@ export default function ShippingNoticeCard({ settingsId }: { settingsId: string 
     setSaving(true);
     const { error } = await supabase
       .from('settings')
-      .update({ shipping_message: message.trim() || null, shipping_images: images })
+      .update({
+        shipping_message: message.trim() || null,
+        shipping_images: images,
+        ...(hasManualColumn ? { shipping_manual_message: manualMessage.trim() || null } : {}),
+      })
       .eq('id', settingsId);
     setSaving(false);
 
@@ -130,6 +141,25 @@ export default function ShippingNoticeCard({ settingsId }: { settingsId: string 
           />
           <p className="text-muted-foreground text-xs">
             เลขพัสดุกับชื่อบิลระบบใส่ให้เองด้านบนแล้ว ตรงนี้พิมพ์เฉพาะส่วนที่อยากบอกเพิ่ม
+          </p>
+        </div>
+
+        {/* แยกช่องจากข้อความปกติ — ข้อความปกติส่งอัตโนมัติทุกบิล ถ้าเขียนเรื่อง
+            "ระบบแจ้งเตือนมีปัญหา" ไว้ในนั้น ลูกค้าทุกคนจะเห็น ทั้งที่ใช้แค่ตอน push ไม่ออก */}
+        <div className="space-y-1.5">
+          <Label htmlFor="ship-manual-msg">ข้อความตอนต้องส่งเอง</Label>
+          <Textarea
+            id="ship-manual-msg"
+            rows={3}
+            value={manualMessage}
+            onChange={(e) => setManualMessage(e.target.value)}
+            placeholder={MANUAL_PLACEHOLDER}
+            disabled={!hasManualColumn}
+          />
+          <p className="text-muted-foreground text-xs">
+            {hasManualColumn
+              ? 'ใช้ตอนกดคัดลอกจากกล่อง "ไม่ได้รับข้อความแจ้งเตือน" ในหน้าบิล — ใส่แทนบรรทัด 🔔 ที่บอกว่าจะแจ้งอัตโนมัติ'
+              : 'ยังใช้ไม่ได้ — ต้องรัน SQL เพิ่มช่องนี้ในฐานข้อมูลก่อน'}
           </p>
         </div>
 

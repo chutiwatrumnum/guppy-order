@@ -171,6 +171,12 @@ export interface ShippingNoticeOptions {
    * ไม่ออกอยู่แล้ว (โควต้าหมด / ลูกค้าไม่ได้แอดร้าน) แจ้งเตือนต่อจากนี้ก็ไม่ถึงเหมือนกัน
    */
   promiseAlerts: boolean;
+  /**
+   * ใส่ตรงที่บรรทัด 🔔 เคยอยู่ ตอนร้านคัดลอกไปส่งเอง
+   * ("ข้อความตอนต้องส่งเอง" ในหน้าตั้งค่า — บอกลูกค้าว่าระบบแจ้งเตือนมีปัญหา ให้กดเช็คเอง)
+   * ไม่ใช้เมื่อ promiseAlerts เป็น true
+   */
+  manualNote?: string | null;
   /** ข้อความที่ร้านตั้งไว้ในหน้าตั้งค่า ต่อท้าย */
   extra?: string | null;
 }
@@ -179,6 +185,7 @@ export const buildShippingNotice = ({
   orderNumber,
   tracking,
   promiseAlerts,
+  manualNote,
   extra,
 }: ShippingNoticeOptions): string => {
   const blocks = [`${SHIPPING_TITLE}\n${SHIPPING_BILL}${orderNumber}\n${SHIPPING_TRACKING}${tracking}`];
@@ -192,6 +199,9 @@ export const buildShippingNotice = ({
       '🔔 จะแจ้งให้ตอนไปรษณีย์รับเข้าระบบ ตอนออกไปนำจ่าย และตอนส่งถึง\n' +
         'ถ้านำจ่ายไม่สำเร็จหรือตีกลับ จะแจ้งทันทีเหมือนกันครับ'
     );
+  } else if (manualNote?.trim()) {
+    // ร้านส่งเองในแชท = ระบบส่งแจ้งเตือนไม่ออกอยู่ บอกลูกค้าตรง ๆ แทนการสัญญาว่าจะแจ้ง
+    blocks.push(manualNote.trim());
   }
 
   const tail = (extra || '').trim();

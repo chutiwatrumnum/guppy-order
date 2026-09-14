@@ -15,6 +15,7 @@ interface FailedNotification {
   id: string;
   message: string;
   images: string[] | null;
+  tracking_number: string | null;
   error: string | null;
   created_at: string;
   orders?: {
@@ -26,6 +27,7 @@ interface FailedNotification {
 
 interface ShippingSettings {
   message: string;
+  manualNote: string;
   images: string[];
 }
 
@@ -38,22 +40,39 @@ function isQuotaError(error: string | null) {
 
 // ข้อความที่ร้านคัดลอกไปส่งเองในแชท
 //
-// ข้อความจัดส่งที่ค้างอยู่ประกอบไว้ตั้งแต่ตอนกรอกเลขพัสดุ ส่งตามนั้นเลยไม่ได้สองเรื่อง
-// - บรรทัด 🔔 สัญญาว่าจะเด้งแจ้งเตือนอัตโนมัติ แต่ push ไม่ออกอยู่แล้ว แจ้งเตือนต่อจากนี้ก็ไม่ถึงเหมือนกัน
-// - ท้ายข้อความเป็นคำในหน้าตั้งค่า ณ ตอนนั้น ไม่ใช่คำล่าสุดที่ร้านแก้ไว้
-// จึงประกอบใหม่จากเลขบิล/เลขพัสดุเดิม กับข้อความและรูปล่าสุดในหน้าตั้งค่า
+// ข้อความที่ค้างอยู่ประกอบไว้ตอนหยอดคิว ส่งตามนั้นเลยไม่ได้: บรรทัด 🔔 สัญญาว่าจะเด้ง
+// แจ้งเตือนอัตโนมัติ แต่ push ไม่ออกอยู่แล้ว แจ้งเตือนต่อจากนี้ก็ไม่ถึงเหมือนกัน
+// และท้ายข้อความเป็นคำในหน้าตั้งค่า ณ ตอนนั้น ไม่ใช่คำล่าสุดที่ร้านแก้ไว้
 //
-// ข้อความแบบอื่น (ยืนยันชำระเงิน, ได้รับสลิป ฯลฯ) ไม่มีคำสัญญาแบบนี้ ใช้ของเดิม
-// อ่านหน้าตั้งค่าไม่ขึ้นก็ใช้ของเดิม — ดีกว่าส่งไปแต่หัวข้อความ
+// - ข้อความจัดส่ง: ประกอบใหม่จากเลขบิล/เลขพัสดุเดิม ใส่ "ข้อความตอนต้องส่งเอง" แทนบรรทัด 🔔
+//   แล้วต่อด้วยข้อความและรูปล่าสุดในหน้าตั้งค่า
+// - การ์ดพัสดุจากปุ่มส่งซ้ำ: มีแต่ข้อความสำรองสั้น ๆ ต่อ "ข้อความตอนต้องส่งเอง" ไว้ท้าย
+// - แบบอื่น (ยืนยันชำระเงิน, ได้รับสลิป ฯลฯ) ไม่เกี่ยวกับการติดตามพัสดุ ใช้ของเดิม
+//
+// อ่านหน้าตั้งค่าไม่ขึ้นก็ใช้ของเดิมทั้งหมด — ดีกว่าส่งไปแต่หัวข้อความ
 function forManualSend(row: FailedNotification, shipping: ShippingSettings | null) {
-  const notice = shipping ? parseShippingNotice(row.message) : null;
-  if (!shipping || !notice) {
-    return { text: row.message, images: row.images || [] };
+  const original = { text: row.message, images: row.images || [] };
+  if (!shipping) return original;
+
+  const notice = parseShippingNotice(row.message);
+  if (notice) {
+    return {
+      text: buildShippingNotice({
+        ...notice,
+        promiseAlerts: false,
+        manualNote: shipping.manualNote,
+        extra: shipping.message,
+      }),
+      images: shipping.images,
+    };
   }
-  return {
-    text: buildShippingNotice({ ...notice, promiseAlerts: false, extra: shipping.message }),
-    images: shipping.images,
-  };
+
+  const note = shipping.manualNote.trim();
+  if (row.tracking_number && note) {
+    return { ...original, text: `${row.message}\n\n${note}` };
+  }
+
+  return original;
 }
 
 export default function FailedNotifications() {
@@ -65,15 +84,25 @@ export default function FailedNotifications() {
     const [{ data }, { data: cfg, error: cfgError }] = await Promise.all([
       supabase
         .from('line_notifications')
-        .select('id, message, images, error, created_at, orders(order_number, customer_name, customer_phone)')
+        .select(
+          'id, message, images, tracking_number, error, created_at, orders(order_number, customer_name, customer_phone)'
+        )
         .eq('status', 'failed')
         .is('acknowledged_at', null)
         .order('created_at', { ascending: false }),
-      supabase.from('settings').select('shipping_message, shipping_images').limit(1).maybeSingle(),
+      // * ไม่ใช่ชื่อคอลัมน์ — ร้านรัน SQL เพิ่มคอลัมน์เองใน Dashboard ถ้าเว็บขึ้นก่อนรัน
+      // ระบุ shipping_manual_message ตรง ๆ จะพังทั้งคำขอ แล้วปุ่มคัดลอกกลับไปใช้ข้อความเก่า
+      supabase.from('settings').select('*').limit(1).maybeSingle(),
     ]);
     setRows((data || []) as unknown as FailedNotification[]);
     setShipping(
-      cfgError ? null : { message: cfg?.shipping_message || '', images: cfg?.shipping_images || [] }
+      cfgError
+        ? null
+        : {
+            message: cfg?.shipping_message || '',
+            manualNote: cfg?.shipping_manual_message || '',
+            images: cfg?.shipping_images || [],
+          }
     );
   };
 

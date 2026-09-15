@@ -1152,7 +1152,12 @@ export default function AdminPage() {
       }
 
       // ส่งไปแล้วก็จริง แต่ถ้าติดตามไม่ผ่านต้องบอกร้าน ไม่งั้นเข้าใจว่าจบแล้ว
-      if (!subscribed) {
+      //
+      // ยกเว้นบิลที่ปิดไปแล้ว (reason 'closed') ของถึงมือลูกค้าไปแล้ว ไม่มีอะไรให้ตามต่อ
+      // เป็นผลปกติ ไม่ใช่ความผิดพลาดที่ร้านต้องไปตามแก้
+      const closed = sub?.reason === 'closed';
+
+      if (!subscribed && !closed) {
         toast.warning('ส่งเลขให้ลูกค้าแล้ว แต่ยังติดตามอัตโนมัติไม่ได้', {
           description: subError?.message ?? sub?.reason ?? 'ไม่ทราบสาเหตุ',
           duration: 10000,
@@ -1163,7 +1168,9 @@ export default function AdminPage() {
       toast.success(
         mode === 'full' ? 'ส่งข้อความแจ้งจัดส่งให้ลูกค้าแล้ว' : 'ส่งการ์ดสถานะพัสดุให้ลูกค้าแล้ว',
         {
-        description: 'ติดตามสถานะให้อัตโนมัติเรียบร้อย',
+        description: closed
+          ? 'บิลนี้ปิดไปแล้ว ส่งให้ดูอย่างเดียว ไม่ได้ติดตามต่อ'
+          : 'ติดตามสถานะให้อัตโนมัติเรียบร้อย',
         }
       );
     } finally {

@@ -51,6 +51,7 @@ interface PublicOrder {
   payment_status: string;
   paid_amount?: number;
   tracking_number?: string | null;
+  tracking_numbers?: string[] | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   customer_address?: string | null;
@@ -134,7 +135,7 @@ export default function PublicOrderPage() {
   const [saved, setSaved] = useState(false);
   const [linkedToLine, setLinkedToLine] = useState(false);
   const [copiedAccount, setCopiedAccount] = useState(false);
-  const [copiedTracking, setCopiedTracking] = useState(false);
+  const [copiedTracking, setCopiedTracking] = useState<string | null>(null);
   // กด "เสร็จสิ้น" นอกแอปไลน์ — ปิดแท็บให้ไม่ได้ เลยสลับไปหน้าจบแทน
   const [finished, setFinished] = useState(false);
   const addressRef = useRef<HTMLDivElement>(null);
@@ -365,13 +366,12 @@ export default function PublicOrderPage() {
   };
 
   // ลากเลือกตัวหนังสือในเบราว์เซอร์ของไลน์ทำยาก ต้องมีปุ่มให้กด
-  const copyTracking = async () => {
-    if (!order?.tracking_number) return;
+  const copyTracking = async (tracking: string) => {
     try {
-      await navigator.clipboard.writeText(order.tracking_number);
-      setCopiedTracking(true);
+      await navigator.clipboard.writeText(tracking);
+      setCopiedTracking(tracking);
       toast.success('คัดลอกเลขพัสดุแล้ว');
-      setTimeout(() => setCopiedTracking(false), 2000);
+      setTimeout(() => setCopiedTracking(null), 2000);
     } catch {
       toast.error('คัดลอกไม่สำเร็จ');
     }
@@ -442,6 +442,9 @@ export default function PublicOrderPage() {
     );
   }
 
+  const boxes = order.tracking_numbers?.length
+    ? order.tracking_numbers
+    : [order.tracking_number].filter(Boolean) as string[];
   const canEditAddress = order.status === 'pending';
   const hasSavedAddress = !!order.customer_address?.trim();
   const payment = PAYMENT_TEXT[order.payment_status] || PAYMENT_TEXT.unpaid;
@@ -833,19 +836,26 @@ export default function PublicOrderPage() {
               </Badge>
               <Badge variant={status.variant}>{status.text}</Badge>
             </div>
-            {order.tracking_number && (
-              <button
-                type="button"
-                onClick={copyTracking}
-                className="hover:bg-muted mx-auto mt-3 flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium"
-              >
-                📦 เลขพัสดุ {order.tracking_number}
-                {copiedTracking ? (
-                  <Check className="text-success size-3.5" />
-                ) : (
-                  <Copy className="text-muted-foreground size-3.5" />
-                )}
-              </button>
+            {/* บิลเดียวอาจแยกส่งหลายกล่อง ติดเลขกำกับไว้เฉพาะตอนมีมากกว่าหนึ่ง
+                กล่องเดียวแล้วขึ้น "กล่อง 1" อ่านแล้วชวนให้หากล่องสองที่ไม่มีอยู่ */}
+            {boxes.length > 0 && (
+              <div className="mt-3 flex flex-col items-center gap-0.5">
+                {boxes.map((box, i) => (
+                  <button
+                    key={box}
+                    type="button"
+                    onClick={() => copyTracking(box)}
+                    className="hover:bg-muted flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium"
+                  >
+                    📦 {boxes.length > 1 ? `กล่อง ${i + 1}` : 'เลขพัสดุ'} {box}
+                    {copiedTracking === box ? (
+                      <Check className="text-success size-3.5" />
+                    ) : (
+                      <Copy className="text-muted-foreground size-3.5" />
+                    )}
+                  </button>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

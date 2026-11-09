@@ -250,6 +250,7 @@ export default function AdminPage() {
   const [orderToDelete, setOrderToDelete] = useState<SavedOrder | null>(null);
   const [orderToUnlink, setOrderToUnlink] = useState<SavedOrder | null>(null);
   // ปุ่มส่งเลขพัสดุซ้ำของบิลไหนกำลังทำงานอยู่
+  const [addingBoxFor, setAddingBoxFor] = useState<string | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [mergingId, setMergingId] = useState<string | null>(null);
   // รวมบิล — ใบที่จะเหลืออยู่ ใบที่จะถูกรวมเข้ามา และตัวเลขที่ฐานข้อมูลคำนวณให้ดูก่อนกดยืนยัน
@@ -399,6 +400,7 @@ export default function AdminPage() {
         deliveredAt: order.delivered_at ?? null,
         paymentAccountId: order.payment_account_id ?? null,
         trackingNumber: order.tracking_number,
+        trackingNumbers: order.tracking_numbers || [],
         customerId: order.customer_id,
         customerName: order.customer_name,
         customerPhone: order.customer_phone,
@@ -1010,12 +1012,16 @@ export default function AdminPage() {
       return;
     }
 
+    // เขียนที่ tracking_numbers เท่านั้น — tracking_number เป็นเงาที่ trigger ซิงก์ให้
+    // กรอกช่องกล่องแรกคือแก้กล่องแรก กล่องที่เหลือต้องอยู่ครบ
+    const nextBoxes = [tracking, ...(order.trackingNumbers || []).slice(1)];
+
     const { error } = await supabase
       .from('orders')
       // shipped_at เฉพาะครั้งแรก — แก้เลขที่กรอกผิดไม่ใช่การส่งใหม่
       // ถ้าเขียนทับ จำนวนวันขนส่งจะรีเซ็ตทุกครั้งที่แก้เลข
       .update({
-        tracking_number: tracking,
+        tracking_numbers: nextBoxes,
         status: 'shipped',
         ...(order.shippedAt ? {} : { shipped_at: new Date().toISOString() }),
       })
@@ -1032,6 +1038,7 @@ export default function AdminPage() {
           ? {
               ...o,
               trackingNumber: tracking,
+              trackingNumbers: nextBoxes,
               status: 'shipped' as OrderStatus,
               shippedAt: o.shippedAt ?? new Date().toISOString(),
             }
@@ -1099,6 +1106,105 @@ export default function AdminPage() {
           : 'บันทึกแล้ว — แจ้งลูกค้าและติดตามสถานะให้อัตโนมัติ'
       );
     }
+  };
+
+  // เพิ่มกล่องที่สองขึ้นไปให้บิลเดิม
+  //
+  // บิลเดียวแต่ปลาเยอะจนต้องแยกกล่อง เดิมไม่มีที่เก็บเลขที่สอง ร้านต้องแตกบิล
+  // ซึ่งพังทั้งยอดรวม สลิปที่จ่ายมาแล้ว และการเคลมปลาตายของบิลนั้น
+  const addTrackingBox = async (order: SavedOrder, raw: string) => {
+    const tracking = raw.trim().toUpperCase();
+    if (!tracking) return;
+
+    if (!/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(tracking)) {
+      toast.error('รูปแบบเลขพัสดุไม่ถูกต้อง', { description: 'ต้องเป็นแบบ EX123456789TH' });
+      return;
+    }
+
+    const boxes = order.trackingNumbers?.length
+      ? order.trackingNumbers
+      : [order.trackingNumber, ''].filter(Boolean) as string[];
+
+    if (boxes.includes(tracking)) {
+      toast.error('เลขนี้อยู่ในบิลนี้แล้ว');
+      return;
+    }
+
+    // ด่านเดียวกับกล่องแรก — เลขของลูกค้าคนอื่นห้ามหลุดมาอยู่บนใบสรุปของบิลนี้
+    const conflict = await findTrackingConflict(order, tracking);
+    if (conflict?.unreadable) {
+      toast.error('เช็คเลขพัสดุไม่ได้ — ยังไม่ได้บันทึกอะไร', { duration: 8000 });
+      return;
+    }
+    if (conflict) {
+      toast.error('เลขพัสดุนี้อยู่ในบิลอื่นแล้ว — ยังไม่ได้บันทึกอะไร', {
+        description: `${conflict.orderNumber ? `บิล ${conflict.orderNumber}` : 'อีกบิลหนึ่ง'} ถืออยู่`,
+        duration: 12000,
+      });
+      return;
+    }
+
+    const nextBoxes = [...boxes, tracking];
+    const { error } = await supabase
+      .from('orders')
+      .update({ tracking_numbers: nextBoxes })
+      .eq('id', order.id);
+
+    if (error) {
+      toast.error('เพิ่มกล่องไม่สำเร็จ');
+      return;
+    }
+
+    setAllOrders((orders) =>
+      orders.map((o) => (o.id === order.id ? { ...o, trackingNumbers: nextBoxes } : o))
+    );
+    setAddingBoxFor(null);
+
+    if (!order.lineUserId) {
+      toast.success(`เพิ่มกล่องที่ ${nextBoxes.length} แล้ว`, {
+        description: 'ลูกค้ายังไม่เคยเปิดใบสรุปในแอป LINE จึงยังแจ้งอัตโนมัติไม่ได้',
+      });
+      return;
+    }
+
+    const { data: sub } = await supabase.rpc('sync_parcel_subscription', { p_order_id: order.id });
+    if (sub?.reason === 'taken_by_other_order') {
+      toast.error('เลขพัสดุนี้อยู่ในบิลอื่น — ยังไม่ได้แจ้งลูกค้า', {
+        description: `บิล ${sub.order_number ?? '—'} ถืออยู่`,
+        duration: 12000,
+      });
+      return;
+    }
+
+    // การ์ดใบเดียวของกล่องใหม่ — ไม่ส่งข้อความจัดส่งเต็มซ้ำ ลูกค้าได้ไปแล้วตอนกล่องแรก
+    await queueParcelCard(order, tracking);
+    toast.success(`เพิ่มกล่องที่ ${nextBoxes.length} แล้ว — แจ้งลูกค้าและติดตามให้อัตโนมัติ`);
+  };
+
+  const removeTrackingBox = async (order: SavedOrder, tracking: string) => {
+    const nextBoxes = (order.trackingNumbers || []).filter((t) => t !== tracking);
+
+    const { error } = await supabase
+      .from('orders')
+      .update({ tracking_numbers: nextBoxes })
+      .eq('id', order.id);
+
+    if (error) {
+      toast.error('เอากล่องออกไม่สำเร็จ');
+      return;
+    }
+
+    setAllOrders((orders) =>
+      orders.map((o) =>
+        o.id === order.id
+          ? { ...o, trackingNumbers: nextBoxes, trackingNumber: nextBoxes[0] }
+          : o
+      )
+    );
+
+    // ตัวซิงก์เป็นคนเก็บแถวติดตามของกล่องที่ถูกเอาออก (ยกให้บิลที่รวมกล่อง หรือลบทิ้ง)
+    await supabase.rpc('sync_parcel_subscription', { p_order_id: order.id });
+    toast.success('เอากล่องออกแล้ว');
   };
 
   // ส่งเลขพัสดุให้ลูกค้าใน LINE อีกรอบ
@@ -1512,7 +1618,9 @@ export default function AdminPage() {
           order.orderNumber?.toLowerCase().includes(term) ||
           order.customerName?.toLowerCase().includes(term) ||
           (phoneLike && !!order.customerPhone?.replace(/\D/g, '').includes(digits)) ||
-          order.trackingNumber?.toLowerCase().includes(term) ||
+          (order.trackingNumbers || [order.trackingNumber]).some((t) =>
+            t?.toLowerCase().includes(term)
+          ) ||
           order.items?.some((item: OrderItem) => item.breedName?.toLowerCase().includes(term)) ||
           order.note?.toLowerCase().includes(term) ||
           order.customerAddress?.toLowerCase().includes(term) ||
@@ -1982,6 +2090,53 @@ export default function AdminPage() {
                             </Badge>
                           )}
                         </div>
+
+                        {/* กล่องที่สองขึ้นไป — บิลเดียวแต่แยกส่งหลายกล่อง
+                            โชว์เฉพาะตอนมีจริง บิลส่วนใหญ่กล่องเดียวจบ ไม่ต้องกินที่ */}
+                        {(order.trackingNumbers || []).slice(1).map((box, i) => (
+                          <div key={box} className="flex items-center gap-2 pl-1">
+                            <span className="text-muted-foreground text-xs">กล่อง {i + 2}</span>
+                            <code className="flex-1 font-mono text-sm">{box}</code>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => removeTrackingBox(order, box)}
+                              aria-label={`เอากล่อง ${box} ออก`}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        ))}
+
+                        {order.trackingNumber &&
+                          (addingBoxFor === order.id ? (
+                            <div className="flex items-center gap-2 pl-1">
+                              <Input
+                                autoFocus
+                                placeholder={`เลขกล่องที่ ${(order.trackingNumbers?.length || 1) + 1}`}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') e.currentTarget.blur();
+                                  if (e.key === 'Escape') setAddingBoxFor(null);
+                                }}
+                                onBlur={(e) => {
+                                  const v = e.target.value.trim().toUpperCase();
+                                  if (v) addTrackingBox(order, v);
+                                  else setAddingBoxFor(null);
+                                }}
+                                className="h-9 flex-1 uppercase"
+                              />
+                            </div>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground w-fit"
+                              onClick={() => setAddingBoxFor(order.id)}
+                            >
+                              <Plus className="size-4" /> เพิ่มกล่อง
+                            </Button>
+                          ))}
 
                         {/* บิลนี้ใช้เลขพัสดุร่วมกับบิลอื่น = แพ็ครวมกล่องเดียว
                             เดิมดูจากหน้านี้ไม่ออก ต้องไล่หาเองว่าเลขซ้ำกับใบไหน

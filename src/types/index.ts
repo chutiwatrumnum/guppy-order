@@ -90,6 +90,8 @@ export interface SavedOrder {
   /** บัญชีที่บิลนี้ผูกไว้ — ว่างแปลว่าบิลเก่าก่อนแยกบัญชี */
   paymentAccountId?: string | null;
   trackingNumber?: string;
+  /** ทุกกล่องของบิลนี้ — trackingNumber คือกล่องแรก เก็บไว้เพราะโค้ดเดิมอ่านอยู่หลายที่ */
+  trackingNumbers?: string[];
   customerId?: string | null;
   customerName?: string;
   customerPhone?: string;

@@ -26,6 +26,7 @@ import Layout from './Layout';
 import FoodProducts from '@/components/FoodProducts';
 import PaymentAccountsCard from '@/components/PaymentAccountsCard';
 import ShippingNoticeCard from '@/components/ShippingNoticeCard';
+import MessageQuotaCard from '@/components/MessageQuotaCard';
 import MessageTemplatesCard from '@/components/MessageTemplatesCard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -775,6 +776,9 @@ export default function SettingsPage() {
 
             {/* ข้อความที่ส่งให้ลูกค้าตอนแจ้งเลขพัสดุ */}
             <ShippingNoticeCard settingsId={bankInfo.id} />
+
+            {/* โควต้าที่เหลือ และสวิตช์ที่คุมว่าอะไรกินโควต้าบ้าง */}
+            <MessageQuotaCard />
 
             {/* คำที่ระบบพูดกับลูกค้าทั้งหมด */}
             <MessageTemplatesCard />

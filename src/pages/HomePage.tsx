@@ -106,6 +106,14 @@ export default function HomePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCart, setShowCart] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  // ประวัติย่อของลูกค้าที่เลือก — ตอนเปิดบิลร้านมองไม่เห็นเลยว่าคนนี้ซื้อมากี่รอบ
+  // ซึ่งเป็นข้อมูลที่ใช้ตัดสินใจเรื่องของแถมกับส่วนลดอยู่แล้ว แค่ต้องไปเปิดหน้าบิลหาเอง
+  const [customerStats, setCustomerStats] = useState<{
+    orders: number;
+    spent: number;
+    lastAt: string | null;
+    claims: number;
+  } | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(restoredDraft?.customerId ?? '');
   const [customerName, setCustomerName] = useState(restoredDraft?.name ?? '');
   const [customerPhone, setCustomerPhone] = useState(restoredDraft?.phone ?? '');
@@ -131,6 +139,32 @@ export default function HomePage() {
     message: string;
   } | null>(null);
 
+  // นับเฉพาะบิลที่ไม่ได้ยกเลิก ยอดที่ยกเลิกไปแล้วไม่ใช่เงินที่ลูกค้าเคยจ่าย
+  const loadCustomerStats = async (customerId: string) => {
+    setCustomerStats(null);
+
+    const { data: rows, error } = await supabase
+      .from('orders')
+      .select('id, total_amount, created_at')
+      .eq('customer_id', customerId)
+      .neq('status', 'cancelled')
+      .order('created_at', { ascending: false });
+
+    if (error || !rows?.length) return;
+
+    const { count } = await supabase
+      .from('claims')
+      .select('id', { count: 'exact', head: true })
+      .in('order_id', rows.map((r) => r.id));
+
+    setCustomerStats({
+      orders: rows.length,
+      spent: rows.reduce((sum, r) => sum + (r.total_amount || 0), 0),
+      lastAt: rows[0].created_at,
+      claims: count ?? 0,
+    });
+  };
+
   // Handle customer selection
   const handleCustomerChange = (customerId: string) => {
     setSelectedCustomerId(customerId);
@@ -141,7 +175,9 @@ export default function HomePage() {
         setCustomerPhone(customer.phone || '');
         setCustomerAddress(customer.address || '');
       }
+      loadCustomerStats(customerId);
     } else {
+      setCustomerStats(null);
       setCustomerName('');
       setCustomerPhone('');
       setCustomerAddress('');
@@ -809,6 +845,31 @@ export default function HomePage() {
                         ))}
                       </SelectContent>
                     </Select>
+                  )}
+
+                  {customerStats && (
+                    <div className="bg-muted/40 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2 text-xs">
+                      <span className="font-medium">
+                        ซื้อครั้งที่ {customerStats.orders + 1}
+                      </span>
+                      <span className="text-muted-foreground">
+                        เคยซื้อรวม ฿{customerStats.spent.toLocaleString()}
+                      </span>
+                      {customerStats.lastAt && (
+                        <span className="text-muted-foreground">
+                          ล่าสุด{' '}
+                          {new Date(customerStats.lastAt).toLocaleDateString('th-TH', {
+                            day: 'numeric',
+                            month: 'short',
+                          })}
+                        </span>
+                      )}
+                      {/* เคลมไม่ได้แปลว่าลูกค้ามีปัญหา ปลาตายระหว่างส่งเป็นเรื่องปกติ
+                          แต่ถ้าเคยเคลมบ่อย ร้านอาจอยากแพ็คให้หนากว่าเดิมรอบนี้ */}
+                      {customerStats.claims > 0 && (
+                        <span className="text-warning">เคยเคลม {customerStats.claims} ครั้ง</span>
+                      )}
+                    </div>
                   )}
                 </div>
 
